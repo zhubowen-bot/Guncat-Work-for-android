@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!--
+      应用内 WebView 与模型请求都走 127.0.0.1 的回环代理；部分用户还会把 Base URL
+      指向局域网里的自建网关（http）。这里允许 cleartext，但 App 本身不访问公网明文站点。
+    -->
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

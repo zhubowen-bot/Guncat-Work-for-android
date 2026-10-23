@@ -1,0 +1,90 @@
+<!--
+  窗口外壳：自定义标题栏 + 左侧品牌栏 + 右侧页面宿主。
+
+  XamlReader 解析它，所以根元素是 Border 而不是 Window —— 透明的无边框窗口
+  由 common.cs 创建（Window 上要挂拖拽、关闭、命中测试等代码）。
+  各页只需要往 PageHost 里塞内容。
+-->
+<Border xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Name="Shell"
+        Width="900" Height="580"
+        CornerRadius="16" Background="{StaticResource WindowBrush}"
+        BorderBrush="#FF2C3749" BorderThickness="1" SnapsToDevicePixels="True">
+  <Border.Effect>
+    <DropShadowEffect BlurRadius="28" ShadowDepth="0" Opacity="0.6" Color="#FF000000"/>
+  </Border.Effect>
+
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="44"/>
+      <RowDefinition Height="*"/>
+    </Grid.RowDefinitions>
+
+    <!-- ===== 标题栏 ===== -->
+    <Grid x:Name="TitleBar" Grid.Row="0" Background="Transparent">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="Auto"/>
+      </Grid.ColumnDefinitions>
+      <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
+        <Border x:Name="TitleIcon" Width="18" Height="18" CornerRadius="5" SnapsToDevicePixels="True"/>
+        <TextBlock x:Name="TitleText" Text="Guncat Work" Margin="9,0,0,0" VerticalAlignment="Center"
+                   FontFamily="{StaticResource UiFont}" FontSize="12.5"
+                   Foreground="{StaticResource TextSecondary}"/>
+      </StackPanel>
+      <StackPanel Grid.Column="1" Orientation="Horizontal">
+        <Button x:Name="BtnMinimize" Style="{StaticResource CaptionButton}" Content="—" FontSize="14"
+                ToolTip="最小化"/>
+        <Button x:Name="BtnClose" Style="{StaticResource CloseButton}" Content="✕" FontSize="12"
+                ToolTip="关闭"/>
+      </StackPanel>
+    </Grid>
+
+    <!-- ===== 主体 ===== -->
+    <Grid Grid.Row="1">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition x:Name="BrandColumn" Width="300"/>
+        <ColumnDefinition Width="*"/>
+      </Grid.ColumnDefinitions>
+
+      <!-- 品牌栏 -->
+      <Border x:Name="BrandPanel" Grid.Column="0" Background="{StaticResource BrandPanelBrush}"
+              BorderBrush="#FF232E3E" BorderThickness="0,1,1,0">
+        <Grid Margin="26,26,26,22">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+          </Grid.RowDefinitions>
+
+          <StackPanel Grid.Row="0" VerticalAlignment="Center">
+            <Border x:Name="BrandIcon" Width="96" Height="96" CornerRadius="24" HorizontalAlignment="Left"
+                    SnapsToDevicePixels="True">
+              <Border.Effect>
+                <DropShadowEffect BlurRadius="30" ShadowDepth="0" Opacity="0.45" Color="#FF4F86FF"/>
+              </Border.Effect>
+            </Border>
+            <TextBlock x:Name="BrandName" Text="Guncat Work" Style="{StaticResource T_Brand}"
+                       Margin="0,22,0,0"/>
+            <TextBlock x:Name="BrandTagline" Text="电脑版 · Agent Harness 客户端"
+                       Style="{StaticResource T_Sub}" Margin="0,7,0,0" TextWrapping="Wrap"/>
+            <Border x:Name="BrandChip" Style="{StaticResource Chip}" HorizontalAlignment="Left"
+                    Margin="0,14,0,0">
+              <TextBlock x:Name="BrandVersion" Text="v0.2.1" FontFamily="{StaticResource UiFont}"
+                         FontSize="11.5" Foreground="{StaticResource TextBody}"/>
+            </Border>
+          </StackPanel>
+
+          <StackPanel Grid.Row="1" x:Name="BrandNotes">
+            <TextBlock Style="{StaticResource T_Muted}" Text="聊天 · 交互 · 工作 三种形态"/>
+            <TextBlock Style="{StaticResource T_Muted}" Text="多轮工具循环 + 沙箱工作区" Margin="0,5,0,0"/>
+            <TextBlock Style="{StaticResource T_Muted}" Text="可直出 PPT / Word / Excel" Margin="0,5,0,0"/>
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <!-- 页面宿主 -->
+      <ContentControl x:Name="PageHost" Grid.Column="1" Margin="34,22,34,26"/>
+    </Grid>
+  </Grid>
+</Border>

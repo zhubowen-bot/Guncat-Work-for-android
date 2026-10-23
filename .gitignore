@@ -1,0 +1,61 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# electron / electron-builder download caches (large binaries, machine-local)
+.electron-cache/
+.electron-builder-cache/
+
+# build output
+out/
+dist/
+release/
+*.tsbuildinfo
+
+# Android local toolchain / signing / generated assets
+.android-sdk/
+android/keystore/*.jks
+android/keystore/*.keystore
+android/app/src/main/assets/public/
+android/app/build/
+android/.gradle/
+*.apk.idsig
+
+# logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# runtime data / sandbox workspaces
+.guncat-data/
+workspaces/
+
+# 无头冒烟验证的中间产物
+.smoke/
+
+# 工具输出超长时的落盘暂存（每次调用现生成，不入库）
+.spill/
+
+# Agent 会话内的任务清单（运行时状态，不入库）
+.todo.json
+
+# esbuild 的临时目录（Windows 上系统 TEMP 会报 Access is denied，故固定到项目内）
+.tmp/
+.npm-cache/
+
+# Python 编译产物（tools/ 下的崩溃转储分析脚本会生成）
+__pycache__/
+*.pyc
+
+# editor / os
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# local env
+.env
+.env.local
+.env.*.local

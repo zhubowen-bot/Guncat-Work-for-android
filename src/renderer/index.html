@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self'"
+    />
+    <title>Guncat Work</title>
+  </head>
+  <body>
+    <!-- 窗口是立刻显示的，这里给一个纯 HTML 的加载占位：
+         即使渲染进程出问题，用户看到的也是「正在启动…」而不是一片空白。 -->
+    <div id="root">
+      <div id="boot-placeholder">
+        <div class="boot-title">Guncat Work</div>
+        <div class="boot-hint">正在启动…</div>
+      </div>
+    </div>
+    <style>
+      #boot-placeholder {
+        display: grid;
+        place-content: center;
+        height: 100vh;
+        gap: 6px;
+        text-align: center;
+        font-family: -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+        color: #6b6b73;
+      }
+      #boot-placeholder .boot-title {
+        font-size: 20px;
+        font-weight: 600;
+        color: #1c1c1e;
+      }
+      #boot-placeholder .boot-hint {
+        font-size: 13px;
+      }
+    </style>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

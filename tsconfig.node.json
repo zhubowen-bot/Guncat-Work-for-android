@@ -1,0 +1,47 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2023", "DOM"],
+    "types": ["node", "electron-vite/node"],
+    "noEmit": true,
+    "strict": false,
+    "strictNullChecks": false,
+    "strictFunctionTypes": false,
+    "useUnknownInCatchVariables": false,
+    "noImplicitAny": true,
+    "noImplicitOverride": false,
+    "noUnusedLocals": false,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
+    "paths": {
+      "@core/*": ["src/core/*"],
+      "@main/*": ["src/main/*"],
+      "@ipc/*": ["src/ipc/*"],
+      "@kit.ArkTS": ["src/core/platform/kit/ArkTS.ts"],
+      "@kit.CoreFileKit": ["src/core/platform/kit/CoreFileKit.ts"],
+      "@kit.NetworkKit": ["src/core/platform/kit/NetworkKit.ts"],
+      "@kit.BasicServicesKit": ["src/core/platform/kit/BasicServicesKit.ts"],
+      "@kit.AbilityKit": ["src/core/platform/kit/AbilityKit.ts"],
+      "@kit.ArkData": ["src/core/platform/kit/ArkData.ts"],
+      "@kit.PerformanceAnalysisKit": ["src/core/platform/kit/PerformanceAnalysisKit.ts"],
+      "@kit.ImageKit": ["src/core/platform/kit/ImageKit.ts"],
+      "@kit.PDFKit": ["src/core/platform/kit/PDFKit.ts"],
+      "libguncatjs.so": ["src/core/platform/native/libguncatjs.ts"]
+    },
+    "outDir": "./out/types-node"
+  },
+  "include": [
+    "src/core/**/*.ts",
+    "src/main/**/*.ts",
+    "src/preload/**/*.ts",
+    "src/ipc/**/*.ts",
+    "electron.vite.config.ts"
+  ]
+}

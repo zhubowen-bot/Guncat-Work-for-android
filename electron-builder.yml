@@ -1,0 +1,57 @@
+# electron-builder 打包配置
+#
+# ⚠️ 本文件目前**没有**参与实际打包流程。
+#    · 绿色版目录由 scripts/package-portable.mjs 组装（`npm run dist`）；
+#    · 安装包由 scripts/package-installer.mjs 构建（`npm run dist:setup`），
+#      它不用 electron-builder —— 原因见 installer/README.md「为什么不用 electron-builder 的 nsis 目标」。
+#    这一份保留下来只是记录当初的目标形态与参数，改打包行为请改上面两个脚本。
+#
+# 目标产物（都是双击即用，不需要装 Node、不需要命令行）：
+#   release/Guncat-Work-<版本>-portable.exe   免安装单文件，双击直接开
+#   release/Guncat-Work-<版本>-setup.exe      安装包，装完出开始菜单快捷方式
+appId: com.guncat.work
+productName: Guncat Work
+copyright: Copyright © 2024 zhubowen-bot
+
+directories:
+  output: release
+  buildResources: build
+
+# 打进 asar 的只有构建产物与包描述；随包资源走 extraResources（见下）
+files:
+  - out/**/*
+  - package.json
+  - '!**/*.map'
+
+# 把 resources/ 放到 process.resourcesPath/resources，
+# 与 src/main/paths.ts 的 resolveResourcesRoot() 约定一致
+extraResources:
+  - from: resources
+    to: resources
+
+asar: true
+
+win:
+  target:
+    - target: portable
+      arch:
+        - x64
+    - target: nsis
+      arch:
+        - x64
+
+portable:
+  artifactName: Guncat-Work-${version}-portable.exe
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Guncat Work
+  artifactName: Guncat-Work-${version}-setup.exe
+
+# 前端产物已经由 vite 打包，不需要再重建
+npmRebuild: false
+buildDependenciesFromSource: false
