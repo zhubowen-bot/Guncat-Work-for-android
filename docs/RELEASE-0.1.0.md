@@ -110,5 +110,5 @@ Windows 上合计约 **1010 项断言**，一条 `npm run verify` 跑完。
 
 ---
 
-**许可证**：Apache License 2.0 ·
+**许可证**：GNU General Public License v3.0 ·
 **上游项目**：[Guncat-Work-for-hmos](https://github.com/zhubowen-bot/Guncat-Work-for-hmos)（鸿蒙版，版本号与本项目各自独立）

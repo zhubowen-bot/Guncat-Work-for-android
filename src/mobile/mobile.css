@@ -361,18 +361,17 @@ body.platform-android code {
   .preview-overlay {
     padding: 0;
     place-items: stretch;
-  }
-
-  .preview {
-    width: 100%;
-    max-height: 100%;
-    border-radius: 0;
-    border: 0;
-    padding-top: env(safe-area-inset-top);
+    /* 工作区是全屏 fixed(z-index:65)，预览层必须压在它上面 */
+    z-index: 90;
   }
 
   .lightbox {
     padding: env(safe-area-inset-top) 8px env(safe-area-inset-bottom);
+    z-index: 91;
+  }
+
+  .overlay {
+    z-index: 95;
   }
 
   .speech-bar {

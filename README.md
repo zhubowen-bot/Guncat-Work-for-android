@@ -14,7 +14,7 @@
 ![version](https://img.shields.io/badge/version-0.2.1-blue)
 ![tools](https://img.shields.io/badge/%E5%86%85%E7%BD%AE%E5%B7%A5%E5%85%B7-45-informational)
 ![skills](https://img.shields.io/badge/%E6%8A%80%E8%83%BD-37-informational)
-[![license](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
+[![license](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 
 | 对话 | 会话抽屉 | 工作区 |
 | --- | --- | --- |
@@ -210,4 +210,4 @@ npm run typecheck:mobile
 
 ## 授权
 
-[Apache-2.0](LICENSE)
+[GPL-3.0](LICENSE)

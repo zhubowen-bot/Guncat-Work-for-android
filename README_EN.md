@@ -12,7 +12,7 @@
 ![React](https://img.shields.io/badge/React-19-blue)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue)
 ![version](https://img.shields.io/badge/version-0.2.1-blue)
-[![license](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
+[![license](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 
 | Chat | Session drawer | Workspace |
 | --- | --- | --- |
@@ -173,4 +173,4 @@ redirections; unsupported-command 127; `run_js` input/output and worker timeout;
 
 ## License
 
-[Apache-2.0](LICENSE)
+[GPL-3.0](LICENSE)

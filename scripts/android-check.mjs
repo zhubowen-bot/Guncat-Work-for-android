@@ -165,6 +165,20 @@ try {
   await page.click('.mobile-workspace-btn')
   await page.waitForTimeout(400)
   check('顶栏工作区按钮打开工作区', await page.locator('.workspace').isVisible())
+  const stacking = await page.evaluate(() => {
+    const probe = document.createElement('div')
+    probe.className = 'preview-overlay'
+    document.body.appendChild(probe)
+    const previewZ = Number(getComputedStyle(probe).zIndex)
+    const workspaceZ = Number(getComputedStyle(document.querySelector('.workspace')).zIndex)
+    probe.remove()
+    return { previewZ, workspaceZ }
+  })
+  check(
+    '工作区文件预览层压在工作区之上',
+    stacking.previewZ > stacking.workspaceZ,
+    `preview=${stacking.previewZ} workspace=${stacking.workspaceZ}`
+  )
   await page.screenshot({ path: path.join(SHOTS, 'workspace.png') })
   await page.click('.workspace .mobile-only')
   await page.waitForTimeout(300)

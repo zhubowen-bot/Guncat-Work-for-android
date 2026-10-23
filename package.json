@@ -4,7 +4,7 @@
   "description": "Guncat Work —— Electron 桌面版 + Android 版（WebView + React + TypeScript）的 Agent Harness 客户端",
   "main": "./out/main/index.js",
   "author": "zhubowen-bot",
-  "license": "Apache-2.0",
+  "license": "GPL-3.0-only",
   "private": true,
   "type": "module",
   "scripts": {

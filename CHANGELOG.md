@@ -496,4 +496,4 @@ cf80694 chore(port): 建立电脑版工程骨架，完成鸿蒙业务内核的�
 
 ---
 
-本项目基于 [Apache License 2.0](LICENSE) 开源。
+本项目基于 [GNU General Public License v3.0](LICENSE) 开源。
