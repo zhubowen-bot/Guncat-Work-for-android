@@ -20,7 +20,8 @@
 ## 平台边界
 
 - `src/core/` 是与桌面/鸿蒙共享的业务内核，**禁止**在这里写 WebView/Android 专属代码；平台差异放在 `src/mobile/`（浏览器适配层、宿主、原生桥）。
-- 内置 Shell 是 Android 版对 `run_command` 的条件适配：只支持文件操作类 POSIX 子集（见 `src/mobile/platform/shell.ts`），不支持 Python/Node/git 等真实可执行文件。改命令集时同步更新 README 与 `docs/ANDROID.md`。
+- `run_command` 在 Android 上是**真实进程**：随包内置 Termux 用户态（`android/.../TermuxBootstrap.java` 首次解压，`ShellManager.java` 跑 `abcd/bin/bash`），JS 侧在 `src/mobile/platform/shellExec.ts` 与 `mirror.ts`；系统 `/system/bin/sh` 是兜底。
+  `targetSdk` 必须是 28（Android 10+ 禁止 targetSdk ≥ 29 执行应用私有目录文件），内置 bootstrap 的路径按等长规则改写（见 `scripts/prepare-termux-bootstrap.py`）。`src/mobile/platform/shell.ts` 只是浏览器预览的回退实现，**不要**把它当成真机能力描述。改执行层、bootstrap 或镜像边界时同步更新 README、`docs/ANDROID.md`、`docs/THIRD-PARTY.md` 与 `android-check.mjs` 的断言。
 - 桌面构建与 Android 构建共用渲染层组件；新增界面必须同时检查 `mobile.css` 的窄屏表现。
 
 ## 危险命令审批（CommandGuard）

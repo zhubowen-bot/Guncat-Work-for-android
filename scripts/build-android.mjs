@@ -122,6 +122,9 @@ function verifyApkZipEntries(apk) {
   if (!entries.includes('assets/public/index.html')) {
     fail('APK 内缺少 assets/public/index.html')
   }
+  if (!entries.includes('assets/termux/bootstrap-aarch64.zip')) {
+    fail('APK 内缺少 assets/termux/bootstrap-aarch64.zip（内置终端无法工作）')
+  }
 }
 
 function ensureKeystore(javaHome, keytool) {
@@ -165,6 +168,17 @@ async function main() {
   log('2/7 复制随包资源（图标 / 智能体图片 / 技能引用文件）')
   fs.cpSync(path.join(ROOT, 'resources'), path.join(ASSETS, 'resources'), { recursive: true })
 
+  const bootstrapZip = path.join(ANDROID, 'app', 'src', 'main', 'assets', 'termux', 'bootstrap-aarch64.zip')
+  if (!exists(bootstrapZip)) {
+    fail(
+      '缺少内置终端资源 assets/termux/bootstrap-aarch64.zip。\n' +
+        '先下载 Termux bootstrap，再运行：\n' +
+        '  python scripts/prepare-termux-bootstrap.py\n' +
+        '  python scripts/add-termux-packages.py'
+    )
+  }
+  log(`内置终端资源：${(fs.statSync(bootstrapZip).size / 1024 / 1024).toFixed(1)} MB`)
+
   const { jar, buildTools, base } = resolveSdk()
   const javaHome = resolveJava()
   const isWin = process.platform === 'win32'
@@ -206,8 +220,8 @@ async function main() {
     '--manifest', manifest,
     '-A', assetsDir,
     '--java', genDir,
-    '--min-sdk-version', '29',
-    '--target-sdk-version', '35',
+    '--min-sdk-version', '28',
+    '--target-sdk-version', '28',
     '--version-code', String(versionCode),
     '--version-name', pkg.version,
     '--auto-add-overlay',
@@ -234,7 +248,7 @@ async function main() {
   log('5/7 dex（d8）')
   const dexDir = path.join(OUT, 'dex')
   fs.mkdirSync(dexDir, { recursive: true })
-  const d8Args = ['--release', '--min-api', '29', '--lib', jar, '--output', dexDir, ...walk(classesDir)]
+  const d8Args = ['--release', '--min-api', '28', '--lib', jar, '--output', dexDir, ...walk(classesDir)]
   if (isWin) {
     run(bat('d8'), d8Args, { env, shell: true })
   } else {

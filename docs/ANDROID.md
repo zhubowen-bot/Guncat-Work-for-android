@@ -9,10 +9,14 @@
 ┌──────────────────────────── Android APK ────────────────────────────┐
 │ MainActivity (Java)                                                  │
 │   ├── WebView  ←  http://127.0.0.1:<port>/index.html                 │
-│   │     └── React UI + SessionManager + memfs + 内置 Shell            │
+│   │     └── React UI + SessionManager + memfs + ShellTask            │
 │   ├── GuncatServer                                                  │
 │   │     ├── 静态资源（assets/public）                                 │
 │   │     └── /__fetch?url=…  同源流式反向代理                          │
+│   ├── ShellManager（GuncatShell 桥）                                 │
+│   │     ├── 内置 Termux 用户态（abcd/bin/bash，Python/pip/Git）            │
+│   │     ├── /system/bin/sh 兜底（mksh + toybox）                      │
+│   │     └── 工作区落盘：memfs ↔ files/guncat-data/workspaces          │
 │   ├── TextToSpeech / MediaStore / ACTION_VIEW / ACTION_SEND          │
 │   └── onShowFileChooser → HTML <input type=file>                     │
 └──────────────────────────────────────────────────────────────────────┘
@@ -62,7 +66,7 @@
 | `@kit.ArkTS` | `src/mobile/kit/ArkTS.ts` | 桌面版从 `node:util` 取 TextEncoder；浏览器原生已有，且 node:util 的 polyfill 在 bundle 里不可靠 |
 | `@kit.ImageKit` | `src/mobile/kit/ImageKit.ts` | 浏览器没有 `nativeImage`：用 `createImageBitmap` + canvas 解码/缩放/编码 |
 | `@kit.PDFKit` | `src/mobile/kit/PDFKit.ts` | 保留接口；**后端未接入**，PDF 工具会返回明确的「后端不可用」 |
-| `@core/platform/shellExec` | `src/mobile/platform/shellExec.ts` | 没有 `child_process`，改用内置 JS Shell |
+| `@core/platform/shellExec` | `src/mobile/platform/shellExec.ts` | 没有 `child_process`：走原生 `GuncatShell` 桥（真机）或内置 JS Shell（浏览器预览） |
 | `libguncatjs.so` | `src/mobile/platform/libguncatjs.ts` | `node:vm` → Web Worker（可真正终止） |
 | `@core/platform/native/svgRaster` | `src/mobile/platform/svgRaster.ts` | `@napi-rs/canvas` → 浏览器 Image + canvas |
 
@@ -82,23 +86,99 @@
 持久化策略的取舍：不能每次写都全量快照（流式回答时对话 JSON 每几百毫秒落一次盘），
 所以只记录真正变动的路径；目录删除按前缀清理；应用切后台/页面卸载时再全量兜底。
 
-## 4. 内置 Shell（`run_command` 的条件适配）
+## 4. 真实 Shell（`run_command`）
 
-Android 没有 `/bin/sh`，也没有可执行文件。`src/mobile/platform/shell.ts` 实现了一个
-POSIX 子集解释器：
+`run_command` 现在执行真实进程，不再是 JS 解释器模拟。入口仍是
+`src/mobile/platform/shellExec.ts` 的 `ShellTask`，接口与桌面版逐字一致，因此
+`CommandService` 的安全判定、审批、后台任务、超时、输出截断都不用改。
 
-- 词法：单/双引号、反斜杠转义、`$VAR` 展开；
-- 语法：`|`、`&&`、`||`、`;`、`>`、`>>`、`<`、`2>`、`2>&1`；
-- 内建命令：`pwd cd ls cat head tail wc grep find sed mkdir rm rmdir cp mv touch stat sort uniq
-  cut tr base64 echo printf true false test date uname whoami env which sleep clear exit`；
-- `python` / `node` / `git` / `curl` 等真实可执行文件：返回 127 + 明确原因 + 可用命令列表。
+### 4.1 两个后端
 
-安全策略仍在 core：`CommandGuard` 硬禁、四档审批、工作区越界判定全部保留；
-内置 Shell 本身只接受工作区内的相对路径解析。命中不支持的命令时是**失败**，不是静默跳过。
+| 后端 | 进程 | 能力 | 工作目录 |
+| --- | --- | --- | --- |
+| 内置终端（默认） | `abcd/bin/bash --noprofile --norc -c <command>` | Termux 用户态：bash、coreutils、grep/sed/awk、tar、curl、apt、**Python 3.14、pip、Git** | 工作区的设备镜像目录 |
+| 系统 Shell（兜底） | `/system/bin/sh -c <command>`（mksh）+ toybox | 管道/重定向/通配符 + 系统命令；无 Python/Git | 工作区的设备镜像目录 |
 
-`ShellTask` 保持与桌面同构的接口（`start/wait/snapshot/kill`），因此
-`CommandService` 的后台任务、超时、输出截断、`.spill/` 落盘逻辑不用改。
-内置命令都是同步短任务；`sleep` 等长等待会占用主线程，这是已知取舍。
+后端选择存在 `localStorage.guncat.shellBackend`，设置页「终端命令执行 (Shell)」可切换。
+默认内置终端 —— 用户不需要安装 Termux。
+
+### 4.2 为什么内置终端能执行：路径与 targetSdk
+
+Termux 的二进制里写死了 `/data/data/com.termux/files/usr`（31 字符）。我们的包名是
+`com.guncat.work`，路径更长，不能直接原地替换。构建期做了等长替换：
+
+| 原路径 | 替换为 | 长度 |
+| --- | --- | --- |
+| `/data/data/com.termux/files/usr` | `/data/data/com.guncat.work/abcd` | 31 → 31 |
+| `/data/data/com.termux/files/home` | `/data/data/com.guncat.work/abcde` | 32 → 32 |
+| `/data/data/com.termux`（仅文本脚本） | `/data/data/com.guncat.work` | 21 → 26 |
+
+`abcd` / `abcde` 是应用私有目录下的真实目录（不是符号链接）。等长替换保证 ELF 的
+`.dynstr` / rpath / shebang 不被改坏；脚本里的裸路径可以变长，所以在文本文件里单独替换。
+替换脚本见 `scripts/prepare-termux-bootstrap.py` 与 `scripts/add-termux-packages.py`。
+
+另一个硬前提是 **`targetSdk = 28`**：Android 10 起，targetSdk ≥ 29 的应用被系统禁止执行
+应用私有目录里的文件（W^X），Termux 官方也一直把 targetSdk 压在 28。清单与
+`scripts/build-android.mjs` 都写死 28；改成 29+ 会直接导致内置终端 `exec` 失败。
+
+### 4.3 首次安装（`TermuxBootstrap.java`）
+
+APK 的 `assets/termux/bootstrap-aarch64.zip` 是约 55MB 的压缩包（解压后 150MB+）。
+`ShellManager` 构造时启动后台解压到 `<app home>/abcd`：
+
+1. 读 `SYMLINKS.txt`（格式 `目标←./链接路径`），先解压全部文件、再统一 `Os.symlink`；
+2. `bin/`、`libexec/`、apt 的 methods/helper 设 0700；
+3. 创建 `abcde`（HOME）、`cache/apt`、`prefix/tmp`，写 apt 的 `Dir::Cache`；
+4. 写版本标记；版本变化时整目录重建。
+
+解压完成前 `run_command` 会返回明确的「内置终端还没有就绪（已解压 N 个文件）」，
+设置页轮询显示进度。只提供 **arm64**；非 arm64 设备自动建议切系统 Shell。
+
+### 4.4 为什么需要「工作区镜像」
+
+Android 版的 `node:fs` 是 memfs（`src/mobile/shims/fs.ts`），而真实命令只认真实文件。
+执行前 `src/mobile/platform/mirror.ts` 会把当前会话工作区写到
+`<filesDir>/guncat-data/workspaces/<conv>`，命令结束后再扫一遍设备目录：
+
+- 新增/修改的文件读回 memfs（`fs.writeFileSync`，沿用原有 IndexedDB 持久化）；
+- 命令删掉的文件从 memfs 删除；
+- 只镜像 `/guncat/data/workspaces/<会话>`，不同步设置、会话历史与 API Key；
+- 单文件 8MB、单次同步 32MB 封顶，超限会写进命令结果，不静默跳过；
+- 后台任务与文件工具同时改同一个文件时按「后写覆盖」；镜像状态只在本次页面生命周期内保存，
+  刷新页面后首次命令会重新上传（memfs 的 mtime 本来也会在恢复时重置）。
+
+镜像目录同时是两个后端的 cwd：命令里的相对路径、`ls`、`grep -r .`、`tar`、`git status`
+都落在真实会话工作区。
+
+### 4.5 进程管理（`ShellManager.java`）
+
+- `ProcessBuilder` + `redirectErrorStream(true)`，输出按 UTF-8 逐块读进环形缓冲；
+- 缓冲上限来自 `Constants.WORK_CMD_*_BUFFER_BYTES`（前台 256KB / 后台 512KB），超出从头丢，
+  通过 `droppedChars` 汇报，避免 `yes` 把 WebView 撑爆；
+- 超时/停止/`job_kill`：按 `/proc/<pid>/task/<pid>/children` 递归找子孙进程再 `sendSignal(pid, 9)`，
+  不只杀 bash；
+- 后台任务登记表仍由 `CommandService` 维护，`job_output` 的游标只对 JS 侧已读到的文本切片。
+
+环境变量用别名路径（`PREFIX=/data/data/com.guncat.work/abcd`、`HOME=.../abcde`、
+`TMPDIR=$PREFIX/tmp`、`LD_LIBRARY_PATH=$PREFIX/lib`、`PATH=$PREFIX/bin:/system/bin:...`），
+并覆盖上层传下来的 `/guncat/data`。
+
+### 4.6 已内置的软件与 `pkg install` 的边界
+
+bootstrap 里预装了 **Python 3.14**、**pip** 与 **Git 2.56**（含依赖库），`python3` / `git` 直接可用。
+基础镜像另有 apt/dpkg；但 Termux 仓库的新包仍引用 `/data/data/com.termux/...`，
+`pkg install` 装出来的文件路径不会自动改写。当前**不承诺** `pkg install` 的包可直接运行；
+需要什么工具应优先用已内置的 Python/Git，或后续实现「安装后路径修正」再放开。
+
+### 4.7 浏览器预览的回退
+
+`window.GuncatShell` 不存在时（`npm run dev:android`、`scripts/android-check.mjs`），
+`ShellTask` 回退到 `src/mobile/platform/shell.ts` 的 JS POSIX 子集。这条路径只服务开发预览：
+真机不会走，也不需要在 README 里承诺它支持什么。回退实现保留是因为浏览器冒烟要能在没有
+WebView 原生桥的环境里跑通工作模式。
+
+安全策略仍在 core：`CommandGuard` 硬禁、四档审批、工作区越界判定全部保留。内置 Linux 终端
+让「能跑什么」变多，但「谁批准」没有放宽；脚本同审、输出截断、`.spill/` 落盘照旧。
 
 ## 5. `run_js`
 
@@ -146,7 +226,9 @@ JS 侧 `src/mobile/native/net.ts` 只改写跨域 URL，同源资源请求保持
 
 全局状态新增 `sidebarOpen`；选择会话/引擎/模式时自动收起抽屉。
 
-## 8. 原生桥（`GuncatAndroid`）
+## 8. 原生桥
+
+### 8.1 `GuncatAndroid`（系统能力）
 
 `MainActivity.NativeBridge` 只暴露 WebView 做不到的事：
 
@@ -162,21 +244,53 @@ JS 侧 `src/mobile/native/net.ts` 只改写跨域 URL，同源资源请求保持
 文件**选择**不走桥：`onShowFileChooser` 返回 content URI，页面的 `File` API 读取后写入 memfs。
 文件**保存**返回 `ok:下载/Guncat Work/<name>` 或 `err:<原因>`，host 据此给用户提示。
 
+### 8.2 `GuncatShell`（命令执行 / 工作区落盘）
+
+`ShellManager` 单独注入，和系统能力桥分开 —— 它是「能执行任意命令」的入口，边界要清楚。
+
+| 方法 | 用途 |
+| --- | --- |
+| `info()` | 虚拟根 / 真实根 / 内置终端就绪状态与进度 / 系统 shell |
+| `start(command, cwd, envJson, limit, backend)` | 返回 `{id, pid, backend}` 或 `{ok:false, error}`；backend 为 `bundled` / `system` |
+| `read(id, from)` | 增量输出 + 运行状态 + 退出码 + 丢弃字符数 |
+| `kill(id)` / `release(id)` | 递归杀进程树 / 释放任务 |
+| `reinstallBundled()` | 删除并重新解压内置 Termux 用户态 |
+| `fsList` / `fsRead` / `fsWrite` / `fsDelete` / `fsMkdir` / `fsStat` | 工作区镜像；只接受 `/guncat/data` 内路径，做 canonical path 越界校验 |
+
+`info()` 与 `fs*` 都是同步方法（`@JavascriptInterface` 跑在 WebView 的 JS 线程），
+所以 `ShellTask.start()` 能保持同步签名；只有进程退出由 `wait()` / 定时轮询等待。
+
 ## 9. 构建
 
 见根目录 README「从源码构建 APK」。要点：
 
 - 不用 Gradle：`aapt2` → `javac --release 8` → `d8` → `jar uf` → `zipalign` → `apksigner`；
-- `minSdk 29`（MediaStore 下载目录 API 从 29 开始稳定）、`targetSdk 35`；
+- Java 侧 `ShellManager.java` / `TermuxBootstrap.java` 没有第三方依赖，d8 直接能编；
+- `minSdk 28`、**`targetSdk 28`**（执行私有目录文件的系统限制；Termux 同款做法）；
+- `assets/termux/bootstrap-aarch64.zip` 约 55MB，构建时由 `aapt2 -A` 打进 APK；产物 APK 约 61MB；
 - 清单与主题在 `android/app/src/main/`；
 - 签名密钥在 `android/keystore/guncat.jks`（git 忽略）；换钥匙会导致覆盖安装失败。
+
+内置终端资源的生成（不需要每次构建都跑，仓库已提交产物）：
+
+```bash
+# 1. 下载官方 arm64 bootstrap 到 .tmp/termux/bootstrap-aarch64.zip
+# 2. 等长改写 com.termux → com.guncat.work/abcd、abcde
+python scripts/prepare-termux-bootstrap.py
+# 3. 追加 Python 3.14 / pip / Git 及其依赖（.deb 放在 .tmp/termux/debs）
+python scripts/add-termux-packages.py
+```
 
 ## 10. 已知限制
 
 | 限制 | 说明 |
 | --- | --- |
-| PDF 解析 | `@kit.PDFKit` 后端未接；`parse_document` / `search_pdf` / `pdf_to_images` 返回清楚的能力缺失提示。桌面版的 PDF.js 后端可后续移植 |
-| 内置 Shell | 没有 Python/Node/git；重型流水线仍需桌面版 |
+| PDF 解析 | `@kit.PDFKit` 后端未接；`parse_document` / `search_pdf` / `pdf_to_images` 返回清楚的能力缺失提示 |
+| 内置终端架构 | 只带 arm64；x86/armv7 设备只能用系统 Shell |
+| `targetSdk 28` | Android 10+ 才允许执行应用私有目录文件，降到 28 是内置终端的硬前提；Play 商店新应用不适用此版本，本应用走 sideload |
+| APK 体积 / 磁盘 | APK 约 61MB；首次解压约占 150MB 私有空间 |
+| `pkg install` | 新装 deb 的路径仍写死 `com.termux`，当前未做逐包改写；内置 Python/pip/Git 可用，其他工具需后续适配 |
+| 工作区镜像 | 单文件 8MB / 单次 32MB；大文件、超大目录（如完整 `node_modules`）不会完整落地 |
 | 后台执行 | WebView 退后台可能被冻结；没有前台服务与常驻通知 |
 | 自定义工作区 | 只支持应用沙箱；导出走 ZIP |
 | 数据迁移 | 桌面版数据目录与 Android IndexedDB 不互通；没有导入通道 |
@@ -184,16 +298,25 @@ JS 侧 `src/mobile/native/net.ts` 只改写跨域 URL，同源资源请求保持
 
 ## 11. 验证记录
 
-自动化浏览器冒烟（390×844，Edge headless）：
+自动化浏览器冒烟（390×844，Edge headless，无原生桥 → 走 JS 回退）：
 
 - 首屏、抽屉、快捷设置、全屏设置；
 - mock SSE：保存配置 → 发消息 → 流式增量 → 标题生成 → 重启后会话与配置仍在；
-- 工作模式：模型返回 `tool_calls(run_command ls)` → 内核执行内置 Shell → tool 结果回传 →
-  第二轮收尾；
+- 工作模式：模型返回 `tool_calls(run_command ls)` → 内核执行 → tool 结果回传 → 第二轮收尾；
 - Shell：`echo >`、`>>`、`cat`、`ls -la`、`grep -n`、`cat | grep | wc -l`、`find`、`sed`、
-  `rm -r`、不支持命令的 127；
+  `rm -r`、回退实现对不存在命令的 127；
 - `run_js`：输入/输出、完成值、`while(true)` 在 1.5s 被终止；
 - `npm run typecheck`（node/web/mobile）。
 
-真机验证建议：安装 APK 后先测「设置保存 → 聊天流式 → 工作区上传 → 工作模式 ls →
-导出 Word/ZIP 到下载目录 → 系统 TTS」。
+真机验证建议：安装 APK 后依次测
+
+1. 首启：等待「设置 → 终端命令执行」显示内置终端「已就绪」（首次解压约 150MB）；
+2. 基础命令：工作模式 `run_command` 执行
+   `pwd; ls -la; echo hi > a.txt; cat a.txt; uname -a`，确认 `a.txt` 出现在工作区面板；
+3. Linux 工具链：`bash --version`、`python3 --version`、`python3 -c "print(1+1)"`、
+   `git --version`、`git init && git status`、`grep -rn .`、`tar -czf x.tgz a.txt`；
+4. 工作区回写：`mkdir -p d && echo x > d/f.txt`、`rm a.txt`、`git add/commit`，
+   刷新后工作区与命令结果一致；
+5. 超时/终止：`sleep 60` 会被超时杀掉；后台 `sleep 60` 用 `job_kill` 结束；
+6. 兜底：设置切到系统 Shell，重复第 2 步，确认仍可用（无 Python/pip/Git）；
+7. 导出 Word/ZIP、系统 TTS 回归。

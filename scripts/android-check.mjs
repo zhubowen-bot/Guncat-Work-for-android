@@ -204,6 +204,11 @@ try {
   check('内置 Shell 写文件/管道', shell.pipeline.code === 0 && shell.pipeline.stdout.trim() === '1', shell.pipeline.stdout.trim())
   check('内置 Shell 不支持命令返回 127', shell.unsupported.code === 127)
 
+  // 浏览器里没有 window.GuncatShell，ShellTask 必须如实报告「原生桥不可用」并回退，
+  // 而不是让工作模式误以为在真机上执行命令。
+  const shellMode = await page.evaluate(() => window.__guncatDebug.shellStatus())
+  check('无原生桥时 Shell 回退', shellMode.available === false && shellMode.backend === 'bundled')
+
   const js = await page.evaluate(async () => {
     const { runJs } = window.__guncatDebug
     const ok = await runJs('write("out.txt", inputs["a.txt"].toUpperCase()); inputs["a.txt"].length', {

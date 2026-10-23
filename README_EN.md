@@ -6,12 +6,12 @@
 > provider protocols, a multi-round tool loop with a sandboxed workspace, interactive UI,
 > Office output, and an auditable command path** — shipped as an APK.
 
-![Android](https://img.shields.io/badge/Android-10%2B-3ddc84)
-![minSdk](https://img.shields.io/badge/minSdk-29-blue)
-![targetSdk](https://img.shields.io/badge/targetSdk-35-blue)
+![Android](https://img.shields.io/badge/Android-9%2B-3ddc84)
+![minSdk](https://img.shields.io/badge/minSdk-28-blue)
+![targetSdk](https://img.shields.io/badge/targetSdk-28-blue)
 ![React](https://img.shields.io/badge/React-19-blue)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue)
-![version](https://img.shields.io/badge/version-0.2.1-blue)
+![version](https://img.shields.io/badge/version-0.3.0-blue)
 [![license](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 
 | Chat | Session drawer | Workspace |
@@ -41,7 +41,7 @@ This is not a WebView wrapper around the Electron UI. Android has no Node main p
 | --- | --- |
 | Electron main process + preload IPC | **In-WebView host**: `SessionManager` runs inside the page; `window.guncat` keeps the exact preload signature, so the React UI is unchanged |
 | Node `fs` | **memfs + IndexedDB persistence**: synchronous `fs` semantics retained; conversations, settings and workspace files survive restarts |
-| Node `child_process` | **Built-in JS shell**: pipes, `&&`/`||`, redirections, file-oriented POSIX subset; Python/Node/git return an explicit "not supported" instead of pretending |
+| Node `child_process` | **Bundled Termux userland**: bash, coreutils, grep/sed/awk, tar, curl, **Python, pip and Git** ship inside the APK and are extracted to app-private storage on first launch — no external Termux. System `/system/bin/sh` is the fallback |
 | Node `vm` for `run_js` | **Web Worker**: a timeout or infinite loop is really terminated |
 | Electron dialogs | HTML file input (`onShowFileChooser`) + native download/share bridge |
 | Electron `nativeImage` | `createImageBitmap` + canvas (resize, thumbnails, SVG rasterization) |
@@ -65,7 +65,7 @@ This is not a WebView wrapper around the Electron UI. Android has no Node main p
 
 ## Install
 
-1. Install `release/Guncat-Work-0.2.1-android.apk` (Android 10+; allow unknown sources).
+1. Install `release/Guncat-Work-0.3.0-android.apk` (Android 10+; allow unknown sources).
 2. Open **Settings → Provider**, fill Base URL, API Key and model, then save.
    Supported: OpenAI Completions, OpenAI Responses, Anthropic Messages (all with image input).
 3. Use the chat. In work/interactive modes, files enter through **Workspace → Upload**; in chat
@@ -100,26 +100,35 @@ npm run dev:android   # http://127.0.0.1:5174
 Without `window.GuncatAndroid`, saving, system TTS and the streaming proxy degrade to browser
 behavior. The APK is the source of truth for full capability.
 
-## Built-in shell
+## Built-in Linux terminal
 
-`run_command` is adapted, not removed. It executes a POSIX subset inside the app sandbox workspace:
+`run_command` executes **real processes**, with no separate Termux install:
 
-- Supported: `pwd` `cd` `ls` `cat` `head` `tail` `wc` `grep` `find` `sed` `mkdir` `rm` `cp` `mv`
-  `touch` `stat` `sort` `uniq` `cut` `tr` `base64` `echo` `printf` `true` `false` `test` `date`
-  `uname` `whoami` `env` `which` `sleep`
-- Supported syntax: `|`, `&&`, `||`, `;`, `>`, `>>`, `<`, `2>`
-- Not supported: `python`, `node`, `npm`, `git`, `curl`, `wget`, `ffmpeg`, `libreoffice`, `pandoc`, …
-  These return exit code 127 with an explicit explanation and the list of available commands.
+- **Built-in terminal (default)**: an arm64 Termux userland ships inside the APK — `bash`,
+  coreutils, `grep` `sed` `awk` `find` `xargs` `tar` `curl`, `apt`, plus **Python 3.14**, **pip** and **Git**.
+  On first launch the ~55MB bootstrap is extracted into app-private storage; afterwards commands
+  run directly. Real pipes, redirections, globbing, command substitution, loops/functions,
+  `&&`/`||`, exit codes and background jobs all work.
+- Before each command the session workspace is mirrored from memfs to app-private storage
+  (`.../files/guncat-data/workspaces/<conversation>`), and new/modified/deleted files are synced
+  back afterwards — so `ls`, `grep -r`, `tar` and `git status` see the same files as the UI.
+- **System shell (fallback)**: if the built-in terminal is unavailable (non-arm64 or extraction
+  failure), the app can use `/system/bin/sh` (mksh + toybox) with no Python/pip/Git.
+- Settings → “Terminal (Shell)” switches backends, shows extraction progress and can reinstall.
 
-File organization, text search/editing and workspace analysis work entirely on-device; heavy
-Python/Office CLI pipelines still belong on the desktop. This is a platform boundary, not a TODO.
+The APK grows to ~61MB and `targetSdk` is pinned to **28**: Android 10+ forbids apps targeting
+29+ from executing files in app-private storage (Termux itself has always used 28). This is a hard
+requirement for the built-in terminal.
+
+Mirror limits: 8 MB per file and 32 MB per sync; settings, conversation history and API keys are
+never mirrored. Oversized files are reported explicitly instead of silently skipped.
 
 ## Capability matrix
 
 | Capability | Android |
 | --- | --- |
 | Streaming chat, reasoning, web search | ✅ |
-| Work-mode agent loop, 45 tools, skills | ✅ (command tools use the built-in shell) |
+| Work-mode agent loop, 45 tools, skills | ✅ (command tools use the built-in Linux terminal) |
 | Interactive UI rendering | ✅ |
 | Office generation (docx/xlsx/pptx/svg) | ✅ saved to `Downloads/Guncat Work` |
 | Image viewing / thumbnails / SVG rasterization | ✅ |
@@ -128,6 +137,7 @@ Python/Office CLI pipelines still belong on the desktop. This is a platform boun
 | Read-aloud | ✅ system TTS |
 | Voice input | ✅ MediaRecorder + provider transcription |
 | Persistence | ✅ IndexedDB (app-private, removed on uninstall) |
+| Built-in Linux terminal (bash / Python / pip / Git) | ✅ bundled in the APK, arm64; extracted on first launch |
 | PDF parsing / page rendering | ⚠️ backend not ported yet; tools return a clear "backend unavailable" |
 | Custom workspace directory | ⚠️ not supported; use the app sandbox and ZIP export |
 | "Reveal in file manager" | ⚠️ replaced by save/share to Downloads |
@@ -140,16 +150,16 @@ src/core/        shared business core (no platform code)
 src/main/        Electron main process (desktop)
 src/renderer/    React UI (shared)
 src/mobile/      Android host: boot, window.guncat host, browser kits, shims, shell, native bridge
-android/         Java WebView shell, local server/proxy, resources, keystore
+android/         Java WebView shell, local server/proxy, bundled Termux bootstrap, keystore
 ```
 
 ## Verification
 
 Browser smoke tests (Edge/Chrome at 390×844) cover: first paint, drawer, quick-settings sheet,
 full-screen settings; save config → create conversation → mocked SSE streaming → reload persistence;
-work mode tool call (`run_command` → built-in shell → result → final answer); shell pipes and
-redirections; unsupported-command 127; `run_js` input/output and worker timeout; plus
-`npm run typecheck` across node/web/mobile.
+work mode tool call (`run_command` → built-in terminal → result → final answer); shell pipes and
+redirections; the JS fallback used by the browser preview and its 127 hint for missing commands;
+`run_js` input/output and worker timeout; plus `npm run typecheck` across node/web/mobile.
 
 ## Privacy
 
@@ -161,9 +171,14 @@ redirections; unsupported-command 127; `run_js` input/output and worker timeout;
 ## Known limitations
 
 1. PDF parsing backend is not ported yet.
-2. The built-in shell is not a full Linux userland.
-3. Background execution is not guaranteed (no foreground service).
-4. No custom workspace directory and no system "open with" intake.
+2. The built-in terminal is **arm64-only**; other ABIs fall back to the system shell. `targetSdk`
+   is pinned to 28 (apps targeting 29+ cannot execute app-private files), which is why the app is
+   sideload-only.
+3. First launch extracts ~150MB; the APK is ~61MB.
+4. `pkg install` packages still contain Termux's original paths and are not rewritten yet; the
+   bundled Python/pip/Git work out of the box.
+5. Background execution is not guaranteed (no foreground service).
+6. No custom workspace directory and no system "open with" intake.
 
 ## Docs
 
@@ -173,4 +188,5 @@ redirections; unsupported-command 127; `run_js` input/output and worker timeout;
 
 ## License
 
-[GPL-3.0](LICENSE)
+GPL-3.0. The built-in terminal uses the Termux bootstrap (GPL-3.0); see
+[docs/THIRD-PARTY.md](docs/THIRD-PARTY.md).

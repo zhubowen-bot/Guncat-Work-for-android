@@ -7,6 +7,52 @@
 
 ---
 
+## Android 版（0.3.0-android）
+
+把 `run_command` 从「JS 模拟的 POSIX 子集」换成**随 APK 内置的真实 Linux 用户态**，
+不需要用户安装 Termux。产物 `release/Guncat-Work-0.3.0-android.apk`（arm64，约 61MB）。
+
+### 内置 Linux 终端
+
+- **Termux bootstrap 随包分发**：`assets/termux/bootstrap-aarch64.zip`（约 55MB）来自
+  termux-packages 官方 release，包含 bash、coreutils、grep/sed/awk、tar、curl、apt，
+  并额外合并 **Python 3.14**、**pip** 与 **Git 2.56** 及依赖；首次启动由
+  `TermuxBootstrap.java` 解压到应用私有目录 `abcd`（HOME 为 `abcde`）。
+- **路径等长改写**：Termux 二进制写死 `/data/data/com.termux/files/usr`（31 字符），
+  构建期替换为 `/data/data/com.guncat.work/abcd`（31 字符），home 32→32；脚本里的裸路径
+  另做文本替换。生成脚本：`scripts/prepare-termux-bootstrap.py`、`scripts/add-termux-packages.py`。
+- **targetSdk 28**：Android 10+ 禁止 targetSdk ≥ 29 的应用执行私有目录文件；内置终端必须
+  降 targetSdk（Termux 官方同款做法），`minSdk` 同步为 28。
+- **ShellManager**：`ProcessBuilder` 直接拉起 `abcd/bin/bash --noprofile --norc -c`，
+  stdout/stderr 合并后按 UTF-8 逐块读取；环境变量用 `PREFIX`/`HOME`/`TMPDIR`/`LD_LIBRARY_PATH`。
+- **工作区镜像**（`src/mobile/platform/mirror.ts`）：执行前把会话工作区从 memfs 写到
+  `files/guncat-data/workspaces/<会话>`，执行后同步回 memfs。单文件 8MB / 单次 32MB 封顶，
+  不同步设置、会话历史与 API Key。
+- **进程管理**：输出环形缓冲 + 丢弃计数；超时/停止/`job_kill` 按 `/proc` 递归杀子孙进程。
+- **系统 Shell 兜底**：非 arm64 或解压失败时可切 `/system/bin/sh`，能力降级但工作区镜像照旧。
+- **设置页**「终端命令执行 (Shell)」：切换内置/系统后端、显示首次解压进度、重新安装。
+- **浏览器预览**仍回退到 `src/mobile/platform/shell.ts` 的 JS 子集（无 `window.GuncatShell` 时）。
+- 移除 0.3.0 早期版本的外部 Termux `RUN_COMMAND` 后端与权限/接收器，避免「还要装 Termux」的歧义。
+- 文档同步：README / README_EN / `docs/ANDROID.md` / `docs/THIRD-PARTY.md` / `AGENTS.md`。
+
+### 已知边界
+
+- 内置终端只提供 arm64；APK 约 61MB、首次解压约 150MB。
+- `pkg install` 的新包仍带 `com.termux` 路径，当前未做逐包改写；内置 Python/Git 可直接用。
+- `targetSdk 28` 只适合 sideload，不满足 Google Play 新应用要求。
+
+### 验证
+
+- `npm run typecheck`（node/web/mobile）；
+- `javac --release 8` 单独编译 Java 源；
+- `npm run dist:android` 出包并通过 aapt2/d8/zipalign/apksigner；APK 内校验
+  `assets/termux/bootstrap-aarch64.zip`、`targetSdk 28`；
+- 浏览器冒烟（无原生桥）覆盖回退路径与工作模式工具调用。
+- **尚未完成真机验证**：本机没有 Android 设备/模拟器，内置 bash/Python/pip/Git 的实际启动
+  需要在手机上按 `docs/ANDROID.md` 第 11 节逐项确认。
+
+---
+
 ## Android 版（0.2.1-android）
 
 首个 Android 版本：保留与桌面版相同的业务内核与界面，替换掉 Android 上不存在的宿主能力。

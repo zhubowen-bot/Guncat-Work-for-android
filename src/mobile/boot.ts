@@ -10,6 +10,7 @@ import { installFetchProxy } from './native/net'
 import { pickFilesFromDevice } from './native/picker'
 import { createMobileHost } from './host'
 import { runShell } from './platform/shell'
+import { shellStatus } from './platform/shellExec'
 import { runJs } from './platform/libguncatjs'
 
 export const DATA_ROOT = '/guncat/data'
@@ -61,7 +62,8 @@ export async function bootMobile(): Promise<void> {
     dataRoot: DATA_ROOT,
     resourcesRoot: RESOURCES_ROOT,
     runShell,
-    runJs
+    runJs,
+    shellStatus
   }
   await session.bootstrap()
   document.documentElement.dataset.platform = 'android'

@@ -13,6 +13,14 @@ import { Constants } from '@core/common/Constants'
 import { useStore } from '../store'
 import { useSpeech } from '../speech/speechStore'
 import { IconChevronDown, IconClose } from '../icons'
+import {
+  reinstallBundled,
+  setShellBackend,
+  shellBackend,
+  shellBridgeAvailable,
+  shellInfo
+} from '../shellSettings'
+import type { ShellBackend, ShellInfo } from '../shellSettings'
 
 /**
  * 接入方式的文案表。三条占位符/提示逐字对齐原版 SettingsPanel.ets 的
@@ -318,6 +326,10 @@ export function SettingsDialog({ open: openOverride }: SettingsDialogProps = {})
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [multimodalOpen, setMultimodalOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
+  // 终端后端只在 Android 上有得选（window.GuncatShell 存在时）；桌面端整块不渲染
+  const [shellOpen, setShellOpen] = useState(false)
+  const [shellBack, setShellBack] = useState<ShellBackend>('bundled')
+  const [shell, setShell] = useState<ShellInfo | null>(null)
 
   useEffect(() => {
     if (!open) {
@@ -341,6 +353,9 @@ export function SettingsDialog({ open: openOverride }: SettingsDialogProps = {})
     setAdvancedOpen(false)
     setMultimodalOpen(false)
     setSearchOpen(false)
+    setShellOpen(false)
+    setShellBack(shellBackend())
+    setShell(shellInfo())
     // 引擎目录来自主进程（单一事实来源在 core 的 LocalWebSearch）
     void window.guncat.settings
       .searchEngines()
@@ -348,12 +363,20 @@ export function SettingsDialog({ open: openOverride }: SettingsDialogProps = {})
       .catch(() => setEngines([]))
   }, [open, settings])
 
+  // 首次安装内置终端要解压 90MB+，设置页开着时轮询进度；就绪后自动停
+  useEffect(() => {
+    if (!open || !shellBridgeAvailable() || shell?.bundledReady === true) {
+      return
+    }
+    const timer = window.setInterval(() => setShell(shellInfo()), 1200)
+    return () => window.clearInterval(timer)
+  }, [open, shell?.bundledReady])
+
   if (!open) {
     return null
   }
 
   const profiles = settings?.apiProfiles ?? []
-
   /** 切换配置方案：主进程会把该方案写回运行时生效的配置，这里只要重新读一次设置 */
   async function switchProfile(profileId: string): Promise<void> {
     if (profileId === settings?.currentApiProfileId) {
@@ -397,6 +420,17 @@ export function SettingsDialog({ open: openOverride }: SettingsDialogProps = {})
 
   function update<K extends keyof ApiConfigDto>(key: K, value: ApiConfigDto[K]): void {
     setDraft((d) => ({ ...d, [key]: value }))
+  }
+
+  /** 切换终端后端：立刻写同步存储（下一条命令就生效），同时落进设置偏好 */
+  function chooseShellBackend(choice: ShellBackend): void {
+    setShellBack(choice)
+    setShellBackend(choice)
+    void window.guncat.settings.saveString('shell_backend', choice)
+  }
+
+  function refreshShell(): void {
+    setShell(shellInfo())
   }
 
   function updateSearch<K extends keyof SearchDraft>(key: K, value: SearchDraft[K]): void {
@@ -758,6 +792,76 @@ export function SettingsDialog({ open: openOverride }: SettingsDialogProps = {})
               </>
             ) : null}
           </SettingsSection>
+
+          {/* 终端后端：只在 Android 上出现。切的是真机执行命令的进程环境，
+              不是「显示样式」；切换后下一条 run_command 生效。 */}
+          {shellBridgeAvailable() ? (
+            <SettingsSection
+              title="终端命令执行 (Shell)"
+              open={shellOpen}
+              onToggle={() => setShellOpen((v) => !v)}
+            >
+              <div className="field__hint" style={{ marginBottom: 10 }}>
+                工作模式里的 <code>run_command</code> 默认走<b>随包内置的 Termux 用户态</b>：
+                真正的 bash、coreutils、grep/sed/awk/tar，不需要另外安装 Termux。
+                命令在你的会话工作区真实目录里执行，执行前的文件会先落地、执行后再同步回工作区。
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '4px 0 10px' }}>
+                <button
+                  className={'btn' + (shellBack === 'bundled' ? ' btn--primary' : '')}
+                  onClick={() => chooseShellBackend('bundled')}
+                >
+                  内置终端（推荐）
+                </button>
+                <button
+                  className={'btn' + (shellBack === 'system' ? ' btn--primary' : '')}
+                  onClick={() => chooseShellBackend('system')}
+                >
+                  系统 Shell
+                </button>
+              </div>
+
+              <div className="field__hint" style={{ marginBottom: 6 }}>
+                内置终端：
+                {!shell?.bundledSupported
+                  ? '当前设备 ABI 不在内置范围（仅 arm64），请改用系统 Shell'
+                  : shell?.bundledReady
+                    ? '已就绪'
+                    : shell?.bundledInstalling
+                      ? `首次安装中，已解压 ${shell?.bundledExtracted ?? 0} 个文件`
+                      : '未就绪'}
+                {shell?.bundledError ? ` · ${shell.bundledError}` : ''}
+                <br />
+                系统 Shell：<code>{shell?.shell || '/system/bin/sh'}</code>
+                {shell?.abi ? ` · ${shell.abi}` : ''}
+                {shell?.error ? ` · ${shell.error}` : ''}
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '8px 0' }}>
+                <button
+                  className="btn"
+                  onClick={() => {
+                    reinstallBundled()
+                    window.setTimeout(refreshShell, 600)
+                  }}
+                >
+                  重新安装内置终端
+                </button>
+                <button className="btn" onClick={refreshShell}>
+                  重新检测
+                </button>
+              </div>
+
+              {shellBack === 'system' ? (
+                <div className="field__hint">
+                  系统 Shell 用的是 Android 自带的 <code>/system/bin/sh</code> 与 toybox，
+                  没有 bash 的完整特性，也没有 Python/Node/git；内置终端才带 Termux 的 Linux 工具链。
+                  切换只影响之后执行的命令。
+                </div>
+              ) : null}
+            </SettingsSection>
+          ) : null}
 
           {/* 自动朗读开关：对应原版 ChatPage 顶栏的 autoReadEnabled。
               放在「语音输入」分隔线之前 —— 它属于朗读，不属于转写。 */}

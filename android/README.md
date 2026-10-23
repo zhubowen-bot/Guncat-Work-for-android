@@ -1,14 +1,17 @@
 # Android 工程
 
-这是一个**不用 Gradle** 的最小 Android 工程：只有一个 `Activity` + 一个本地 HTTP 服务。
-构建由根目录的 `scripts/build-android.mjs` 调 SDK 自带工具完成。
+这是一个**不用 Gradle** 的最小 Android 工程：一个 `Activity` + 一个本地 HTTP 服务 +
+一个真实命令执行桥。构建由根目录的 `scripts/build-android.mjs` 调 SDK 自带工具完成。
 
 ```text
 app/src/main/
 ├── AndroidManifest.xml
+├── assets/termux/            内置 Termux bootstrap（构建产物，勿手改）
 ├── java/com/guncat/work/
-│   ├── MainActivity.java   WebView、文件选择、TTS、下载/分享、返回键
-│   └── GuncatServer.java   静态资源 + /__fetch 流式反向代理
+│   ├── MainActivity.java        WebView、文件选择、TTS、下载/分享、返回键
+│   ├── GuncatServer.java        静态资源 + /__fetch 流式反向代理
+│   ├── TermuxBootstrap.java     首次解压内置用户态（zip + SYMLINKS.txt）
+│   └── ShellManager.java        bash / 系统 sh 执行 + 工作区落盘
 ├── res/                    图标、主题（day/night）、网络安全配置
 └── assets/public/          Vite 构建产物（由脚本生成，勿手改）
 ```

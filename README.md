@@ -6,12 +6,12 @@
 > 多轮工具循环与沙箱工作区、交互式界面、Office 直出、可审计的命令执行**，
 > 装成 APK 就能在手机上用。
 
-![Android](https://img.shields.io/badge/Android-10%2B-3ddc84)
-![minSdk](https://img.shields.io/badge/minSdk-29-blue)
-![targetSdk](https://img.shields.io/badge/targetSdk-35-blue)
+![Android](https://img.shields.io/badge/Android-9%2B-3ddc84)
+![minSdk](https://img.shields.io/badge/minSdk-28-blue)
+![targetSdk](https://img.shields.io/badge/targetSdk-28-blue)
 ![React](https://img.shields.io/badge/React-19-blue)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue)
-![version](https://img.shields.io/badge/version-0.2.1-blue)
+![version](https://img.shields.io/badge/version-0.3.0-blue)
 ![tools](https://img.shields.io/badge/%E5%86%85%E7%BD%AE%E5%B7%A5%E5%85%B7-45-informational)
 ![skills](https://img.shields.io/badge/%E6%8A%80%E8%83%BD-37-informational)
 [![license](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
@@ -36,14 +36,14 @@
 
 ## Android 版做了什么
 
-这不是把 Electron 界面套个 WebView 壳。Android 没有 Node 主进程、没有 `/bin/sh`、
-没有可写的安装目录，因此做了以下替换（详见 [docs/ANDROID.md](docs/ANDROID.md)）：
+这不是把 Electron 界面套个 WebView 壳。Android 没有 Node 主进程、没有可直接调用的
+POSIX 用户态，因此做了以下替换（详见 [docs/ANDROID.md](docs/ANDROID.md)）：
 
 | 桌面能力 | Android 实现 |
 | --- | --- |
 | Electron 主进程 + preload IPC | **WebView 内宿主**：`SessionManager` 直接跑在页面里，`window.guncat` 接口签名与桌面 preload 完全一致，渲染层不用改 |
 | Node `fs` | **memfs 内存文件系统 + IndexedDB 持久化**：仍保留同步 `fs` 语义，对话、配置、工作区文件都在应用私有存储中，重启不丢 |
-| Node `child_process` | **内置 JS Shell**：解析管道 / `&&` / `||` / 重定向，支持文件操作类命令；Python/Node/git 等明确返回「不支持」，不假装成功 |
+| Node `child_process` | **内置 Termux 用户态**：随 APK 打包 bash、coreutils、grep/sed/awk、tar、curl、**python、git**；首次启动解压到应用私有目录，不依赖外部 Termux。系统 `/system/bin/sh` 作为兜底 |
 | Node `vm` 跑 `run_js` | **Web Worker**：超时或死循环时直接 `terminate()`，是真正可中断的 |
 | Electron `dialog` | HTML 文件选择器（WebView 的 `onShowFileChooser`）+ 原生下载/分享桥 |
 | Electron `nativeImage` | 浏览器 `createImageBitmap` + canvas（缩放、缩略图、SVG 栅格化） |
@@ -66,7 +66,8 @@
 
 ## 快速开始（安装）
 
-1. 从 `release/Guncat-Work-0.2.1-android.apk` 安装（Android 10 及以上；需要允许「安装未知来源应用」）。
+1. 从 `release/Guncat-Work-0.3.0-android.apk` 安装（arm64，Android 9+；导出到系统「下载」需 Android 10+；需要允许「安装未知来源应用」）。
+   首次启动会解压内置终端（约 55MB，几十秒），状态可在「设置 → 终端命令执行」查看。
 2. 打开后进入「设置 → 接入方式」，填 Base URL、API Key、模型名，保存。
    - 支持 OpenAI Completions（`/chat/completions`）、OpenAI Responses（`/responses`）、
      Anthropic Messages（`/messages`）三种协议，均可直传图片。
@@ -74,7 +75,7 @@
 3. 回到对话页开始用。输入框下方的回形针/相机在聊天模式是附件，在工作/交互模式会自动加入工作区；
    也可以点顶栏的文件夹按钮打开工作区统一管理文件。
 
-> 建议先在工作模式里发一句「把工作区里的文件列一下」，确认内置 Shell 与工具链正常。
+> 建议先在工作模式里发一句「把工作区里的文件列一下」，确认内置终端与工具链正常。
 
 ## 从源码构建 APK
 
@@ -96,10 +97,14 @@ npm run dist:android
 
 1. `vite build --config vite.mobile.config.ts` → `android/app/src/main/assets/public`
 2. 复制 `resources/`（智能体提示词、技能库、图标）到 assets
-3. `aapt2 compile/link` 生成资源 APK
+3. `aapt2 compile/link` 生成资源 APK（含 `assets/termux/bootstrap-aarch64.zip`）
 4. `javac` 编译 `android/app/src/main/java`（Java 8 目标）
 5. `d8` 生成 `classes.dex`
 6. `zipalign` 对齐、`apksigner` 签名
+
+内置终端资源由 `scripts/prepare-termux-bootstrap.py`（基础用户态）和
+`scripts/add-termux-packages.py`（追加 Python/Git）生成；产物已随仓库提交，
+普通构建不需要联网。详见 [docs/ANDROID.md](docs/ANDROID.md)。
 
 首次构建会在 `android/keystore/` 生成自用签名密钥（密码见该目录 README），之后的升级包必须用同一把钥匙签名。
 
@@ -111,26 +116,34 @@ npm run dev:android   # http://127.0.0.1:5174
 
 浏览器里没有 `window.GuncatAndroid`，文件保存、系统 TTS、流式代理会退化为浏览器行为；完整能力以 APK 为准。
 
-## 内置 Shell 能做什么
+## 内置 Linux 终端能做什么
 
-`run_command` 在 Android 上不是被砍掉，而是换成一套**只作用于应用沙箱工作区**的 POSIX 子集：
+`run_command` 执行的是**真的进程**，不需要另外安装 Termux：
 
-- 已支持：`pwd` `cd` `ls` `cat` `head` `tail` `wc` `grep`（含 `-r/-n/-i`）`find` `sed`（`s///`）
-  `mkdir` `rm` `cp` `mv` `touch` `stat` `sort` `uniq` `cut` `tr` `base64` `echo` `printf`
-  `true` `false` `test` `date` `uname` `whoami` `env` `which` `sleep`
-- 已支持：管道 `|`、`&&`、`||`、`;`、`>`、`>>`、`<`、`2>`
-- 不支持：`python` `node` `npm` `git` `curl` `wget` `ffmpeg` `libreoffice` `pandoc` 等需要真实可执行文件的命令。
-  命中时会返回 127 和一句明确的说明，并列出可用命令 —— 不会静默失败，也不会假装执行成功。
+- **内置终端（默认）**：APK 里带一套 arm64 的 Termux 用户态 —— `bash`、coreutils、
+  `grep` `sed` `awk` `find` `xargs` `tar` `curl`、`apt`，以及预装的 **Python 3.14**、**pip** 和 **Git**。
+  首次启动把 bootstrap（约 55MB 压缩）解压到应用私有目录的 `abcd`，之后直接执行。
+  真正的管道、重定向、通配符、命令替换、循环/函数、`&&`/`||`、退出码、后台作业都在。
+- 执行命令前，App 会把当前会话工作区从 memfs 镜像到应用私有目录
+  （`/data/data/com.guncat.work/files/guncat-data/workspaces/<会话>`），
+  命令结束后把新建/修改/删除的文件同步回工作区 —— 所以 `ls`、`grep -r`、`tar`、`git status`
+  看到的就是你在界面上看到的文件。
+- **系统 Shell（兜底）**：内置终端不可用（非 arm64、解压失败）时可切到
+  `/system/bin/sh`（mksh + toybox），仍支持管道、重定向和工作区镜像，但没有 Python/Git。
+- 设置页「终端命令执行 (Shell)」可切换后端、查看内置终端安装进度、重新安装。
 
-这意味着：**文件整理、文本检索与编辑、工作区分析**可以完全在手机上完成；
-需要 Python/Office CLI 的重型流水线仍然要回桌面版。这是平台边界，不是待办。
+APK 因此从 7MB 增到约 **60MB**，并把 `targetSdk` 定为 **28**：Android 10+ 禁止
+targetSdk ≥ 29 的应用执行私有目录里的文件（Termux 官方也一直用 28）。这是内置终端的硬前提。
+
+镜像边界：单文件 8MB、单次同步 32MB 封顶；不同步设置/会话历史/API Key；超限文件会在结果里
+明确写出「没有同步」，不会假装命令看得见。
 
 ## 能力与差异
 
 | 能力 | Android 状态 |
 | --- | --- |
 | 三协议流式对话 / 深度思考 / 联网搜索 | ✅ |
-| 工作模式 Agent Loop、45 个工具、技能库 | ✅（命令类工具走内置 Shell） |
+| 工作模式 Agent Loop、45 个工具、技能库 | ✅（命令类工具走内置 Linux 终端） |
 | 交互模式界面渲染 | ✅ |
 | Office 生成（docx/xlsx/pptx/svg） | ✅ 保存到系统「下载/Guncat Work」 |
 | 图片查看 / 缩略图 / SVG 栅格化 | ✅ |
@@ -138,6 +151,7 @@ npm run dev:android   # http://127.0.0.1:5174
 | 表格提取（视觉模型） | ✅ |
 | 朗读 | ✅ 系统 TTS（音色由系统决定） |
 | 语音输入 | ✅ MediaRecorder + 服务商转写（需另配或复用多模态配置） |
+| 内置 Linux 终端（bash / Python / pip / Git） | ✅ 随 APK 打包，arm64；首次启动解压 |
 | 数据持久化 | ✅ IndexedDB（应用私有，卸载即清除） |
 | PDF 解析 / 页面转图 | ⚠️ 暂未接后端：PDF 工具会返回明确的「后端不可用」，不会误报文件损坏 |
 | 自定义工作区目录 | ⚠️ 不支持：使用应用沙箱工作区，可用 ZIP 导出 |
@@ -156,12 +170,15 @@ src/
     ├── host/             #   window.guncat 的 WebView 实现（对应 src/main/ipc.ts）
     ├── kit/              #   @kit.* 的浏览器实现（ImageKit / ArkTS / PDFKit）
     ├── shims/            #   node:fs / node:path / node:util 的浏览器实现
-    ├── platform/         #   内置 Shell、run_js Worker、SVG 栅格化
-    └── native/           #   原生桥、文件选择、同源代理 fetch
+    ├── platform/         #   内置终端适配 / 工作区镜像、run_js Worker、SVG 栅格化
+    └── native/           #   原生桥（含 Shell 桥）、文件选择、同源代理 fetch
 android/
+├── app/src/main/assets/termux/  # 内置 Termux bootstrap（构建产物，勿手改）
 ├── app/src/main/java/com/guncat/work/
-│   ├── MainActivity.java # WebView + 文件选择 + TTS + 下载/分享
-│   └── GuncatServer.java # 本机静态服务 + 流式反向代理
+│   ├── MainActivity.java        # WebView + 文件选择 + TTS + 下载/分享
+│   ├── GuncatServer.java        # 本机静态服务 + 流式反向代理
+│   ├── TermuxBootstrap.java     # 首次解压内置 Termux 用户态 + 路径/符号链接
+│   └── ShellManager.java        # 命令执行（内置 bash / 系统 sh）+ 工作区落盘
 ├── app/src/main/res/     # 图标、主题、网络安全配置
 └── keystore/             # 本地签名（git 忽略）
 ```
@@ -172,8 +189,8 @@ android/
 
 - 首屏启动、抽屉、快捷设置、全屏设置页（390×844）；
 - 保存配置 → 新建会话 → 流式回答（mock SSE）→ 重启后会话与配置仍在；
-- 工作模式：模型发起 `run_command` → 内置 Shell 执行 `ls` → 结果回传 → 收尾；
-- 内置 Shell：管道、追加写、grep、find、sed、不支持命令的 127 提示；
+- 工作模式：模型发起 `run_command` → 内置终端执行 `ls` → 结果回传 → 收尾；
+- Shell：管道、追加写、grep、find、sed；无原生桥时退回 JS Shell 的回退路径；
 - `run_js`：输入/输出、完成值、`while(true)` 1.5 秒内被 Worker 终止；
 - `npm run typecheck`（node/web/mobile 三套 tsconfig）。
 
@@ -192,9 +209,12 @@ npm run typecheck:mobile
 ## 已知限制
 
 1. PDF 解析后端未接入（桌面版用的 PDF.js + canvas 运行时在 Android 上还未移植）。
-2. 内置 Shell 不是完整 Linux 用户态，重型 CLI 工作流仍需桌面版。
-3. 应用退到后台后，长任务可能被系统暂停；没有前台服务/通知来维持执行。
-4. 暂不支持自定义工作区目录与系统「打开方式」接收文件。
+2. 内置终端只提供 **arm64**；其他 ABI 只能用系统 Shell。`targetSdk` 固定为 28（执行私有目录文件的系统限制），
+   这不是「懒得升级」，降到更低或升到 29+ 都会直接不能执行。
+3. 内置终端首次启动要解压约 150MB，占用应用私有空间；APK 因此约 61MB。
+4. `pkg install` 安装的新包仍带 Termux 原路径，当前未做逐包路径修复；内置的 Python/Git 可直接用。
+5. 应用退到后台后，长任务可能被系统暂停；没有前台服务/通知来维持执行。
+6. 暂不支持自定义工作区目录与系统「打开方式」接收文件。
 
 ## 文档
 
@@ -211,3 +231,6 @@ npm run typecheck:mobile
 ## 授权
 
 [GPL-3.0](LICENSE)
+
+内置终端使用 [Termux](https://github.com/termux/termux-app) 的 bootstrap（GPL-3.0），
+详见 [docs/THIRD-PARTY.md](docs/THIRD-PARTY.md)。

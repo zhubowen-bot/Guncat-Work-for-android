@@ -53,6 +53,7 @@ public class MainActivity extends Activity {
 
     private WebView webView;
     private GuncatServer server;
+    private ShellManager shellManager;
     private ValueCallback<Uri[]> fileCallback;
     private TextToSpeech tts;
     private boolean ttsReady = false;
@@ -85,7 +86,11 @@ public class MainActivity extends Activity {
         webView.setBackgroundColor(Color.TRANSPARENT);
         configureWebView();
         webView.addJavascriptInterface(new NativeBridge(), "GuncatAndroid");
-
+        // 真实命令执行 + 工作区落盘。与 GuncatAndroid 分开注入：前者是系统能力，
+        // 这里是可以执行任意命令的入口，边界更清晰。
+        shellManager = new ShellManager(this);
+        ShellManager.install(shellManager);
+        webView.addJavascriptInterface(shellManager, "GuncatShell");
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.rgb(246, 246, 247));
         root.addView(webView, new FrameLayout.LayoutParams(
@@ -263,6 +268,9 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (shellManager != null) {
+            shellManager.shutdown();
+        }
         if (server != null) {
             server.stop();
         }
@@ -315,12 +323,16 @@ public class MainActivity extends Activity {
             if (Build.VERSION.SDK_INT < 29) {
                 throw new Exception("需要 Android 10 及以上");
             }
+            // 用反射拿 MediaStore.Downloads：minSdk 28 的机器上没有这个类，
+            // 直接写常量会让类验证阶段就解析失败（即使这段代码永远不会执行）。
+            Uri collection = (Uri) Class.forName("android.provider.MediaStore$Downloads")
+                    .getField("EXTERNAL_CONTENT_URI").get(null);
             ContentValues values = new ContentValues();
             values.put(MediaStore.MediaColumns.DISPLAY_NAME, safeName);
             values.put(MediaStore.MediaColumns.MIME_TYPE,
                     mime == null || mime.isEmpty() ? "application/octet-stream" : mime);
             values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Guncat Work");
-            Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+            Uri uri = getContentResolver().insert(collection, values);
             if (uri == null) {
                 return null;
             }
