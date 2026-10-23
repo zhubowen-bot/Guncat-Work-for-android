@@ -382,6 +382,40 @@ export function Composer({ running, mode, onSend, onSteer, onAbort }: Props) {
       </div>
 
       <div className="composer__inner">
+        {/* 手机端一行排布：左侧语音 + 拍照，中间输入框，右侧上传 + 发送 */}
+        <button
+          type="button"
+          className="composer__mic"
+          data-recording={voice.state === 'recording'}
+          title={
+            voice.state === 'recording'
+              ? '点击结束录音并转写'
+              : voice.state === 'transcribing'
+                ? '正在转写…'
+                : running
+                  ? '生成中，暂不能录音'
+                  : parsing
+                    ? '文件解析中，暂不能录音'
+                    : '语音输入（点击开始录音）'
+          }
+          // 原版的门禁是 `!isStreaming && !isParsing`（MessageInputView.ets:83）：
+          // 生成中与解析中都不该再起一段录音，否则转写结果会插到正在跑的轮次里
+          disabled={voice.state === 'transcribing' || running || parsing}
+          onClick={voice.toggle}
+        >
+          {voice.state === 'recording' ? <IconStop size={18} /> : <IconMic size={18} />}
+        </button>
+
+        <button
+          type="button"
+          className="composer__tool composer__camera"
+          title={mode === 'chat' ? '拍照发送' : '拍照并加入工作区'}
+          disabled={running || parsing || voice.state !== 'idle'}
+          onClick={() => void pickUpload('camera')}
+        >
+          <IconCamera size={18} />
+        </button>
+
         <div className="composer__field">
           <textarea
             ref={ref}
@@ -389,7 +423,7 @@ export function Composer({ running, mode, onSend, onSteer, onAbort }: Props) {
             placeholder={placeholder}
             onChange={(e) => {
               setText(e.target.value)
-              syncMention(e.target.value, e.target.selectionStart ?? e.target.value.length)
+              syncMention(e.target.value, e.currentTarget.selectionStart ?? e.target.value.length)
             }}
             onClick={(e) => syncMention(text, e.currentTarget.selectionStart ?? text.length)}
             onBlur={() => setMention(null)}
@@ -398,114 +432,62 @@ export function Composer({ running, mode, onSend, onSteer, onAbort }: Props) {
           />
         </div>
 
-        <div className="composer__actions">
-          <button
-            type="button"
-            className="composer__mic"
-            data-recording={voice.state === 'recording'}
-            title={
-              voice.state === 'recording'
-                ? '点击结束录音并转写'
-                : voice.state === 'transcribing'
-                  ? '正在转写…'
-                  : running
-                    ? '生成中，暂不能录音'
-                    : parsing
-                      ? '文件解析中，暂不能录音'
-                      : '语音输入（点击开始录音）'
-            }
-            // 原版的门禁是 `!isStreaming && !isParsing`（MessageInputView.ets:83）：
-            // 生成中与解析中都不该再起一段录音，否则转写结果会插到正在跑的轮次里
-            disabled={voice.state === 'transcribing' || running || parsing}
-            onClick={voice.toggle}
-          >
-            {voice.state === 'recording' ? <IconStop size={18} /> : <IconMic size={18} />}
-          </button>
+        {/* 上传：聊天模式进附件，工作/交互模式进工作区 */}
+        <button
+          type="button"
+          className={`composer__tool composer__upload${parsing ? ' composer__upload--parsing' : ''}`}
+          title={
+            parsing
+              ? '文件解析中，请稍候'
+              : mode === 'chat'
+                ? '添加图片或文档（发送给模型直接查看）'
+                : '上传文件到工作区'
+          }
+          disabled={running || parsing || voice.state !== 'idle'}
+          onClick={() => void pickUpload('file')}
+        >
+          {parsing ? <IconRefresh size={18} className="icon-spin" /> : <IconPaperclip size={18} />}
+        </button>
 
-          {/* 手机上的上传/拍照：聊天模式进附件，工作/交互模式进工作区 */}
-          <button
-            type="button"
-            className="composer__tool composer__upload"
-            title={mode === 'chat' ? '添加图片或文档' : '上传文件到工作区'}
-            disabled={running || parsing || voice.state !== 'idle'}
-            onClick={() => void pickUpload('file')}
-          >
-            <IconPaperclip size={18} />
-          </button>
-          <button
-            type="button"
-            className="composer__tool composer__camera"
-            title={mode === 'chat' ? '拍照发送' : '拍照并加入工作区'}
-            disabled={running || parsing || voice.state !== 'idle'}
-            onClick={() => void pickUpload('camera')}
-          >
-            <IconCamera size={18} />
-          </button>
-
-          {/* 附件入口只在聊天模式给：工作/交互模式的素材入口是工作区（上传/拖拽），
-              那两条路本来就是「文件进沙箱、模型用工具读」，与附件直传是两件事。 */}
-          {mode === 'chat' ? (
-            <button
-              type="button"
-              className={`composer__clip${parsing ? ' composer__clip--parsing' : ''}`}
-              title={parsing ? '文件解析中，请稍候' : '添加图片或文档（发送给模型直接查看）'}
-              // 解析中不可点（对齐原版 buildUploadButton 的 `!isParsing`）：此时再加一批文件
-              // 只会让「哪张卡对应哪次解析」变得难懂，也让解析队列越排越长。
-              // 录音中同样不可点（原版还多一个 `!isListening`）。
-              disabled={running || parsing || voice.state !== 'idle'}
-              onClick={() => void pickAttachments('file')}
-            >
-              {/* 解析中：回形针变成旋转的刷新图标 + 品牌浅底（原版是 16ms 转 6° 的旋转） */}
-              {parsing ? (
-                <IconRefresh size={18} className="icon-spin" />
-              ) : (
-                <IconPaperclip size={18} />
-              )}
-            </button>
-          ) : null}
-
-          <span className="composer__grow" />
-
-          {running ? (
-            <>
-              {/* 插话只在 Agent Loop 的两种形态给：聊天模式的请求是「一问一答」，
-                  中途补话没有「下一轮」可挂，只能中止重来（原版也是这么分的）。 */}
-              {mode !== 'chat' ? (
-                <button
-                  className="composer__send composer__send--steer"
-                  title="插话（不打断当前执行，在下一轮生效）"
-                  aria-label="插话"
-                  disabled={text.trim() === ''}
-                  onClick={() => void steer()}
-                >
-                  <IconSteer size={18} />
-                  <span className="composer__send-label">插话</span>
-                </button>
-              ) : null}
+        {running ? (
+          <>
+            {/* 插话只在 Agent Loop 的两种形态给：聊天模式的请求是「一问一答」，
+                中途补话没有「下一轮」可挂，只能中止重来（原版也是这么分的）。 */}
+            {mode !== 'chat' ? (
               <button
-                className="composer__send composer__send--stop"
-                title="停止生成"
-                aria-label="停止生成"
-                onClick={onAbort}
+                className="composer__send composer__send--steer"
+                title="插话（不打断当前执行，在下一轮生效）"
+                aria-label="插话"
+                disabled={text.trim() === ''}
+                onClick={() => void steer()}
               >
-                <IconStopCircle size={20} />
-                <span className="composer__send-label">停止</span>
+                <IconSteer size={18} />
+                <span className="composer__send-label">插话</span>
               </button>
-            </>
-          ) : (
+            ) : null}
             <button
-              className="composer__send"
-              title="发送（Enter）"
-              aria-label="发送"
-              onClick={submit}
-              // 解析中/转写中不给发（原版发送钮同条件变灰，点击也直接 return）
-              disabled={parsing || voice.state !== 'idle' || (text.trim() === '' && attachments.length === 0)}
+              className="composer__send composer__send--stop"
+              title="停止生成"
+              aria-label="停止生成"
+              onClick={onAbort}
             >
-              <IconSend size={18} />
-              <span className="composer__send-label">发送</span>
+              <IconStopCircle size={20} />
+              <span className="composer__send-label">停止</span>
             </button>
-          )}
-        </div>
+          </>
+        ) : (
+          <button
+            className="composer__send"
+            title="发送（Enter）"
+            aria-label="发送"
+            onClick={submit}
+            // 解析中/转写中不给发（原版发送钮同条件变灰，点击也直接 return）
+            disabled={parsing || voice.state !== 'idle' || (text.trim() === '' && attachments.length === 0)}
+          >
+            <IconSend size={18} />
+            <span className="composer__send-label">发送</span>
+          </button>
+        )}
       </div>
       {voice.error !== '' ? (
         <div className="composer__hint" style={{ color: 'var(--warn)' }}>

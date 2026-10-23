@@ -738,14 +738,14 @@ check('未知类型回退通用文件图标', iconOf('a.unknown') !== '' && icon
 console.log('\n22. 输入区（附件入口）')
 const composerChat = mod.renderComposer('chat')
 const composerWork = mod.renderComposer('work')
-check('聊天模式的输入区有附件入口（回形针）', composerChat.includes('composer__clip'))
+check('聊天模式的输入区有附件入口（回形针）', composerChat.includes('composer__upload'))
 check(
   '附件入口的提示说清是「发给模型直接看」',
   composerChat.includes('添加图片或文档')
 )
 check(
-  '工作/交互模式不给附件入口（那两种形态的素材入口是工作区）',
-  !composerWork.includes('composer__clip')
+  '工作/交互模式的上传入口进工作区（标题不同，不是附件直传）',
+  composerWork.includes('composer__upload') && composerWork.includes('上传文件到工作区')
 )
 check('发送按钮仍在', composerChat.includes('composer__send'))
 check('语音输入按钮仍在', composerChat.includes('composer__mic'))

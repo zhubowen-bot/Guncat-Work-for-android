@@ -2190,42 +2190,42 @@ select {
   margin: 0 auto;
   /* 元素间距不用 gap，而是照原版的显式边距：语音右 6、上传左 8（MessageInputView.ets:81,152） */
   display: flex;
-  gap: 0;
+  gap: 6px;
   align-items: flex-end;
   padding: 0;
 }
 
-/* 桌面端：输入框与按钮仍是同一行（手机端会拆成「输入框一行 + 操作按钮一行」） */
+/* 输入框和按钮同一行；手机上也是这一行，不再拆第二行 */
 .composer__field {
   flex: 1;
   min-width: 0;
   display: flex;
-  order: 0;
 }
 
-.composer__actions {
-  display: contents;
-}
-
-.composer__mic {
-  order: -1;
-}
-
-.composer__clip {
-  order: 5;
-}
-
-.composer__send {
-  order: 10;
-}
-
-.composer__grow {
+/* 手机专属的拍照按钮；桌面端没有摄像头入口 */
+.composer__camera {
   display: none;
 }
 
-/* 手机专属的上传/拍照按钮，桌面端由旧的 composer__clip 承担上传入口 */
 .composer__tool {
-  display: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 21px;
+  border: 1px solid var(--border);
+  background: var(--bg-sunken);
+  color: var(--text-muted);
+  flex: none;
+}
+
+.composer__tool:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+.composer__tool:disabled {
+  opacity: 0.45;
 }
 
 /* 手机输入框上方的胶囊条（桌面端由顶栏承担） */
@@ -2349,31 +2349,14 @@ select {
   cursor: default;
 }
 
-/* 附件入口（聊天模式）：42×42，与发送钮同规格（原版 buildUploadButton） */
-.composer__clip {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 42px;
-  height: 42px;
-  border-radius: 21px;
-  border: 1px solid var(--border);
-  background: var(--bg-sunken);
-  color: var(--text-muted);
-  flex: none;
-  margin-left: 8px;
-}
-
-.composer__clip:hover:not(:disabled) {
+/* 附件按钮的解析中态：品牌浅底（原版 brand_light）+ 图标持续旋转 */
+.composer__upload--parsing,
+.composer__upload--parsing:disabled {
+  background: var(--accent-soft);
+  border-color: var(--accent);
   color: var(--accent);
+  opacity: 1;
 }
-
-.composer__clip:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-/* 已选附件的预览带（原版输入区就是这一条） */
 .composer__attachments {
   display: flex;
   flex-wrap: wrap;

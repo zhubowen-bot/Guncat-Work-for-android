@@ -54,8 +54,8 @@ This is not a WebView wrapper around the Electron UI. Android has no Node main p
 
 - The top bar keeps only "drawer / title / workspace"; model, reasoning effort, thinking and web
   search become chips above the composer instead of a crowded top bar or an extra bottom sheet.
-- The composer is two rows: the input, then voice / upload / camera / round send. Upload and camera
-  automatically target chat attachments or the workspace depending on the mode.
+- The composer stays on one row: voice + camera on the left, input in the middle, upload + round send
+  on the right. Upload and camera automatically target chat attachments or the workspace by mode.
 - The sidebar is narrower (300px) and its bottom workspace entry is gone (the top-bar folder opens it
   directly); table extraction moved to the sidebar footer.
 - The sidebar is a slide-over drawer that closes after selecting a conversation, engine or mode.

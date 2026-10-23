@@ -234,38 +234,28 @@ body.platform-android code {
     background: color-mix(in srgb, var(--accent) 10%, var(--bg-sunken));
   }
 
+  /* 一行排布：左语音 + 拍照，中间输入框，右上传 + 圆形发送 */
   .composer__inner {
     display: flex;
-    flex-direction: column;
-    gap: 8px;
-    border-radius: 18px;
+    flex-direction: row;
+    align-items: flex-end;
+    gap: 6px;
   }
 
   .composer__field {
-    width: 100%;
+    flex: 1;
+    width: auto;
+    min-width: 0;
     display: flex;
   }
 
   .composer textarea {
     width: 100%;
     font-size: 16px;
-    min-height: 46px;
-    max-height: 28vh;
-    padding: 12px 14px;
-    border-radius: 18px;
-  }
-
-  /* 手机操作行：语音 / 上传 / 拍照 / …… / 圆形发送 */
-  .composer__actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-  }
-
-  .composer__grow {
-    display: block;
-    flex: 1;
+    min-height: 44px;
+    max-height: 26vh;
+    padding: 11px 14px;
+    border-radius: 22px;
   }
 
   .composer__mic,
@@ -273,29 +263,22 @@ body.platform-android code {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 42px !important;
-    height: 42px !important;
+    width: 40px !important;
+    height: 40px !important;
     margin: 0 !important;
-    border-radius: 21px !important;
+    border-radius: 20px !important;
     flex: none;
   }
 
-  .composer__tool {
-    border: 1px solid var(--border);
-    background: var(--bg-sunken);
-    color: var(--text-muted);
-  }
-
-  /* 手机端不再需要聊天模式的旧附件钮（上传入口已并入操作行） */
-  .composer__clip {
-    display: none !important;
+  .composer__camera {
+    display: inline-flex !important;
   }
 
   .composer__send {
-    width: 46px;
-    height: 46px;
+    width: 44px;
+    height: 44px;
     padding: 0;
-    border-radius: 23px;
+    border-radius: 22px;
     justify-content: center;
     margin: 0;
     gap: 0;
