@@ -58,7 +58,10 @@ final class GuncatServer {
 
     int start(int preferredPort) throws IOException {
         try {
-            serverSocket = new ServerSocket(preferredPort, 50, InetAddress.getByName("127.0.0.1"));
+            serverSocket = new ServerSocket();
+            serverSocket.setReuseAddress(true);
+            serverSocket.bind(new java.net.InetSocketAddress(
+                    InetAddress.getByName("127.0.0.1"), preferredPort), 50);
         } catch (IOException e) {
             // 固定端口被占用时退回随机端口：功能可用，但 IndexedDB 的 origin 会变，
             // 那一轮启动看不到上次的数据。正常情况下 47653 只有本应用在用。
