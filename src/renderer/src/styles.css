@@ -2195,6 +2195,44 @@ select {
   padding: 0;
 }
 
+/* 桌面端：输入框与按钮仍是同一行（手机端会拆成「输入框一行 + 操作按钮一行」） */
+.composer__field {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  order: 0;
+}
+
+.composer__actions {
+  display: contents;
+}
+
+.composer__mic {
+  order: -1;
+}
+
+.composer__clip {
+  order: 5;
+}
+
+.composer__send {
+  order: 10;
+}
+
+.composer__grow {
+  display: none;
+}
+
+/* 手机专属的上传/拍照按钮，桌面端由旧的 composer__clip 承担上传入口 */
+.composer__tool {
+  display: none;
+}
+
+/* 手机输入框上方的胶囊条（桌面端由顶栏承担） */
+.composer__chips {
+  display: none;
+}
+
 .composer textarea {
   flex: 1;
   resize: none;
@@ -3551,6 +3589,10 @@ select {
    这些按钮/背景只在 mobile.css 的窄屏媒体查询里显示；桌面端不加载 mobile.css，
    因此必须在这里默认为隐藏，否则会出现两个关闭按钮/一个无样式汉堡按钮。 */
 .mobile-only {
+  display: none !important;
+}
+
+.mobile-foot-only {
   display: none !important;
 }
 

@@ -107,14 +107,15 @@ export interface GuncatApi {
       conversationId: string,
       paths: string[]
     ): Promise<{ names: string[]; imported: number; failed: string[] }>
-    /** 弹系统文件选择框并导入（工作区面板的「上传」按钮） */
+    /** 弹系统文件选择框并导入（工作区面板的「上传」按钮）；source='camera' 直接调起相机 */
     pickFiles(
-      conversationId: string
+      conversationId: string,
+      source?: 'file' | 'camera'
     ): Promise<{ names: string[]; imported: number; failed: string[]; canceled: boolean }>
   }
   /** 聊天模式的附件：选文件（立刻返回 parsing；解析结果经 attachment:parsed 事件回报） */
   attachments: {
-    pick(): Promise<PickedAttachmentDto[]>
+    pick(source?: 'file' | 'camera'): Promise<PickedAttachmentDto[]>
   }
   /** 工作模式执行中插话；返回是否被接受（false 时应改走普通发送） */
   steer(conversationId: string, text: string): Promise<boolean>

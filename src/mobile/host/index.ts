@@ -139,12 +139,14 @@ export function createMobileHost(): MobileHost {
 
   async function pickAndImport(
     conversationId: string,
-    options: { extensions?: string[]; multiple?: boolean }
+    options: { extensions?: string[]; multiple?: boolean; camera?: boolean }
   ): Promise<{ names: string[]; imported: number; failed: string[]; canceled: boolean }> {
     const paths = await pickFilesFromDevice({
       extensions: options.extensions,
       maxCount: options.multiple === true ? 20 : 1,
-      multiple: options.multiple === true
+      multiple: options.multiple === true,
+      camera: options.camera === true,
+      imagesOnly: options.camera === true
     })
     if (paths.length === 0) {
       return { names: [], imported: 0, failed: [], canceled: true }
@@ -354,16 +356,22 @@ export function createMobileHost(): MobileHost {
 
     intake: {
       importPaths: (conversationId: string, paths: string[]) => session.intakePaths(conversationId, paths),
-      pickFiles: (conversationId: string) =>
+      pickFiles: (conversationId: string, source?: 'file' | 'camera') =>
         pickAndImport(conversationId, {
-          multiple: true,
+          multiple: source !== 'camera',
+          camera: source === 'camera',
           extensions: ['pdf', 'docx', 'xlsx', 'pptx', 'txt', 'md', 'csv', 'json', 'png', 'jpg', 'jpeg', 'webp']
         })
     },
 
     attachments: {
-      pick: async (): Promise<PickedAttachmentDto[]> => {
-        const paths = await pickFilesFromDevice({ multiple: true, maxCount: 12 })
+      pick: async (source?: 'file' | 'camera'): Promise<PickedAttachmentDto[]> => {
+        const paths = await pickFilesFromDevice({
+          multiple: source !== 'camera',
+          maxCount: source === 'camera' ? 1 : 12,
+          camera: source === 'camera',
+          imagesOnly: source === 'camera'
+        })
         const picked: PickedAttachmentDto[] = await Promise.all(
           paths.map(async (filePath) => ({
             path: filePath,

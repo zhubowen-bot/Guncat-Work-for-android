@@ -16,9 +16,9 @@
 ![skills](https://img.shields.io/badge/%E6%8A%80%E8%83%BD-37-informational)
 [![license](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 
-| 对话 | 会话抽屉 | 快捷设置 |
+| 对话 | 会话抽屉 | 工作区 |
 | --- | --- | --- |
-| ![对话](docs/images/android-home.png) | ![会话](docs/images/android-sessions.png) | ![快捷设置](docs/images/android-quick-settings.png) |
+| ![对话](docs/images/android-home.png) | ![会话](docs/images/android-sessions.png) | ![工作区](docs/images/android-workspace.png) |
 
 设置页与工作区在手机上都是全屏页面，不是把桌面弹窗按比例缩小：
 
@@ -50,12 +50,15 @@
 | Electron `shell.openPath` | MediaStore 写入下载目录后交给系统 `ACTION_VIEW` / `ACTION_SEND` |
 | Node `fetch` 直连模型 API | **应用内 127.0.0.1 同源反向代理**：绕开 WebView 的 CORS，逐块 flush，SSE 流式不中断 |
 | Web Speech TTS | Android 原生 `TextToSpeech`；语音输入仍是 MediaRecorder + 服务商转写接口 |
-| 桌面三栏布局 | **手机布局**：全屏对话 + 左侧会话抽屉 + 底部快捷设置 + 全屏工作区/设置，安全区与 44px 触控目标 |
+| 桌面三栏布局 | **手机布局**：全屏对话 + 左侧会话抽屉 + 输入框上方胶囊 + 全屏工作区/设置，安全区与 44px 触控目标 |
 
 ### 手机端 UI 的关键改动
 
-- 顶栏只保留「抽屉 / 标题 / 更多」，推理强度、模型、联网开关等收进底部抽屉 —— 这些操作在手机上
-  需要更大的触控面积，而不是一排挤扁的下拉框。
+- 顶栏只保留「抽屉 / 标题 / 工作区」；模型、推理强度、深度思考、联网搜索做成输入框上方的胶囊，
+  不再挤在顶栏，也不再单独开一个底部设置抽屉。
+- 输入区拆成两行：输入框一行，语音 / 上传 / 拍照 / 圆形发送按钮一行；上传与拍照会按模式自动决定
+  是「发给模型的附件」还是「加入工作区」。
+- 侧栏收窄到 300px，底部的「工作区」入口移除（顶栏文件夹按钮直达）；表格提取移到侧栏底部。
 - 侧栏变成可滑出的抽屉，选中会话/引擎/模式后自动收起；设置与工作区是全屏页，带安全区内边距。
 - 输入框字号 16px、最小高度 46px，避免聚焦缩放；键盘弹出时使用 `adjustResize` 让输入区留在键盘上方。
 - Markdown 表格在窄屏横向滚动，代码块与 Mermaid 不撑破屏幕；所有图标按钮至少 40×40。
@@ -68,7 +71,8 @@
    - 支持 OpenAI Completions（`/chat/completions`）、OpenAI Responses（`/responses`）、
      Anthropic Messages（`/messages`）三种协议，均可直传图片。
    - 配置项存在应用私有目录；卸载应用会一并删除，升级安装不会。
-3. 回到对话页开始用。工作/交互模式的素材入口是右侧「工作区 → 上传」，聊天模式的附件入口在输入框左侧回形针。
+3. 回到对话页开始用。输入框左侧的回形针/相机在聊天模式是附件，在工作/交互模式会自动加入工作区；
+   也可以点顶栏的文件夹按钮打开工作区统一管理文件。
 
 > 建议先在工作模式里发一句「把工作区里的文件列一下」，确认内置 Shell 与工具链正常。
 

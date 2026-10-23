@@ -20,6 +20,7 @@ import {
   IconPlus,
   IconSettings,
   IconSidebar,
+  IconTable,
   IconTrash,
   IconWork
 } from '../icons'
@@ -119,6 +120,7 @@ export function Sidebar() {
   const createConversation = useStore((s) => s.createConversation)
   const deleteConversation = useStore((s) => s.deleteConversation)
   const openSettings = useStore((s) => s.openSettings)
+  const openTableOcr = useStore((s) => s.openTableOcr)
   const running = useStore((s) => s.running)
   const workspaceOpen = useStore((s) => s.workspaceOpen)
   const toggleWorkspace = useStore((s) => s.toggleWorkspace)
@@ -305,7 +307,7 @@ export function Sidebar() {
           <span>工作</span>
         </button>
         <button
-          className="foot-btn"
+          className="foot-btn mobile-hide"
           title={workspaceOpen ? '收起工作区面板' : '展开工作区面板'}
           data-active={workspaceOpen}
           onClick={() => {
@@ -315,6 +317,17 @@ export function Sidebar() {
         >
           <IconFolder size={17} />
           <span>工作区</span>
+        </button>
+        <button
+          className="foot-btn mobile-foot-only"
+          title="表格提取"
+          onClick={() => {
+            openTableOcr(true)
+            closeSidebar()
+          }}
+        >
+          <IconTable size={17} />
+          <span>表格</span>
         </button>
         <button
           className="foot-btn"

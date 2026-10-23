@@ -150,14 +150,15 @@ const api = {
       ipcRenderer.invoke(INVOKE.intakeImport, conversationId, paths),
     /** 弹系统文件选择框并导入（工作区面板的「上传」按钮） */
     pickFiles: (
-      conversationId: string
+      conversationId: string,
+      _source?: 'file' | 'camera'
     ): Promise<{ names: string[]; imported: number; failed: string[]; canceled: boolean }> =>
       ipcRenderer.invoke(INVOKE.intakePickFiles, conversationId)
   },
 
   /** 聊天模式的附件：选文件（返回时状态一律是 parsing，解析结果由 attachment:parsed 事件回报） */
   attachments: {
-    pick: (): Promise<import('../ipc/contract').PickedAttachmentDto[]> =>
+    pick: (_source?: 'file' | 'camera'): Promise<import('../ipc/contract').PickedAttachmentDto[]> =>
       ipcRenderer.invoke(INVOKE.attachmentsPick)
   },
 

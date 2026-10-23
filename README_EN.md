@@ -14,9 +14,9 @@
 ![version](https://img.shields.io/badge/version-0.2.1-blue)
 [![license](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 
-| Chat | Session drawer | Quick settings |
+| Chat | Session drawer | Workspace |
 | --- | --- | --- |
-| ![Chat](docs/images/android-home.png) | ![Sessions](docs/images/android-sessions.png) | ![Quick settings](docs/images/android-quick-settings.png) |
+| ![Chat](docs/images/android-home.png) | ![Sessions](docs/images/android-sessions.png) | ![Workspace](docs/images/android-workspace.png) |
 
 Settings and the workspace are full-screen pages on phones, not scaled-down desktop dialogs:
 
@@ -48,12 +48,16 @@ This is not a WebView wrapper around the Electron UI. Android has no Node main p
 | Electron `shell.openPath` | MediaStore download, then system `ACTION_VIEW` / `ACTION_SEND` |
 | Direct model API `fetch` | **Local same-origin reverse proxy on 127.0.0.1**: avoids WebView CORS and flushes SSE chunks as they arrive |
 | Web Speech TTS | Android native `TextToSpeech`; voice input stays MediaRecorder + provider transcription |
-| Desktop three-column layout | **Phone layout**: full-screen chat, left session drawer, bottom quick-settings sheet, full-screen workspace/settings, safe areas, 44px touch targets |
+| Desktop three-column layout | **Phone layout**: full-screen chat, left session drawer, composer chips, full-screen workspace/settings, safe areas, 44px touch targets |
 
 ### Mobile UI notes
 
-- The top bar keeps only "drawer / title / more"; model, reasoning effort and toggles move into a
-  bottom sheet with large touch targets.
+- The top bar keeps only "drawer / title / workspace"; model, reasoning effort, thinking and web
+  search become chips above the composer instead of a crowded top bar or an extra bottom sheet.
+- The composer is two rows: the input, then voice / upload / camera / round send. Upload and camera
+  automatically target chat attachments or the workspace depending on the mode.
+- The sidebar is narrower (300px) and its bottom workspace entry is gone (the top-bar folder opens it
+  directly); table extraction moved to the sidebar footer.
 - The sidebar is a slide-over drawer that closes after selecting a conversation, engine or mode.
 - The composer uses 16px text and a 46px minimum height; `adjustResize` keeps it above the keyboard.
 - Markdown tables scroll horizontally; icon buttons are at least 40×40.

@@ -15,8 +15,7 @@ import { TableOcrDialog } from './components/TableOcrDialog'
 import { ImageLightbox } from './components/ImageLightbox'
 import { WorkspacePreviewOverlay } from './components/WorkspacePreview'
 import { useSpeech, speechTextOf } from './speech/speechStore'
-import { IconBrain, IconGlobe, IconMore, IconSidebar, IconTable } from './icons'
-import { MobileMenu } from './components/MobileMenu'
+import { IconBrain, IconFolder, IconGlobe, IconSidebar, IconTable } from './icons'
 
 /**
  * 提示条（对齐原版 ToastView + ChatPage 的 10 拍定时器）。
@@ -84,7 +83,7 @@ export default function App() {
   const sidebarOpen = useStore((s) => s.sidebarOpen)
   const openSidebar = useStore((s) => s.openSidebar)
   const closeSidebar = useStore((s) => s.closeSidebar)
-  const [menuOpen, setMenuOpen] = useState(false)
+  const toggleWorkspace = useStore((s) => s.toggleWorkspace)
 
   /** 顶栏模型胶囊：切配置方案（主进程会把该方案写回运行时生效的配置） */
   async function switchProfile(profileId: string): Promise<void> {
@@ -283,11 +282,12 @@ export default function App() {
             </small>
           </div>
           <button
-            className="mobile-icon-btn mobile-more-btn"
-            aria-label="更多设置"
-            onClick={() => setMenuOpen(true)}
+            className="mobile-icon-btn mobile-workspace-btn"
+            aria-label={showWorkspace ? '关闭工作区' : '打开工作区'}
+            data-active={showWorkspace}
+            onClick={() => toggleWorkspace()}
           >
-            <IconMore size={20} />
+            <IconFolder size={20} />
           </button>
 
           {/* 能力预设（推理强度）：对齐原版 ChatPage 输入区「模型」胶囊弹层下半部分。
@@ -416,7 +416,6 @@ export default function App() {
       <TableOcrDialog />
       <ImageLightbox />
       <SpeechBar />
-      <MobileMenu open={menuOpen} onClose={() => setMenuOpen(false)} />
       <Notice />
     </div>
   )

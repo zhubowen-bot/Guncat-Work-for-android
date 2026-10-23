@@ -250,13 +250,18 @@ export class SessionManager {
     try {
       const results: PluginManifestResult[] = await PluginHotLoader.loadAll(ctx)
       const failed: PluginManifestResult[] = results.filter((r) => !r.ok)
-      this.emit({
-        type: 'notice',
-        level: failed.length > 0 ? 'warn' : 'info',
-        text:
-          PluginHotLoader.loadedSummary() +
-          (failed.length > 0 ? `；${failed.length} 个加载失败：${failed.map((r) => r.error).join(', ')}` : '')
-      })
+      // 没有插件、也没有失败时不弹提示：手机上一启动就飘一条「未加载插件」只会让人以为出错。
+      if (failed.length > 0) {
+        this.emit({
+          type: 'notice',
+          level: 'warn',
+          text:
+            PluginHotLoader.loadedSummary() +
+            `；${failed.length} 个加载失败：${failed.map((r) => r.error).join(', ')}`
+        })
+      } else if (PluginHotLoader.loadedCount() > 0) {
+        this.emit({ type: 'notice', level: 'info', text: PluginHotLoader.loadedSummary() })
+      }
     } catch {
       // 插件目录/清单不存在都走「没有插件」，不该拖住应用启动
     }

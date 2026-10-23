@@ -295,6 +295,16 @@ export function IconImage(props: IconProps) {
   )
 }
 
+/** 拍照（手机输入区的相机入口） */
+export function IconCamera(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4.2 8.2h3l1.2-1.8h7.2l1.2 1.8h3a1.6 1.6 0 0 1 1.6 1.6v8a1.6 1.6 0 0 1-1.6 1.6H4.2a1.6 1.6 0 0 1-1.6-1.6v-8a1.6 1.6 0 0 1 1.6-1.6Z" />
+      <circle cx="12" cy="13.4" r="3.4" />
+    </Svg>
+  )
+}
+
 /** PDF（原版 sys.symbol.pdf_doc） */
 export function IconPdf(props: IconProps) {
   return (

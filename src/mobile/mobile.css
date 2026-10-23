@@ -38,6 +38,11 @@ body.platform-android code {
   display: none !important;
 }
 
+/* 手机侧栏底部的「表格」入口；桌面端由顶栏承担 */
+.mobile-foot-only {
+  display: none !important;
+}
+
 .mobile-icon-btn {
   display: none;
   width: 40px;
@@ -66,6 +71,14 @@ body.platform-android code {
     display: inline-flex !important;
   }
 
+  .mobile-hide {
+    display: none !important;
+  }
+
+  .mobile-foot-only {
+    display: flex !important;
+  }
+
   .body,
   body {
     overflow: hidden;
@@ -86,8 +99,8 @@ body.platform-android code {
     bottom: 0;
     left: 0;
     z-index: 70;
-    width: min(86vw, 340px);
-    max-width: 340px;
+    width: min(78vw, 300px);
+    max-width: 300px;
     padding-top: calc(env(safe-area-inset-top) + 4px);
     padding-bottom: calc(env(safe-area-inset-bottom) + 4px);
     transform: translateX(-102%);
@@ -118,7 +131,7 @@ body.platform-android code {
     height: var(--app-height, 100%);
   }
 
-  /* 顶栏：只保留返回/标题/更多；其余控制进底部抽屉 */
+  /* 顶栏：抽屉 / 标题 / 工作区；模型、推理、联网收进输入框上方的胶囊 */
   .topbar {
     flex: none;
     gap: 4px;
@@ -127,12 +140,17 @@ body.platform-android code {
   }
 
   .mobile-menu-btn,
-  .mobile-more-btn {
+  .mobile-workspace-btn {
     display: inline-flex;
   }
 
-  .mobile-more-btn {
+  .mobile-workspace-btn {
     width: 42px;
+  }
+
+  .mobile-workspace-btn[data-active='true'] {
+    color: var(--accent);
+    background: var(--accent-soft);
   }
 
   .topbar__title {
@@ -166,29 +184,125 @@ body.platform-android code {
 
   .composer {
     flex: none;
-    padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+    padding: 6px 10px calc(8px + env(safe-area-inset-bottom));
     background: var(--bg-elevated);
     border-top: 1px solid var(--divider);
   }
 
+  /* 输入框上方的胶囊工具条：模型 / 推理 / 思考 / 联网 */
+  .composer__chips {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    overflow-x: auto;
+    padding: 2px 2px 7px;
+    scrollbar-width: none;
+  }
+
+  .composer__chips::-webkit-scrollbar {
+    display: none;
+  }
+
+  .composer-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex: none;
+    height: 32px;
+    padding: 0 11px;
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    background: var(--bg-sunken);
+    color: var(--text-muted);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .composer-chip select {
+    max-width: 150px;
+    border: 0;
+    background: transparent;
+    color: var(--text);
+    font-size: 12px;
+    outline: none;
+  }
+
+  .composer-chip[data-on='true'] {
+    color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+    background: color-mix(in srgb, var(--accent) 10%, var(--bg-sunken));
+  }
+
   .composer__inner {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
     border-radius: 18px;
   }
 
-  .composer textarea {
-    font-size: 16px;
-    min-height: 46px;
-    max-height: 34vh;
-    padding: 12px 14px;
+  .composer__field {
+    width: 100%;
+    display: flex;
   }
 
-  .composer__send,
+  .composer textarea {
+    width: 100%;
+    font-size: 16px;
+    min-height: 46px;
+    max-height: 28vh;
+    padding: 12px 14px;
+    border-radius: 18px;
+  }
+
+  /* 手机操作行：语音 / 上传 / 拍照 / …… / 圆形发送 */
+  .composer__actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .composer__grow {
+    display: block;
+    flex: 1;
+  }
+
   .composer__mic,
-  .composer__clip {
-    width: 44px !important;
-    height: 44px !important;
-    border-radius: 14px !important;
+  .composer__tool {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px !important;
+    height: 42px !important;
+    margin: 0 !important;
+    border-radius: 21px !important;
     flex: none;
+  }
+
+  .composer__tool {
+    border: 1px solid var(--border);
+    background: var(--bg-sunken);
+    color: var(--text-muted);
+  }
+
+  /* 手机端不再需要聊天模式的旧附件钮（上传入口已并入操作行） */
+  .composer__clip {
+    display: none !important;
+  }
+
+  .composer__send {
+    width: 46px;
+    height: 46px;
+    padding: 0;
+    border-radius: 23px;
+    justify-content: center;
+    margin: 0;
+    gap: 0;
+  }
+
+  .composer__send-label {
+    display: none;
   }
 
   .composer__hint {
@@ -358,175 +472,6 @@ body.platform-android code {
   }
 }
 
-/* ===== 底部抽屉（手机端「更多」） ===== */
-.mobile-sheet-layer {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.4);
-  animation: mobile-fade 0.18s ease-out;
-}
-
-.mobile-sheet {
-  width: 100%;
-  max-height: 86vh;
-  overflow-y: auto;
-  background: var(--bg-elevated);
-  border-radius: 22px 22px 0 0;
-  padding: 8px 16px calc(18px + env(safe-area-inset-bottom));
-  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.24);
-  animation: mobile-sheet-up 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-.mobile-sheet__grabber {
-  width: 38px;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--border);
-  margin: 2px auto 10px;
-}
-
-.mobile-sheet__head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-bottom: 8px;
-}
-
-.mobile-sheet__head > div:first-child {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.mobile-sheet__head strong {
-  font-size: 17px;
-}
-
-.mobile-sheet__head small {
-  font-size: 12px;
-  color: var(--text-faint);
-}
-
-.mobile-sheet__section {
-  margin-top: 6px;
-}
-
-.mobile-sheet__label {
-  display: block;
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-bottom: 6px;
-}
-
-.segmented {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 4px;
-  padding: 4px;
-  border-radius: 14px;
-  background: var(--bg-sunken);
-}
-
-.segmented button {
-  min-height: 44px;
-  border-radius: 11px;
-  font-size: 14px;
-  color: var(--text-muted);
-}
-
-.segmented button[data-active='true'] {
-  background: var(--bg-elevated);
-  color: var(--text);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
-  font-weight: 600;
-}
-
-.mobile-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 14px;
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.mobile-field select {
-  height: 46px;
-  padding: 0 12px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: var(--bg-sunken);
-  font-size: 15px;
-  color: var(--text);
-}
-
-.mobile-switches {
-  display: grid;
-  gap: 8px;
-  margin-top: 14px;
-}
-
-.mobile-switch {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 52px;
-  padding: 8px 14px;
-  border-radius: 14px;
-  border: 1px solid var(--border);
-  background: var(--bg-sunken);
-  text-align: left;
-}
-
-.mobile-switch span {
-  font-size: 15px;
-}
-
-.mobile-switch small {
-  font-size: 12px;
-  color: var(--text-faint);
-}
-
-.mobile-switch[data-on='true'] {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, var(--bg-sunken));
-}
-
-.mobile-switch[data-on='true'] span {
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.mobile-sheet__actions {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  margin-top: 16px;
-}
-
-.mobile-sheet__actions button {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 72px;
-  border-radius: 14px;
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.mobile-sheet__actions button:active {
-  background: var(--bg-sunken);
-}
-
 .boot-error {
   max-width: 560px;
   margin: 16vh auto 0;
@@ -561,17 +506,6 @@ body.platform-android code {
   }
 }
 
-@keyframes mobile-sheet-up {
-  from {
-    transform: translateY(24px);
-    opacity: 0.6;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
-}
-
 @keyframes mobile-slide-right {
   from {
     transform: translateX(18px);
@@ -587,11 +521,7 @@ body.platform-android code {
 @media (max-width: 860px) and (orientation: landscape) {
   .sidebar,
   .sidebar--rail {
-    width: min(56vw, 380px);
-    max-width: 380px;
-  }
-
-  .mobile-sheet {
-    max-height: 92vh;
+    width: min(64vw, 320px);
+    max-width: 320px;
   }
 }

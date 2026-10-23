@@ -263,7 +263,7 @@ interface State {
   /** 端侧增强：把外部文件导入当前会话工作区 */
   intakeFiles(paths: string[]): Promise<void>
   /** 端侧增强：弹系统文件选择框并导入（工作区面板的「上传」按钮） */
-  pickWorkspaceFiles(): Promise<void>
+  pickWorkspaceFiles(source?: 'file' | 'camera'): Promise<void>
 }
 
 function applyEvent(state: State, event: GuncatEvent): Partial<State> {
@@ -1007,7 +1007,7 @@ export const useStore = create<State>((set, get) => {
      * 工作区面板的「上传」按钮：弹系统文件选择框，把选中的文件导入当前会话工作区。
      * 与拖拽走同一条落盘链路，只是换成用户找得到的入口（原版 WorkspaceBar 的「上传」）。
      */
-    async pickWorkspaceFiles() {
+    async pickWorkspaceFiles(source: 'file' | 'camera' = 'file') {
       let activeId = get().activeId
       // 还没会话就先建一个，否则对话框选完文件却无处可放
       if (activeId === null) {
@@ -1015,7 +1015,7 @@ export const useStore = create<State>((set, get) => {
         activeId = conv.id
       }
       try {
-        const result = await window.guncat.intake.pickFiles(activeId)
+        const result = await window.guncat.intake.pickFiles(activeId, source)
         if (result.canceled) {
           return
         }

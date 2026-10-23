@@ -9,10 +9,12 @@ export interface PickOptions {
   maxCount?: number
   imagesOnly?: boolean
   multiple?: boolean
+  /** true = 直接调起相机（Android 上给 input 加 capture=environment） */
+  camera?: boolean
 }
 
 function acceptOf(options: PickOptions): string {
-  if (options.imagesOnly === true) {
+  if (options.imagesOnly === true || options.camera === true) {
     return 'image/*'
   }
   const extensions = options.extensions ?? []
@@ -56,6 +58,10 @@ export function pickFilesFromDevice(options: PickOptions = {}): Promise<string[]
     input.type = 'file'
     input.accept = acceptOf(options)
     input.multiple = options.multiple === true || (options.maxCount ?? 1) > 1
+    if (options.camera === true) {
+      input.multiple = false
+      input.setAttribute('capture', 'environment')
+    }
     input.style.display = 'none'
     document.body.appendChild(input)
 
