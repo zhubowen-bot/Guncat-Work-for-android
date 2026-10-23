@@ -3546,3 +3546,15 @@ select {
 .askcard__submit:hover {
   filter: brightness(1.06);
 }
+
+/* ===== 手机端专用元素的桌面兜底 =====
+   这些按钮/背景只在 mobile.css 的窄屏媒体查询里显示；桌面端不加载 mobile.css，
+   因此必须在这里默认为隐藏，否则会出现两个关闭按钮/一个无样式汉堡按钮。 */
+.mobile-only {
+  display: none !important;
+}
+
+.mobile-icon-btn,
+.mobile-backdrop {
+  display: none;
+}
