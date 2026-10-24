@@ -5,6 +5,11 @@ import '../renderer/src/styles.css'
 import './mobile.css'
 import 'katex/dist/katex.min.css'
 import { installSelectionCopyGuard } from '../renderer/src/clipboard'
+import { installSystemTheme } from '../renderer/src/theme'
+
+// 系统深浅色：Android WebView 的 prefers-color-scheme 不一定跟随系统，
+// 这里以原生 uiMode 为准（见 theme.ts）
+installSystemTheme()
 
 // 选中文字直接「复制」的剪贴板守卫（Android WebView 内核选区与 DOM 选区
 // 不同步时会把整条消息塞进剪贴板，见 clipboard.ts）。

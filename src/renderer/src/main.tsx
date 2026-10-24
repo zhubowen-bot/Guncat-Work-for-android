@@ -5,6 +5,10 @@ import './styles.css'
 import 'katex/dist/katex.min.css'
 import { reportStage, describeError } from './bootReport'
 import { installSelectionCopyGuard } from './clipboard'
+import { installSystemTheme } from './theme'
+
+// 系统深浅色：Android 以原生 uiMode 为准（WebView 的媒体查询不一定跟随系统）
+installSystemTheme()
 
 // 选中文字直接「复制」时的剪贴板守卫（见 clipboard.ts 的说明）。
 // 必须在 React 挂载前就装上：用户完全可能不经过任何按钮，直接用系统选区复制。

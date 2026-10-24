@@ -8,6 +8,24 @@
     />
     <meta name="theme-color" content="#f6f6f7" />
     <meta name="color-scheme" content="light dark" />
+    <script>
+      // 在 CSS/React 之前定下深浅色，避免深色系统下先闪一帧白底。
+      // 以原生 uiMode 为准：WebView 的 prefers-color-scheme 在部分机型上不跟随系统。
+      ;(function () {
+        var dark = false
+        try {
+          if (window.GuncatAndroid && typeof window.GuncatAndroid.isNightMode === 'function') {
+            dark = window.GuncatAndroid.isNightMode() === true
+          } else if (window.matchMedia) {
+            dark = window.matchMedia('(prefers-color-scheme: dark)').matches
+          }
+        } catch (e) {
+          dark = false
+        }
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+        document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
+      })()
+    </script>
     <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'self' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' http://127.0.0.1:*; worker-src 'self' blob:"
@@ -45,6 +63,16 @@
       }
       #boot-placeholder .boot-hint {
         font-size: 13px;
+      }
+      html[data-theme='dark'] {
+        background: #151517;
+        color-scheme: dark;
+      }
+      html[data-theme='dark'] #boot-placeholder {
+        color: #adb2b8;
+      }
+      html[data-theme='dark'] #boot-placeholder .boot-title {
+        color: #f9fafb;
       }
     </style>
     <script type="module" src="/main.tsx"></script>

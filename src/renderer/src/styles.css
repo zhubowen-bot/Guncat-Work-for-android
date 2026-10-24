@@ -43,8 +43,14 @@
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 6px 20px rgba(0, 0, 0, 0.05);
 }
 
+/* ===== 深色变量 =====
+   两条入口的变量值必须保持一致：
+   1) 系统深色、且页面还没被 JS 打上 data-theme（首帧 / 无 JS）—— 靠媒体查询；
+   2) JS 从 Android 原生 uiMode 读到深色后显式打上的 data-theme="dark"。
+      部分 WebView 版本/机型不会把系统深色透传给 prefers-color-scheme，
+      只靠媒体查询会出现「系统是深色、应用还是白底」，所以必须有第二条。 */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --bg: #151517;
     --bg-elevated: #232324;
     --bg-sunken: #2c2c2e;
@@ -74,6 +80,36 @@
     --code-text: #e5e9f0;
     --shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 6px 20px rgba(0, 0, 0, 0.3);
   }
+}
+
+/* 与上面同一份值：Android 原生桥确认为深色时显式生效 */
+:root[data-theme='dark'] {
+  --bg: #151517;
+  --bg-elevated: #232324;
+  --bg-sunken: #2c2c2e;
+  --sidebar-fill: #1b1b1c;
+  --item-active: #43454a;
+  --item-hover: #2c2c2e;
+  --border: rgba(255, 255, 255, 0.12);
+  --divider: rgba(255, 255, 255, 0.06);
+  --text: #f9fafb;
+  --text-muted: #cfd3d6;
+  --text-faint: #adb2b8;
+  --text-quaternary: #81858c;
+  --toast-bg: #43454a;
+  --accent: #5686fe;
+  --accent-soft: #34415b;
+  --ai-msg: #2c2c2e;
+  --user-msg: #5686fe;
+  --danger: #f25a5a;
+  --warn: #d9a441;
+  --ok: #22c55e;
+  --attachment-error-bg: #3a2323;
+  --code-bg: #1b1b1c;
+  --diff-add: #4ed17e;
+  --diff-del: #f25a5a;
+  --code-text: #e5e9f0;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 6px 20px rgba(0, 0, 0, 0.3);
 }
 
 * {

@@ -1193,6 +1193,12 @@ check(
     /\.sidebar \{[\s\S]{0,300}?width: 252px/.test(rendererCss) &&
     /\.sidebar--rail \{[\s\S]{0,200}?width: 56px/.test(rendererCss)
 )
+check(
+  '深色模式两条入口都在：系统媒体查询 + 原生 uiMode 写出的 data-theme（WebView 媒体查询不可靠时的兜底）',
+  rendererCss.includes('@media (prefers-color-scheme: dark)') &&
+    /:root\[data-theme='dark'\]/.test(rendererCss) &&
+    /:root:not\(\[data-theme='light'\]\)/.test(rendererCss)
+)
 
 check(
   '正文栏宽度：对话 / 输入栏 / 附件条 / 提示行四处共用 --content-max（桌面铺开，不再是窄屏 800）',

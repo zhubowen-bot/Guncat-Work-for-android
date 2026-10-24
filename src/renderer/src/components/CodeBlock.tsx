@@ -27,6 +27,7 @@ import sql from 'highlight.js/lib/languages/sql'
 import typescript from 'highlight.js/lib/languages/typescript'
 import xml from 'highlight.js/lib/languages/xml'
 import yaml from 'highlight.js/lib/languages/yaml'
+import { isDarkTheme } from '../theme'
 import { copyText } from '../clipboard'
 
 const LANGUAGES: Record<string, Parameters<typeof hljs.registerLanguage>[1]> = {
@@ -189,26 +190,34 @@ export function normalizeMermaidSource(source: string): string {
 let mermaidSeq = 0
 let renderSlot: Promise<unknown> = Promise.resolve()
 
-/** 跟随系统深浅色（应用主题就是 prefers-color-scheme，见 styles.css）。
- *  无头渲染（SSR 冒烟验证）里没有 window，这里必须能安全降级为浅色。 */
+/** 跟随应用当前的深浅色（见 theme.ts）。
+ *  无头渲染（SSR 冒烟验证）里没有 document，这里必须能安全降级为浅色。 */
 function prefersDark(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(prefers-color-scheme: dark)').matches
-  )
+  return typeof document !== 'undefined' && isDarkTheme()
 }
 
 function useDarkMode(): boolean {
   const [dark, setDark] = useState(prefersDark)
   useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    if (typeof document === 'undefined') {
       return
     }
-    const query = window.matchMedia('(prefers-color-scheme: dark)')
-    const handle = (event: MediaQueryListEvent): void => setDark(event.matches)
-    query.addEventListener('change', handle)
-    return () => query.removeEventListener('change', handle)
+    const update = (): void => setDark(isDarkTheme())
+    // theme.ts 把系统状态写到 html[data-theme]：属性一变这里就跟着重渲染。
+    const observer = new MutationObserver(update)
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme']
+    })
+    if (typeof window.matchMedia === 'function') {
+      const query = window.matchMedia('(prefers-color-scheme: dark)')
+      query.addEventListener('change', update)
+      return () => {
+        observer.disconnect()
+        query.removeEventListener('change', update)
+      }
+    }
+    return () => observer.disconnect()
   }, [])
   return dark
 }

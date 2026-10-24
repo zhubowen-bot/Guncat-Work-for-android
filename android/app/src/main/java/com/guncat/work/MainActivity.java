@@ -7,6 +7,7 @@ import android.content.ClipboardManager;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
+import android.content.res.Configuration;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.graphics.Color;
@@ -68,6 +69,8 @@ public class MainActivity extends Activity {
     private static final int APP_PORT = 47653;
 
     private WebView webView;
+    /** 根容器：WebView 透明，系统深浅色切换时这一层决定加载期间的底色 */
+    private FrameLayout rootView;
     private GuncatServer server;
     private ShellManager shellManager;
     private ValueCallback<Uri[]> fileCallback;
@@ -119,11 +122,11 @@ public class MainActivity extends Activity {
         shellManager = new ShellManager(this);
         ShellManager.install(shellManager);
         webView.addJavascriptInterface(shellManager, "GuncatShell");
-        FrameLayout root = new FrameLayout(this);
-        root.setBackgroundColor(Color.rgb(246, 246, 247));
-        root.addView(webView, new FrameLayout.LayoutParams(
+        rootView = new FrameLayout(this);
+        rootView.setBackgroundColor(isSystemNight() ? Color.rgb(21, 21, 23) : Color.rgb(246, 246, 247));
+        rootView.addView(webView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        setContentView(root);
+        setContentView(rootView);
 
         webView.loadUrl("http://127.0.0.1:" + serverPort + "/index.html");
         if (serverPort != APP_PORT) {
@@ -151,8 +154,7 @@ public class MainActivity extends Activity {
     private void applySystemBars() {
         Window window = getWindow();
         window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
-        boolean dark = (getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
-                == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+        boolean dark = isSystemNight();
         int bar = dark ? Color.rgb(24, 24, 26) : Color.rgb(246, 246, 247);
         window.setStatusBarColor(bar);
         window.setNavigationBarColor(bar);
@@ -166,6 +168,30 @@ public class MainActivity extends Activity {
             }
         }
         window.getDecorView().setSystemUiVisibility(flags);
+    }
+
+    /** 系统是否处于深色模式（Activity 的 uiMode 才是权威，WebView 的媒体查询可能不跟随） */
+    private boolean isSystemNight() {
+        return (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
+                == Configuration.UI_MODE_NIGHT_YES;
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        applySystemBars();
+        if (rootView != null) {
+            rootView.setBackgroundColor(isSystemNight()
+                    ? Color.rgb(21, 21, 23) : Color.rgb(246, 246, 247));
+        }
+        // 页面不会因为 configChanges 重建，必须主动把新的深浅色送进 WebView。
+        // theme.ts 里的 __guncatThemeChanged 会把它落到 html[data-theme]。
+        if (webView != null) {
+            final boolean dark = (newConfig.uiMode & Configuration.UI_MODE_NIGHT_MASK)
+                    == Configuration.UI_MODE_NIGHT_YES;
+            webView.evaluateJavascript(
+                    "window.__guncatThemeChanged&&window.__guncatThemeChanged(" + dark + ")", null);
+        }
     }
 
     private void configureWebView() {
@@ -843,6 +869,17 @@ public class MainActivity extends Activity {
             } catch (Exception e) {
                 return "{}";
             }
+        }
+
+        /**
+         * 供渲染层判断系统深浅色。
+         *
+         * 不直接用 WebView 的 prefers-color-scheme：部分 WebView 版本/机型在系统深色下
+         * 仍然报 light。原生 Configuration 是 Activity 真正拿到的值，最可靠。
+         */
+        @JavascriptInterface
+        public boolean isNightMode() {
+            return isSystemNight();
         }
 
         @JavascriptInterface
