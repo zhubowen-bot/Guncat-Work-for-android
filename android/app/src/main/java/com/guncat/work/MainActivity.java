@@ -247,6 +247,11 @@ public class MainActivity extends Activity {
                     }
                     Intent intent = params.createIntent();
                     intent.addCategory(Intent.CATEGORY_OPENABLE);
+                    // createIntent() 在多数 WebView 上已带这个开关，但个别 ROM/旧内核会漏；
+                    // 少这一句的直接后果是「选了多个，回来只有一个甚至一个都没有」。
+                    intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,
+                            params.getMode() == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE);
+                    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                     startActivityForResult(intent, REQ_FILE);
                     return true;
                 } catch (Exception e) {
@@ -318,15 +323,36 @@ public class MainActivity extends Activity {
             return;
         }
         if (requestCode == REQ_FILE) {
-            Uri[] result = null;
-            if (resultCode == Activity.RESULT_OK && data != null) {
-                result = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
-            }
+            // 不用 FileChooserParams.parseResult：部分系统在选择多个时同时给了
+            // data.getData()（第一项）与 ClipData（全部项），parseResult 会直接返回
+            // 「只有第一项」甚至 null。这里优先取 ClipData，取不到再退回单 Uri。
+            Uri[] result = parseChooserUris(resultCode, data);
             if (fileCallback != null) {
                 fileCallback.onReceiveValue(result);
                 fileCallback = null;
             }
         }
+    }
+
+    /** 把文件选择器的结果还原成完整 Uri 列表（多选时 ClipData 才是全量） */
+    private static Uri[] parseChooserUris(int resultCode, Intent data) {
+        if (resultCode != Activity.RESULT_OK || data == null) {
+            return null;
+        }
+        ArrayList<Uri> uris = new ArrayList<>();
+        ClipData clip = data.getClipData();
+        if (clip != null) {
+            for (int i = 0; i < clip.getItemCount(); i++) {
+                Uri uri = clip.getItemAt(i).getUri();
+                if (uri != null) {
+                    uris.add(uri);
+                }
+            }
+        }
+        if (uris.isEmpty() && data.getData() != null) {
+            uris.add(data.getData());
+        }
+        return uris.isEmpty() ? null : uris.toArray(new Uri[0]);
     }
 
     @Override

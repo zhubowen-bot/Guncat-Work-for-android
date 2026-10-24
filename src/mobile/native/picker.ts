@@ -75,16 +75,30 @@ export function pickFilesFromDevice(options: PickOptions = {}): Promise<string[]
     document.body.appendChild(input)
 
     let settled = false
+    // change 已经触发 = 用户确实选了文件。此后**绝不能**再走「取消」兜底：
+    // 多选/相册里的文件要逐个读进内存，耗时可能超过兜底计时器，
+    // 先前就是因为这个计时器把「读取中」当成「用户取消」，多选结果被整体丢掉。
+    let changeSeen = false
+    let focusTimer = 0
     const finish = (paths: string[]): void => {
       if (settled) {
         return
       }
       settled = true
+      if (focusTimer !== 0) {
+        window.clearTimeout(focusTimer)
+        focusTimer = 0
+      }
       input.remove()
       resolve(paths)
     }
 
     input.addEventListener('change', () => {
+      changeSeen = true
+      if (focusTimer !== 0) {
+        window.clearTimeout(focusTimer)
+        focusTimer = 0
+      }
       const files = Array.from(input.files ?? [])
       const limited = files.slice(0, Math.max(1, options.maxCount ?? 1))
       void importSelected(limited).then(finish, () => finish([]))
@@ -92,14 +106,26 @@ export function pickFilesFromDevice(options: PickOptions = {}): Promise<string[]
     input.addEventListener('cancel', () => finish([]))
 
     // 某些旧 WebView 没有 cancel 事件：窗口重新获得焦点后若还没有 change，按取消处理。
+    // 只在「确实失焦过」之后才计时 —— 否则 picker 还没打开、焦点事件先到，
+    // 计时器会在用户挑选文件的过程中把这次选择判成取消。
+    let blurred = false
+    const onBlur = (): void => {
+      blurred = true
+    }
     const onFocus = (): void => {
-      window.setTimeout(() => {
-        if (!settled && (input.files === null || input.files.length === 0)) {
+      window.removeEventListener('blur', onBlur)
+      window.removeEventListener('focus', onFocus)
+      if (!blurred || settled) {
+        return
+      }
+      // 给系统选择器回传结果留出时间；changeSeen 之后这个计时器不会再判取消。
+      focusTimer = window.setTimeout(() => {
+        if (!settled && !changeSeen && (input.files === null || input.files.length === 0)) {
           finish([])
         }
-      }, 800)
-      window.removeEventListener('focus', onFocus)
+      }, 2000)
     }
+    window.addEventListener('blur', onBlur)
     window.addEventListener('focus', onFocus)
 
     input.click()
