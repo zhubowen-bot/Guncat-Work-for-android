@@ -87,10 +87,15 @@ export default function App() {
     currentProfile?.config.model !== undefined && currentProfile.config.model !== ''
       ? currentProfile.config.model
       : (currentProfile?.config.models?.[0] ?? '')
-  const currentModelValue = currentModelChoice(
-    settings?.currentApiProfileId ?? '',
-    activeModel
-  )
+  // 没填 Key 的方案不进模型选择框：预置方案只是模板，没 Key 时连胶囊都不出现。
+  const modelOptions = modelChoices(profiles)
+  const desiredModelValue =
+    currentProfile !== undefined && currentProfile.config.apiKey.trim() !== ''
+      ? currentModelChoice(settings?.currentApiProfileId ?? '', activeModel)
+      : ''
+  const currentModelValue = modelOptions.some((option) => option.value === desiredModelValue)
+    ? desiredModelValue
+    : ''
   const pushNotice = useStore((s) => s.pushNotice)
   const sidebarOpen = useStore((s) => s.sidebarOpen)
   const openSidebar = useStore((s) => s.openSidebar)
@@ -347,7 +352,7 @@ export default function App() {
           ) : null}
           {/* 模型胶囊（对齐原版 ChatPage 输入区左下角那颗）：直接在这儿换配置，
               不必进设置。原版弹层上半部分就是配置列表 —— 这里用一个下拉等价表达。 */}
-          {profiles.length > 0 ? (
+          {currentModelValue !== '' ? (
             <Picker
               variant="plain"
               triggerClassName="topbar__model"
@@ -355,7 +360,7 @@ export default function App() {
               ariaLabel="选择模型"
               value={currentModelValue}
               disabled={running}
-              options={modelChoices(profiles)}
+              options={modelOptions}
               onChange={(value) => void switchModel(value)}
             />
           ) : null}

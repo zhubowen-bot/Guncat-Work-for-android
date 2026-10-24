@@ -130,11 +130,17 @@ export function TableOcrPanel({
 
 /** 可选模型：来自「配置方案」里的全部模型 + 多模态解析的模型（原版 TableOcrPage 就是这么列的） */
 export function tableOcrModelOptions(
-  profiles: Array<{ name: string; config: { model: string; models?: string[] } }> | undefined,
+  profiles:
+    | Array<{ name: string; config: { apiKey: string; model: string; models?: string[] } }>
+    | undefined,
   multimodalModel: string
 ): TableOcrModelOption[] {
   const options: TableOcrModelOption[] = []
   for (const profile of profiles ?? []) {
+    // 没填 Key 的方案只是预置模板，不列入可用模型
+    if (profile.config.apiKey.trim() === '') {
+      continue
+    }
     const names =
       profile.config.models !== undefined && profile.config.models.length > 0
         ? profile.config.models

@@ -5,25 +5,33 @@ import type { ApiProfileDto } from '@ipc/contract'
  *
  * 一个配置方案现在可以有多个模型（同一个服务商、同一套 Key），所以选项是
  * 「方案 + 模型」的组合；value 用 `profileId::model` 编码（方案 id 不含 `::`）。
- * 没填模型的老方案仍然保留一条纯方案选项，选中它只切方案、不改模型。
+ *
+ * 没填 API Key 的方案不进入选项：预置方案刚出现时只是模板，Key 还没填，
+ * 放进模型选择框只会让人以为「已经能用」，选中后也只会以 401 失败。
+ * 填上 Key 并保存后，下一次读取设置就会自动出现。
  */
 export function modelChoices(
   profiles: ApiProfileDto[]
-): Array<{ value: string; label: string }> {
-  const options: Array<{ value: string; label: string }> = []
+): Array<{ value: string; label: string; triggerLabel: string }> {
+  const options: Array<{ value: string; label: string; triggerLabel: string }> = []
   for (const profile of profiles) {
+    if (profile.config.apiKey.trim() === '') {
+      continue
+    }
     const models =
       profile.config.models !== undefined && profile.config.models.length > 0
         ? profile.config.models
         : profile.config.model !== ''
           ? [profile.config.model]
           : []
-    if (models.length === 0) {
-      options.push({ value: `${profile.id}::`, label: profile.name })
-      continue
-    }
     for (const model of models) {
-      options.push({ value: `${profile.id}::${model}`, label: `${model} · ${profile.name}` })
+      options.push({
+        value: `${profile.id}::${model}`,
+        // 菜单里带服务商，方便区分不同方案下的同名模型
+        label: `${model} · ${profile.name}`,
+        // 胶囊只写模型名：顶栏空间有限，服务商不该挤占这里
+        triggerLabel: model
+      })
     }
   }
   return options

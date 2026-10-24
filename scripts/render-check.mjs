@@ -1338,6 +1338,39 @@ check(
   '未知接入方式也退回一份占位符与提示（面板不能空着）',
   mod.providerCopy('nope').baseUrl !== '' && mod.providerCopy('nope').hint !== ''
 )
+
+// 模型胶囊：没填 Key 的预置方案只是模板，不进选择框；胶囊只写模型名，菜单才带服务商
+const modelChoices = mod.modelChoices([
+  {
+    id: 'preset-deepseek',
+    name: 'Deepseek',
+    config: {
+      apiKey: 'sk-test',
+      model: 'deepseek-flash',
+      models: ['deepseek-flash']
+    }
+  },
+  {
+    id: 'preset-opencode-go',
+    name: 'Opencode Go',
+    config: {
+      apiKey: '',
+      model: 'deepseek-v4.1-flash',
+      models: ['deepseek-v4.1-flash']
+    }
+  }
+])
+check(
+  '没填 API Key 的方案不出现在模型选择框里',
+  modelChoices.length === 1 && modelChoices[0].value === 'preset-deepseek::deepseek-flash',
+  JSON.stringify(modelChoices)
+)
+check(
+  '胶囊只显示模型名，展开菜单才显示「· 服务商」',
+  modelChoices[0].triggerLabel === 'deepseek-flash' &&
+    modelChoices[0].label === 'deepseek-flash · Deepseek',
+  `${modelChoices[0].triggerLabel} / ${modelChoices[0].label}`
+)
 check(
   '搜索提示按引擎 id 给（Bing / Tavily / Exa / Firecrawl / Metaso / 其它）',
   copyC.searchHint === 'Bing 无需 API Key, 直接爬取搜索结果页; 请求失败自动回落 cn.bing.com。' &&

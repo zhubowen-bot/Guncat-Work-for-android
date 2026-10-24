@@ -9,10 +9,11 @@ import { MultimodalConfig } from './MultimodalConfig';
 //
 // 端点与协议的依据：
 //   · DeepSeek Anthropic 兼容端点的 base_url 是 https://api.deepseek.com/anthropic
-//     （官方文档「使用 Anthropic API」），模型为 deepseek-flash / deepseek-v4-pro；
-//   · OpenCode Go 的 base_url 是 https://opencode.ai/inference/go，
-//     Anthropic Messages 路径是 /anthropic/v1/messages（官方 Console → Harnesses）。
-//     从 2025-09-05 起每个请求还必须带 x-opencode-session（会话级稳定 ID），
+//     （官方文档「使用 Anthropic API」），预留模型为 deepseek-flash；
+//   · OpenCode Go 的 base_url 是 https://opencode.ai/inference/go。
+//     Go 的每个模型只归属一种协议，deepseek-v4.1-flash 官方给的是 OpenAI Chat Completions
+//     （.../openai/v1/chat/completions），所以这套预置按 Chat Completions 接入；
+//   · 从 2025-09-05 起 OpenCode Go 的每个请求还必须带 x-opencode-session（会话级稳定 ID），
 //     这一条由 LLMProtocol.authHeaders 统一补，聊天、工作流与自动审查都走同一处。
 export class ApiPresets {
   /** 预置方案用固定 id：一次性迁移靠它判断「这份方案是不是预置的」 */
@@ -25,23 +26,16 @@ export class ApiPresets {
   static readonly DEEPSEEK_BASE_URL: string = 'https://api.deepseek.com/anthropic';
   static readonly OPENCODE_GO_BASE_URL: string = 'https://opencode.ai/inference/go';
 
-  // DeepSeek 当前对外模型（Anthropic 兼容端点同样接受这两个名字）
-  static readonly DEEPSEEK_MODELS: string[] = ['deepseek-flash', 'deepseek-v4-pro'];
-  // OpenCode Go 里走 Anthropic Messages 的模型（同一个方案只能有一种协议，
-  // GPT / Grok / GLM / Kimi 等走 OpenAI 协议，需要另建方案 —— 设置页里有说明）。
-  static readonly OPENCODE_GO_MODELS: string[] = [
-    'qwen3.8-max',
-    'claude-haiku-5-5',
-    'qwen3.8-flash',
-    'qwen3.7-plus',
-    'minimax-m3'
-  ];
+  // 预置只留最常用、且与各自方案协议匹配的模型；其余模型由用户按需添加。
+  static readonly DEEPSEEK_MODELS: string[] = ['deepseek-flash'];
+  static readonly OPENCODE_GO_MODELS: string[] = ['deepseek-v4.1-flash'];
 
   static deepseekProfile(): ApiProfile {
     let profile: ApiProfile = new ApiProfile();
     profile.id = ApiPresets.DEEPSEEK_ID;
     profile.name = ApiPresets.DEEPSEEK_NAME;
-    profile.apiConfig = ApiPresets.anthropicConfig(
+    profile.apiConfig = ApiPresets.configFor(
+      'anthropic-messages',
       ApiPresets.DEEPSEEK_BASE_URL,
       'deepseek-flash',
       ApiPresets.DEEPSEEK_MODELS
@@ -54,9 +48,10 @@ export class ApiPresets {
     let profile: ApiProfile = new ApiProfile();
     profile.id = ApiPresets.OPENCODE_GO_ID;
     profile.name = ApiPresets.OPENCODE_GO_NAME;
-    profile.apiConfig = ApiPresets.anthropicConfig(
+    profile.apiConfig = ApiPresets.configFor(
+      'openai-completions',
       ApiPresets.OPENCODE_GO_BASE_URL,
-      'qwen3.8-max',
+      'deepseek-v4.1-flash',
       ApiPresets.OPENCODE_GO_MODELS
     );
     profile.multimodalConfig = MultimodalConfig.default();
@@ -76,13 +71,13 @@ export class ApiPresets {
     return /^https?:\/\/api\.deepseek\.com(?::\d+)?(\/|$)/i.test(url);
   }
 
-  private static anthropicConfig(baseUrl: string, model: string, models: string[]): ApiConfig {
+  private static configFor(provider: string, baseUrl: string, model: string, models: string[]): ApiConfig {
     let config: ApiConfig = new ApiConfig();
-    config.provider = 'anthropic-messages';
+    config.provider = provider;
     config.baseUrl = baseUrl;
     config.model = model;
     config.models = models.slice(0);
-    // 预置端点都是标准路径：自动补全开着，用户只改域名也不会拼错 /v1/messages
+    // 预置端点都是标准路径：自动补全开着，用户只改域名也不会拼错协议路径
     config.autoSuffix = true;
     return config;
   }

@@ -76,10 +76,15 @@ export function Composer({ running, mode, onSend, onSteer, onAbort }: Props) {
     currentProfile?.config.model !== undefined && currentProfile.config.model !== ''
       ? currentProfile.config.model
       : (currentProfile?.config.models?.[0] ?? '')
-  const currentModelValue = currentModelChoice(
-    settings?.currentApiProfileId ?? '',
-    activeModel
-  )
+  // 只有填了 Key 的方案才出现在模型胶囊里；当前方案没 Key 时胶囊整颗不出现。
+  const modelOptions = modelChoices(profiles)
+  const desiredModelValue =
+    currentProfile !== undefined && currentProfile.config.apiKey.trim() !== ''
+      ? currentModelChoice(settings?.currentApiProfileId ?? '', activeModel)
+      : ''
+  const currentModelValue = modelOptions.some((option) => option.value === desiredModelValue)
+    ? desiredModelValue
+    : ''
 
   // 消息操作行的「编辑 / 重新编辑」把文本塞进这里，并聚焦回输入框
   useEffect(() => {
@@ -342,7 +347,7 @@ export function Composer({ running, mode, onSend, onSteer, onAbort }: Props) {
 
       {/* 手机上把顶栏的模型 / 推理 / 联网收进输入框上方的胶囊，避免顶栏挤成一排 */}
       <div className="composer__chips">
-        {profiles.length > 0 ? (
+        {currentModelValue !== '' ? (
           <Picker
             variant="chip"
             triggerClassName="composer-chip"
@@ -350,7 +355,7 @@ export function Composer({ running, mode, onSend, onSteer, onAbort }: Props) {
             ariaLabel="选择模型"
             value={currentModelValue}
             disabled={running}
-            options={modelChoices(profiles)}
+            options={modelOptions}
             onChange={(value) => void switchModel(value)}
           />
         ) : null}

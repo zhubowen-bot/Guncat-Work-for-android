@@ -605,6 +605,7 @@ export function settingsCopy(
 }
 
 export { normalizeApiConfig, normalizeMultimodal, providerCopy, searchEngineHint }
+export { modelChoices } from '@renderer/modelChoices'
 
 /**
  * 密钥存储说明的文案。安全口径必须能被断言：保险库可用时才是「加密保存」，

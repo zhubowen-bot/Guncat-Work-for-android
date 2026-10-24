@@ -592,13 +592,21 @@ check(
   `merged=${seededProfiles.merged} key=${seededDeepseek.apiConfig.apiKey} models=${seededDeepseek.apiConfig.models.join(',')}`
 )
 check(
-  '预置方案第二个是 Opencode Go（Go 套餐 Base URL + Anthropic 模型）',
+  '预置方案第二个是 Opencode Go（Go 套餐 Base URL + deepseek-v4.1-flash 的 Chat Completions 协议）',
   seededOpencode.id === 'preset-opencode-go' &&
     seededOpencode.name === 'Opencode Go' &&
     seededOpencode.apiConfig.baseUrl === 'https://opencode.ai/inference/go' &&
-    seededOpencode.apiConfig.models.includes('qwen3.8-max') &&
-    seededOpencode.apiConfig.models.includes('claude-haiku-5-5'),
-  `${seededOpencode.name} / ${seededOpencode.apiConfig.baseUrl}`
+    seededOpencode.apiConfig.provider === 'openai-completions' &&
+    seededOpencode.apiConfig.models.length === 1 &&
+    seededOpencode.apiConfig.models[0] === 'deepseek-v4.1-flash',
+  `${seededOpencode.name} / ${seededOpencode.apiConfig.provider} / ${seededOpencode.apiConfig.models.join(',')}`
+)
+check(
+  '预置模型只留指定的各一个（Deepseek → deepseek-flash；Opencode Go → deepseek-v4.1-flash）',
+  mod.ApiPresets.deepseekProfile().apiConfig.models.length === 1 &&
+    mod.ApiPresets.deepseekProfile().apiConfig.models[0] === 'deepseek-flash' &&
+    mod.ApiPresets.opencodeGoProfile().apiConfig.models.length === 1 &&
+    mod.ApiPresets.opencodeGoProfile().apiConfig.models[0] === 'deepseek-v4.1-flash'
 )
 check(
   '非 DeepSeek 的旧方案保留在预置方案之后',

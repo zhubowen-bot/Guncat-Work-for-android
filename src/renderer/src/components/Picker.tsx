@@ -7,6 +7,12 @@ export interface PickerOption {
   value: string
   label: string
   hint?: string
+  /**
+   * 触发按钮上显示的短文案（默认用 label）。
+   * 模型选择用它：胶囊里只写模型名，菜单里才带「· 服务商」——
+   * 顶栏空间有限，长名字会把别的开关挤走。
+   */
+  triggerLabel?: string
 }
 
 interface Props {
@@ -37,6 +43,8 @@ export function Picker(props: Props): JSX.Element {
     [props.options, props.value]
   )
   const sheetTitle = props.sheetTitle ?? props.ariaLabel ?? props.title ?? '请选择'
+  const display =
+    selected?.triggerLabel ?? selected?.label ?? props.value
 
   useEffect(() => {
     if (!open) {
@@ -71,7 +79,7 @@ export function Picker(props: Props): JSX.Element {
         onClick={() => setOpen(true)}
       >
         {props.prefix !== undefined ? <span className="picker__prefix">{props.prefix}</span> : null}
-        <span className="picker__value">{selected?.label ?? props.value}</span>
+        <span className="picker__value">{display}</span>
         <IconChevronDown size={14} className="picker__chevron" />
       </button>
 
