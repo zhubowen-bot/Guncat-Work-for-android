@@ -7,9 +7,12 @@
 
 ---
 
-## Android 版（0.3.2-android）
+## Android 版（0.2.1-android）
 
-### 修复
+把 `run_command` 从「JS 模拟的 POSIX 子集」换成**随 APK 内置的真实 Linux 用户态**，
+不需要用户安装 Termux。产物 `release/Guncat-Work-0.2.1-android.apk`（arm64，约 211MB）。
+
+### 修复：长任务中断与自动重试
 
 - **长任务不再「安静地停住」**：三种协议都识别流终止事件（Completions 的 `finish_reason`、
   Anthropic 的 `message_stop` / `stop_reason`、Responses 的 `response.completed` / `[DONE]`）。
@@ -24,18 +27,7 @@
 - **重试前清掉半截输出**：接上 `onRetry`，把上一次尝试已流出的正文、思考与未完成的工具行
   清空并提示“请求中断，正在自动重试（n/5）”，避免重试成功后出现“旧半截 + 新全文”的重复。
 
-### 提示词
-
-- **物理实验/数学类数据图先用 Python 真算再画，不许手写 SVG 冒充**：函数图像、拟合曲线、
-  散点回归、误差棒要用 `run_command` 跑 Python，基于原始数据做最小二乘/回归，再由脚本按
-  算出的坐标输出 SVG/PNG；环境里**没有 matplotlib**，用标准库或已装的 numpy/Pillow 自建绘图。
-  SVG 只用于示意图、流程图、图标等信息表达。`write_svg` 的说明同步标注了这条边界。
-
----
-
-## Android 版（0.3.1-android）
-
-### 修复
+### 修复：跨轮思考与大文件镜像
 
 - **工作区里的大文件不再在真机命令里「凭空消失」**：镜像的单文件上限从 8MB 提到 **32MB**
   （与原生 `fsRead` 的上限对齐），单次同步从 32MB 提到 **64MB**。11MB 级的 ZIP / 附件现在会
@@ -50,12 +42,12 @@
   截断，上限交给上下文预算与 1M 窗口；同时把 reasoning 计入上下文预算的字符量，
   压缩阈值不再低估真实 prompt。
 
----
+### 提示词：数据图
 
-## Android 版（0.3.0-android）
-
-把 `run_command` 从「JS 模拟的 POSIX 子集」换成**随 APK 内置的真实 Linux 用户态**，
-不需要用户安装 Termux。产物 `release/Guncat-Work-0.3.0-android.apk`（arm64，约 211MB）。
+- **物理实验/数学类数据图先用 Python 真算再画，不许手写 SVG 冒充**：函数图像、拟合曲线、
+  散点回归、误差棒要用 `run_command` 跑 Python，基于原始数据做最小二乘/回归，再由脚本按
+  算出的坐标输出 SVG/PNG；环境里**没有 matplotlib**，用标准库或已装的 numpy/Pillow 自建绘图。
+  SVG 只用于示意图、流程图、图标等信息表达。`write_svg` 的说明同步标注了这条边界。
 
 ### PDF 解析（PDF.js）
 
@@ -160,7 +152,7 @@
 - **系统 Shell 兜底**：非 arm64 或解压失败时可切 `/system/bin/sh`，能力降级但工作区镜像照旧。
 - **设置页**「终端命令执行 (Shell)」：切换内置/系统后端、显示首次解压进度、重新安装。
 - **浏览器预览**仍回退到 `src/mobile/platform/shell.ts` 的 JS 子集（无 `window.GuncatShell` 时）。
-- 移除 0.3.0 早期版本的外部 Termux `RUN_COMMAND` 后端与权限/接收器，避免「还要装 Termux」的歧义。
+- 移除早期版本的外部 Termux `RUN_COMMAND` 后端与权限/接收器，避免「还要装 Termux」的歧义。
 - 文档同步：README / README_EN / `docs/ANDROID.md` / `docs/THIRD-PARTY.md` / `AGENTS.md`。
 
 ### 导出 / 分享 / 剪贴板（真机反馈）

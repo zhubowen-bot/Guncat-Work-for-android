@@ -198,7 +198,10 @@ async function main() {
   fs.mkdirSync(OUT, { recursive: true })
   fs.mkdirSync(RELEASE, { recursive: true })
 
-  const versionCode = 20000 + Number(pkg.version.split('.')[1] ?? 0) * 100 + Number(pkg.version.split('.')[2] ?? 0)
+  // versionName（package.json 的 version）是用户侧看到的版本，只在功能对齐/正式发布时改；
+  // versionCode 是 Android 的安装顺序号，只增不减。两者解耦：versionCode 用构建时间（分钟）
+  // 生成，避免 versionName 回退时被系统当成降级、拒绝覆盖安装。
+  const versionCode = Math.floor(Date.now() / 60000)
   const resDir = path.join(ANDROID, 'app', 'src', 'main', 'res')
   const manifestSource = path.join(ANDROID, 'app', 'src', 'main', 'AndroidManifest.xml')
   // aapt2 的 --version-code 在部分 Windows 版本上不覆盖清单属性，直接生成一份带版本号的清单更稳。

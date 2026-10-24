@@ -131,6 +131,14 @@ npm run dist:android
 5. `d8 --min-api 28` 生成 `classes.dex`
 6. `zipalign` 对齐、`apksigner` 签名
 
+**版本号与 versionCode 是两件事**（Android 的覆盖安装规则）：
+
+- `versionName` = `package.json` 的 `version`，是用户侧看到的版本；只在功能对齐/正式发布时改，
+  开发构建不要随手往上加。
+- `versionCode` = Android 的安装顺序号，只增不减；构建脚本按构建时间（分钟）生成，
+  与 versionName 无关。这样版本名回退也不会被系统当成降级、拒绝覆盖安装。
+- 日常改动不需要动这两个值：`npm run dist:android` 产出的包可以直接覆盖上一版。
+
 内置终端资源（约 205MB，因体积不入 git）缺失时脚本会**直接报错**并给出三步重建命令，
 不会静默出一个没有终端的包：
 

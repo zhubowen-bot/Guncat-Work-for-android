@@ -331,6 +331,9 @@ JS 侧 `src/mobile/native/net.ts` 只改写跨域 URL，同源资源请求保持
 - Java 侧 `ShellManager.java` / `TermuxBootstrap.java` 没有第三方依赖，d8 直接能编；
 - `minSdk 28`、**`targetSdk 28`**（执行私有目录文件的系统限制；Termux 同款做法）；
 - `assets/termux/bootstrap-aarch64.zip` 约 205MB，构建时由 `aapt2 -A` 打进 APK；产物 APK 约 211MB；
+- **版本号与 versionCode 解耦**：`versionName`（`package.json` 的 `version`）是用户侧看到的版本，
+  只在功能对齐/正式发布时改，不要随开发构建频繁变动；`versionCode` 由构建时间生成、只增不减，
+  与 versionName 无关 —— 版本名回退时也不会被系统当成降级、拒绝覆盖安装；
 - 清单与主题在 `android/app/src/main/`；
 - 签名密钥在 `android/keystore/guncat.jks`（git 忽略）；换钥匙会导致覆盖安装失败。
 

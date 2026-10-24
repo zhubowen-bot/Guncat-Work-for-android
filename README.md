@@ -11,7 +11,7 @@
 ![targetSdk](https://img.shields.io/badge/targetSdk-28-blue)
 ![React](https://img.shields.io/badge/React-19-blue)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue)
-![version](https://img.shields.io/badge/version-0.3.0-blue)
+![version](https://img.shields.io/badge/version-0.2.1-blue)
 ![tools](https://img.shields.io/badge/%E5%86%85%E7%BD%AE%E5%B7%A5%E5%85%B7-45-informational)
 ![skills](https://img.shields.io/badge/%E6%8A%80%E8%83%BD-37-informational)
 [![license](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
@@ -66,7 +66,7 @@ POSIX 用户态，因此做了以下替换（详见 [docs/ANDROID.md](docs/ANDRO
 
 ## 快速开始（安装）
 
-1. 从 `release/Guncat-Work-0.3.0-android.apk` 安装（arm64，Android 9+；导出到系统「下载」需 Android 10+；需要允许「安装未知来源应用」）。
+1. 从 `release/Guncat-Work-0.2.1-android.apk` 安装（arm64，Android 9+；导出到系统「下载」需 Android 10+；需要允许「安装未知来源应用」）。
    首次启动会解压内置终端（约 205MB，几十秒到几分钟），状态可在「设置 → 终端命令执行」查看。
 2. 打开后进入「设置 → 接入方式」，填 Base URL、API Key、模型名，保存。
    - 支持 OpenAI Completions（`/chat/completions`）、OpenAI Responses（`/responses`）、
