@@ -525,7 +525,8 @@ function buildAnthropicBody(config: ApiConfig, agent: Agent | null,
       // 思考模式下带 tool_use 的 assistant 消息必须回传思考块(置于首位, 与工作模式同规则):
       // 有思考文本即回传, 签名在流式捕获到时随块携带(部分兼容服务不返回签名则省略该字段)
       let blocks: Object[] = [];
-      if (thinkingEnabled && m.reasoning !== '') {
+      // 签名缺失时不回传思考块: Anthropic 校验签名, 无签名的 thinking 块直接 400
+      if (thinkingEnabled && m.reasoning !== '' && m.thinkingSignature !== '') {
         let thinkingBlock: Record<string, Object> = { type: 'thinking', thinking: m.reasoning };
         if (m.thinkingSignature !== '') {
           thinkingBlock['signature'] = m.thinkingSignature;
