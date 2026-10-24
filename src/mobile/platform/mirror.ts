@@ -3,7 +3,7 @@
 // 「真 Shell」就只是个假装能用的壳。
 //
 // 边界（与 docs/ANDROID.md 一致）：
-//   · 只镜像 /guncat/data/workspaces/<会话>，不同步设置、会话历史与 API Key；
+//   · 只镜像 /guncat/data/files/workspaces/<会话>，不同步设置、会话历史与 API Key；
 //   · 单文件 8MB、单次同步 32MB 封顶，超出的文件留在设备上并在结果里明确说明；
 //   · memfs 仍是一等公民：文件工具的写入一定会在下一次命令前落盘，命令行的改动会在
 //     命令结束后读回；后台任务与文件工具同时改同一个文件时按「后写覆盖」处理。
@@ -12,7 +12,7 @@ import path from 'node:path'
 import { bytesToBase64, base64ToBytes } from '../native/bridge'
 import { parseJson, shellBridge } from '../native/shellBridge'
 
-export const WORKSPACES_ROOT = '/guncat/data/workspaces'
+export const WORKSPACES_ROOT = '/guncat/data/files/workspaces'
 const MAX_FILE_BYTES = 8 * 1024 * 1024
 const MAX_TOTAL_BYTES = 32 * 1024 * 1024
 const MAX_ENTRIES = 20_000
@@ -53,13 +53,21 @@ function stateOf(root: string): MirrorState {
   return state
 }
 
-/** 从 cwd 推会话工作区根：/guncat/data/workspaces/<conv>/... → /guncat/data/workspaces/<conv> */
+/**
+ * 从 cwd 推会话工作区根：任意前缀下的 /workspaces/<conv>/... → 该会话根。
+ *
+ * 注意：filesDir 在 Android 上是 /guncat/data/files，所以真实工作区是
+ * /guncat/data/files/workspaces/<conv>。旧实现写死了 /guncat/data/workspaces，
+ * 结果镜像目录和文件工具的工作区是两个不同目录，终端里看不到工作区文件。
+ */
 export function mirrorRootFor(cwd: string): string {
-  if (cwd === WORKSPACES_ROOT || cwd.startsWith(WORKSPACES_ROOT + '/')) {
-    const rest = cwd.slice(WORKSPACES_ROOT.length + 1)
+  const marker = '/workspaces/'
+  const at = cwd.indexOf(marker)
+  if (at >= 0) {
+    const rest = cwd.slice(at + marker.length)
     const conv = rest.split('/')[0]
     if (conv !== '') {
-      return WORKSPACES_ROOT + '/' + conv
+      return cwd.slice(0, at + marker.length + conv.length)
     }
   }
   return WORKSPACES_ROOT

@@ -23,6 +23,7 @@ import { CommandService, RUN_COMMAND_TOOL_NAME, JOB_LIST_TOOL_NAME,
   JOB_OUTPUT_TOOL_NAME, JOB_KILL_TOOL_NAME } from './CommandService';
 import { ToolExecResult, WorkFileService } from './WorkFileService';
 import { Constants } from '../common/Constants';
+import { shellPlatformNote } from '../common/PlatformInfo';
 import { AbortSignal } from '../common/Types';
 
 // ===== 设备侧 FsAdapter(fileIo 实现) =====
@@ -676,7 +677,7 @@ export class HarnessTools {
         'timeout_ms', HarnessTools.strProp('可选: 执行超时毫秒数, 默认 10000, 范围 1000~30000')),
       ['code']));
     defs.push(HarnessTools.makeTool(RUN_COMMAND_TOOL_NAME,
-      '在本机执行一条命令行命令(Windows 用 cmd, macOS/Linux 用 sh), 工作目录固定在本会话工作区。' +
+      '在本机执行一条命令行命令(Windows 用 cmd/PowerShell, Android/Linux/macOS 用 sh/bash), 工作目录固定在本会话工作区。' +
       '用于必须走真实工具链的活: 跑测试/构建脚本、node/npm/python/git 等本机程序、调用项目自带的 CLI、把文件转格式(在用户已授权目录内)。**边界(重要)**: ' +
       '① cwd 只能是工作区内的相对子目录; 命令文本里出圈一样算危险(绝对路径或 .. 上跳到工作区之外, 含 dir ..、> ..\\x 这类写法), 会先请用户批准; ' +
       '② 破坏性/外溢性命令(删除文件、改系统配置或服务、装全局包、git push、下载并执行网络内容、读凭据文件等)要先过判官: 默认档与「每条都批准」弹出审批卡请用户批准, 「自动审批」档先交另一个模型审阅(它判安全就直接执行并在结果里写明是自动放行, 判危险仍弹卡), 「完全权限」档不审不问; 任何一档下你都不能批准自己的命令, 用户不批准(或超时/跳过)一律返回 ERROR —— 此时**不要重复请求同一条命令**, 改用别的工具或把命令写进回答交给用户; ' +
@@ -684,7 +685,8 @@ export class HarnessTools {
       '④ 环境变量按白名单净化, 依赖主进程环境变量的写法(如 $env:API_KEY)在这里拿不到值。' +
       '默认 30 秒超时(最大 300 秒), 超时会终止整棵进程树; 需要更久请传 run_in_background=true 放后台, 用 job_output/job_list/job_kill 跟进。' +
       '输出超过约 1.2 万字符会头尾截断, 全文落工作区 .spill/。' +
-      '**能不用 shell 就别用**: 读文件用 read_file、找文件用 glob、搜内容用 grep、算数与加工数据用 run_js(更快也更安全), 只有确实需要本机程序时才用它。',
+      '**能不用 shell 就别用**: 读文件用 read_file、找文件用 glob、搜内容用 grep、算数与加工数据用 run_js(更快也更安全), 只有确实需要本机程序时才用它。' +
+      shellPlatformNote(),
       HarnessTools.props4(
         'command', HarnessTools.strProp('要执行的命令行(不是交互会话, 一次一条; 需要多步用 && 或 ; 串起来)'),
         'cwd', HarnessTools.strProp('可选: 工作区内的相对子目录作为工作目录, 如 "project"; 不允许绝对路径或 .. 越界; 留空为工作区根'),

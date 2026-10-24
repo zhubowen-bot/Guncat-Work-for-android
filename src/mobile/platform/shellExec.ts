@@ -81,6 +81,37 @@ export class ShellOutcome {
   durationMs: number = 0
 }
 
+/** 模型最容易先写 Windows 命令；在真机上直接给出 POSIX 对照，比让它 127 一次再猜快 */
+const WINDOWS_COMMAND_TO_POSIX: Record<string, string> = {
+  dir: 'ls',
+  type: 'cat',
+  copy: 'cp',
+  move: 'mv',
+  del: 'rm',
+  erase: 'rm',
+  findstr: 'grep',
+  where: 'which',
+  cls: 'clear',
+  powershell: 'bash',
+  pwsh: 'bash',
+  cmd: 'bash',
+  xcopy: 'cp -r',
+  robocopy: 'rsync'
+}
+
+function windowsCommandHint(command: string): string {
+  const first = command.trim().split(/\s+/)[0]?.toLowerCase().replace(/\.exe$/, '') ?? ''
+  const posix = WINDOWS_COMMAND_TO_POSIX[first]
+  if (posix === undefined) {
+    return ''
+  }
+  return (
+    `当前是 Android 内置 Linux（bash），不是 Windows cmd：\`${first}\` 请改用 \`${posix}\`。` +
+    '常用对照：dir→ls、type→cat、copy→cp、move→mv、del/erase→rm、findstr→grep、where→which、cls→clear。' +
+    '请直接用 POSIX 命令重试；不确定环境时先跑 `uname -a; pwd; ls`。'
+  )
+}
+
 /** 真机路径：ShellManager + 工作区镜像 */
 class NativeShellTask {
   pid: number = -1
@@ -128,6 +159,13 @@ class NativeShellTask {
     this.startTime = Date.now()
     this.backend = shellBackend()
     this.nativeRoot = readShellInfo().nativeRoot
+
+    const windowsHint = windowsCommandHint(this.command)
+    if (windowsHint !== '') {
+      const failed = new ShellOutcome()
+      failed.error = windowsHint
+      return failed
+    }
 
     // 两个后端都在真实文件系统上执行，都要先把 memfs 工作区镜像下去
     this.mirror = new WorkspaceMirror(mirrorRootFor(this.cwd))

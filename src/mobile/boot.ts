@@ -4,6 +4,7 @@
 import { initAppPaths, clearTempDir } from '@core/platform/appPaths'
 import { bindSafeStorage } from '@core/platform/kit/ArkData'
 import { registerPickerHost } from '@core/platform/kit/CoreFileKit'
+import { setShellPlatform } from '@core/common/PlatformInfo'
 import { hydrateFs } from './shims/fs'
 import { installBundledResources } from './resources'
 import { installFetchProxy } from './native/net'
@@ -11,6 +12,7 @@ import { pickFilesFromDevice } from './native/picker'
 import { createMobileHost } from './host'
 import { runShell } from './platform/shell'
 import { shellStatus } from './platform/shellExec'
+import { mirrorRootFor } from './platform/mirror'
 import { runJs } from './platform/libguncatjs'
 
 export const DATA_ROOT = '/guncat/data'
@@ -32,6 +34,8 @@ function installViewportHeight(): void {
 }
 
 export async function bootMobile(): Promise<void> {
+  // 系统提示与 run_command 描述按 Android 的 bash 写，而不是 Windows cmd
+  setShellPlatform('android')
   await hydrateFs()
   installBundledResources()
   initAppPaths({ dataRoot: DATA_ROOT, resourcesRoot: RESOURCES_ROOT })
@@ -63,7 +67,8 @@ export async function bootMobile(): Promise<void> {
     resourcesRoot: RESOURCES_ROOT,
     runShell,
     runJs,
-    shellStatus
+    shellStatus,
+    mirrorRootFor
   }
   await session.bootstrap()
   document.documentElement.dataset.platform = 'android'

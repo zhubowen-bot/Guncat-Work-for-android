@@ -16,7 +16,7 @@
 │   ├── ShellManager（GuncatShell 桥）                                 │
 │   │     ├── 内置 Termux 用户态（abcd/bin/bash，Python/pip/Git）            │
 │   │     ├── /system/bin/sh 兜底（mksh + toybox）                      │
-│   │     └── 工作区落盘：memfs ↔ files/guncat-data/workspaces          │
+│   │     └── 工作区落盘：memfs ↔ files/guncat-data/files/workspaces          │
 │   ├── TextToSpeech / MediaStore / ACTION_VIEW / ACTION_SEND          │
 │   └── onShowFileChooser → HTML <input type=file>                     │
 └──────────────────────────────────────────────────────────────────────┘
@@ -123,7 +123,7 @@ Termux 的二进制里写死了 `/data/data/com.termux/files/usr`（31 字符）
 
 ### 4.3 首次安装（`TermuxBootstrap.java`）
 
-APK 的 `assets/termux/bootstrap-aarch64.zip` 是约 55MB 的压缩包（解压后 150MB+）。
+APK 的 `assets/termux/bootstrap-aarch64.zip` 是约 205MB 的压缩包（解压后约 560MB）。
 `ShellManager` 构造时启动后台解压到 `<app home>/abcd`：
 
 1. 读 `SYMLINKS.txt`（格式 `目标←./链接路径`），先解压全部文件、再统一 `Os.symlink`；
@@ -138,11 +138,11 @@ APK 的 `assets/termux/bootstrap-aarch64.zip` 是约 55MB 的压缩包（解压�
 
 Android 版的 `node:fs` 是 memfs（`src/mobile/shims/fs.ts`），而真实命令只认真实文件。
 执行前 `src/mobile/platform/mirror.ts` 会把当前会话工作区写到
-`<filesDir>/guncat-data/workspaces/<conv>`，命令结束后再扫一遍设备目录：
+`<filesDir>/guncat-data/files/workspaces/<conv>`，命令结束后再扫一遍设备目录：
 
 - 新增/修改的文件读回 memfs（`fs.writeFileSync`，沿用原有 IndexedDB 持久化）；
 - 命令删掉的文件从 memfs 删除；
-- 只镜像 `/guncat/data/workspaces/<会话>`，不同步设置、会话历史与 API Key；
+- 只镜像 `/guncat/data/files/workspaces/<会话>`，不同步设置、会话历史与 API Key；
 - 单文件 8MB、单次同步 32MB 封顶，超限会写进命令结果，不静默跳过；
 - 后台任务与文件工具同时改同一个文件时按「后写覆盖」；镜像状态只在本次页面生命周期内保存，
   刷新页面后首次命令会重新上传（memfs 的 mtime 本来也会在恢复时重置）。
@@ -165,10 +165,16 @@ Android 版的 `node:fs` 是 memfs（`src/mobile/shims/fs.ts`），而真实命�
 
 ### 4.6 已内置的软件与 `pkg install` 的边界
 
-bootstrap 里预装了 **Python 3.14**、**pip** 与 **Git 2.56**（含依赖库），`python3` / `git` 直接可用。
-基础镜像另有 apt/dpkg；但 Termux 仓库的新包仍引用 `/data/data/com.termux/...`，
-`pkg install` 装出来的文件路径不会自动改写。当前**不承诺** `pkg install` 的包可直接运行；
-需要什么工具应优先用已内置的 Python/Git，或后续实现「安装后路径修正」再放开。
+bootstrap 里预装了：**Node 26 + npm 11、ffmpeg、jq、sqlite3、ssh/scp、rsync、make、rg、fd、
+dig/nslookup、htop、wget、zip、Git 2.56、Python 3.14 + pip + numpy/scipy/pillow/lxml**（含依赖库）。
+基础镜像另有 apt/dpkg。
+
+未内置的 `pandoc`、ImageMagick、`gcc/clang`、pandas、matplotlib：前四个的 deb 单个 30–80MB、
+装完 100–200MB；pandas/matplotlib 在 Termux 仓库没有 arm64 包。APK 已经 208MB，再加这些会让
+包体和首次解压进一步失控。纯 Python 包可直接 `pip install`。
+
+Termux 仓库的新包仍引用 `/data/data/com.termux/...`，`pkg install` 装出来的文件路径不会自动
+改写；当前**不承诺** `pkg install` 的包可直接运行，需要额外工具应优先用已内置的这批。
 
 ### 4.7 浏览器预览的回退
 
@@ -267,19 +273,22 @@ JS 侧 `src/mobile/native/net.ts` 只改写跨域 URL，同源资源请求保持
 - 不用 Gradle：`aapt2` → `javac --release 8` → `d8` → `jar uf` → `zipalign` → `apksigner`；
 - Java 侧 `ShellManager.java` / `TermuxBootstrap.java` 没有第三方依赖，d8 直接能编；
 - `minSdk 28`、**`targetSdk 28`**（执行私有目录文件的系统限制；Termux 同款做法）；
-- `assets/termux/bootstrap-aarch64.zip` 约 55MB，构建时由 `aapt2 -A` 打进 APK；产物 APK 约 61MB；
+- `assets/termux/bootstrap-aarch64.zip` 约 205MB，构建时由 `aapt2 -A` 打进 APK；产物 APK 约 208MB；
 - 清单与主题在 `android/app/src/main/`；
 - 签名密钥在 `android/keystore/guncat.jks`（git 忽略）；换钥匙会导致覆盖安装失败。
 
-内置终端资源的生成（不需要每次构建都跑，仓库已提交产物）：
+内置终端资源的生成（约 205MB，因超过 GitHub 单文件限制不入库）：
 
 ```bash
-# 1. 下载官方 arm64 bootstrap 到 .tmp/termux/bootstrap-aarch64.zip
+# 1. 下载官方 arm64 bootstrap 与全部工具链 deb（清华镜像，可用 TERMUX_MIRROR 覆盖）
+python scripts/fetch-termux-bootstrap.py
 # 2. 等长改写 com.termux → com.guncat.work/abcd、abcde
 python scripts/prepare-termux-bootstrap.py
-# 3. 追加 Python 3.14 / pip / Git 及其依赖（.deb 放在 .tmp/termux/debs）
+# 3. 追加工具链（Node/ffmpeg/Python libs/...，清单见 scripts/termux-toolchain-packages.txt）
 python scripts/add-termux-packages.py
 ```
+
+`npm run dist:android` 在资源缺失时会直接报错并给出上面三步，不会静默出无终端的包。
 
 ## 10. 已知限制
 
@@ -288,7 +297,7 @@ python scripts/add-termux-packages.py
 | PDF 解析 | `@kit.PDFKit` 后端未接；`parse_document` / `search_pdf` / `pdf_to_images` 返回清楚的能力缺失提示 |
 | 内置终端架构 | 只带 arm64；x86/armv7 设备只能用系统 Shell |
 | `targetSdk 28` | Android 10+ 才允许执行应用私有目录文件，降到 28 是内置终端的硬前提；Play 商店新应用不适用此版本，本应用走 sideload |
-| APK 体积 / 磁盘 | APK 约 61MB；首次解压约占 150MB 私有空间 |
+| APK 体积 / 磁盘 | APK 约 208MB；首次解压约占 560MB 私有空间 |
 | `pkg install` | 新装 deb 的路径仍写死 `com.termux`，当前未做逐包改写；内置 Python/pip/Git 可用，其他工具需后续适配 |
 | 工作区镜像 | 单文件 8MB / 单次 32MB；大文件、超大目录（如完整 `node_modules`）不会完整落地 |
 | 后台执行 | WebView 退后台可能被冻结；没有前台服务与常驻通知 |
@@ -310,7 +319,7 @@ python scripts/add-termux-packages.py
 
 真机验证建议：安装 APK 后依次测
 
-1. 首启：等待「设置 → 终端命令执行」显示内置终端「已就绪」（首次解压约 150MB）；
+1. 首启：等待「设置 → 终端命令执行」显示内置终端「已就绪」（首次解压约 560MB）；
 2. 基础命令：工作模式 `run_command` 执行
    `pwd; ls -la; echo hi > a.txt; cat a.txt; uname -a`，确认 `a.txt` 出现在工作区面板；
 3. Linux 工具链：`bash --version`、`python3 --version`、`python3 -c "print(1+1)"`、

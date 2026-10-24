@@ -105,18 +105,23 @@ behavior. The APK is the source of truth for full capability.
 `run_command` executes **real processes**, with no separate Termux install:
 
 - **Built-in terminal (default)**: an arm64 Termux userland ships inside the APK — `bash`,
-  coreutils, `grep` `sed` `awk` `find` `xargs` `tar` `curl`, `apt`, plus **Python 3.14**, **pip** and **Git**.
-  On first launch the ~55MB bootstrap is extracted into app-private storage; afterwards commands
+  coreutils, `grep` `sed` `awk` `find` `xargs` `tar` `curl`, `apt`, plus a real toolchain:
+  **Node 26 + npm 11, ffmpeg, jq, sqlite3, ssh/scp, rsync, make, rg, fd, dig/nslookup,
+  htop, wget, zip**, **Python 3.14 + pip + numpy/scipy/pillow/lxml**, and **Git**.
+  On first launch the ~205MB bootstrap is extracted into app-private storage; afterwards commands
   run directly. Real pipes, redirections, globbing, command substitution, loops/functions,
   `&&`/`||`, exit codes and background jobs all work.
+- Not bundled: `pandoc`, ImageMagick, `gcc/clang`, pandas, matplotlib — each is a 30–80MB deb
+  (100–200MB installed) and the Termux repo has no arm64 pandas/matplotlib builds. Pure-Python
+  packages can be added with the bundled `pip`.
 - Before each command the session workspace is mirrored from memfs to app-private storage
-  (`.../files/guncat-data/workspaces/<conversation>`), and new/modified/deleted files are synced
+  (`.../files/guncat-data/files/workspaces/<conversation>`), and new/modified/deleted files are synced
   back afterwards — so `ls`, `grep -r`, `tar` and `git status` see the same files as the UI.
 - **System shell (fallback)**: if the built-in terminal is unavailable (non-arm64 or extraction
-  failure), the app can use `/system/bin/sh` (mksh + toybox) with no Python/pip/Git.
+  failure), the app can use `/system/bin/sh` (mksh + toybox) without the tools above.
 - Settings → “Terminal (Shell)” switches backends, shows extraction progress and can reinstall.
 
-The APK grows to ~61MB and `targetSdk` is pinned to **28**: Android 10+ forbids apps targeting
+The APK grows to ~208MB and `targetSdk` is pinned to **28**: Android 10+ forbids apps targeting
 29+ from executing files in app-private storage (Termux itself has always used 28). This is a hard
 requirement for the built-in terminal.
 
@@ -174,7 +179,7 @@ redirections; the JS fallback used by the browser preview and its 127 hint for m
 2. The built-in terminal is **arm64-only**; other ABIs fall back to the system shell. `targetSdk`
    is pinned to 28 (apps targeting 29+ cannot execute app-private files), which is why the app is
    sideload-only.
-3. First launch extracts ~150MB; the APK is ~61MB.
+3. First launch extracts ~560MB; the APK is ~208MB.
 4. `pkg install` packages still contain Termux's original paths and are not rewritten yet; the
    bundled Python/pip/Git work out of the box.
 5. Background execution is not guaranteed (no foreground service).

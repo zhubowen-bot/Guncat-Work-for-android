@@ -60,12 +60,15 @@ for info in z.infolist():
 z.close()
 print('base entries', len(entries), 'symlinks', len(symlinks))
 
-pkgs=['gdbm','libcrypt','libexpat','libsqlite','ncurses-ui-libs','python','python-pip','git']
+manifest = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'termux-toolchain-packages.txt')
+pkgs = [line.strip() for line in open(manifest, encoding='utf-8') if line.strip()]
 status=entries.get('var/lib/dpkg/status',b'').decode('utf-8','replace')
 stanzas=[]
 for name in pkgs:
     members=ar_data(f'.tmp/termux/debs/{name}.deb')
-    ct=tarfile.open(fileobj=io.BytesIO(members['control.tar.xz']), mode='r:xz')
+    control_name = next(k for k in members if k.startswith('control.tar.'))
+    data_name = next(k for k in members if k.startswith('data.tar.'))
+    ct=tarfile.open(fileobj=io.BytesIO(members[control_name]), mode='r:*')
     control=None
     for m in ct.getmembers():
         if m.name.lstrip('./')=='control':
@@ -76,7 +79,7 @@ for name in pkgs:
         if line.startswith(' ') or ':' not in line: continue
         k,v=line.split(':',1); fields[k.strip()]=v.strip()
     stanzas.append((name, control))
-    dt=tarfile.open(fileobj=io.BytesIO(members['data.tar.xz']), mode='r:xz')
+    dt=tarfile.open(fileobj=io.BytesIO(members[data_name]), mode='r:*')
     members_list=dt.getmembers()
     hardlinks=[]; added=0
     for m in members_list:
@@ -145,5 +148,6 @@ os.replace(tmp,ASSET)
 print('written', ASSET, os.path.getsize(ASSET))
 print('entries', len(entries), 'symlinks', len(symlinks))
 print('sha256', hashlib.sha256(open(ASSET,'rb').read()).hexdigest())
+
 
 

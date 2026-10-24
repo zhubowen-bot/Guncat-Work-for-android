@@ -17,6 +17,8 @@ release/
 android/keystore/*.jks
 android/keystore/*.keystore
 android/app/src/main/assets/public/
+# 内置 Termux bootstrap 约 200MB，不入库；用 scripts/fetch-termux-bootstrap.py 重建
+android/app/src/main/assets/termux/bootstrap-aarch64.zip
 android/app/build/
 android/.gradle/
 *.apk.idsig

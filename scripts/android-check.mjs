@@ -209,6 +209,13 @@ try {
   const shellMode = await page.evaluate(() => window.__guncatDebug.shellStatus())
   check('无原生桥时 Shell 回退', shellMode.available === false && shellMode.backend === 'bundled')
 
+  // 工作区真实路径是 /guncat/data/files/workspaces/<conv>；镜像必须跟着 cwd 走，
+  // 否则终端和文件工具会各自写一个目录（曾经的真实 bug）。
+  const mirrored = await page.evaluate(() =>
+    window.__guncatDebug.mirrorRootFor('/guncat/data/files/workspaces/conv_x/sub')
+  )
+  check('工作区镜像根与 cwd 一致', mirrored === '/guncat/data/files/workspaces/conv_x', mirrored)
+
   const js = await page.evaluate(async () => {
     const { runJs } = window.__guncatDebug
     const ok = await runJs('write("out.txt", inputs["a.txt"].toUpperCase()); inputs["a.txt"].length', {

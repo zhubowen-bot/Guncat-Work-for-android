@@ -67,7 +67,7 @@ POSIX 用户态，因此做了以下替换（详见 [docs/ANDROID.md](docs/ANDRO
 ## 快速开始（安装）
 
 1. 从 `release/Guncat-Work-0.3.0-android.apk` 安装（arm64，Android 9+；导出到系统「下载」需 Android 10+；需要允许「安装未知来源应用」）。
-   首次启动会解压内置终端（约 55MB，几十秒），状态可在「设置 → 终端命令执行」查看。
+   首次启动会解压内置终端（约 205MB，几十秒到几分钟），状态可在「设置 → 终端命令执行」查看。
 2. 打开后进入「设置 → 接入方式」，填 Base URL、API Key、模型名，保存。
    - 支持 OpenAI Completions（`/chat/completions`）、OpenAI Responses（`/responses`）、
      Anthropic Messages（`/messages`）三种协议，均可直传图片。
@@ -102,9 +102,15 @@ npm run dist:android
 5. `d8` 生成 `classes.dex`
 6. `zipalign` 对齐、`apksigner` 签名
 
-内置终端资源由 `scripts/prepare-termux-bootstrap.py`（基础用户态）和
-`scripts/add-termux-packages.py`（追加 Python/Git）生成；产物已随仓库提交，
-普通构建不需要联网。详见 [docs/ANDROID.md](docs/ANDROID.md)。
+内置终端资源（约 205MB，因体积大不入 git）按需生成：
+
+```bash
+python scripts/fetch-termux-bootstrap.py   # 下载官方 bootstrap + 工具链 deb（需联网）
+python scripts/prepare-termux-bootstrap.py # 等长改写 com.termux 前缀
+python scripts/add-termux-packages.py      # 合并工具链
+```
+
+详见 [docs/ANDROID.md](docs/ANDROID.md)。
 
 首次构建会在 `android/keystore/` 生成自用签名密钥（密码见该目录 README），之后的升级包必须用同一把钥匙签名。
 
@@ -121,18 +127,23 @@ npm run dev:android   # http://127.0.0.1:5174
 `run_command` 执行的是**真的进程**，不需要另外安装 Termux：
 
 - **内置终端（默认）**：APK 里带一套 arm64 的 Termux 用户态 —— `bash`、coreutils、
-  `grep` `sed` `awk` `find` `xargs` `tar` `curl`、`apt`，以及预装的 **Python 3.14**、**pip** 和 **Git**。
-  首次启动把 bootstrap（约 55MB 压缩）解压到应用私有目录的 `abcd`，之后直接执行。
+  `grep` `sed` `awk` `find` `xargs` `tar` `curl`、`apt`，以及一条真实工具链：
+  **Node 26 + npm 11、ffmpeg、jq、sqlite3、ssh/scp、rsync、make、rg、fd、dig/nslookup、
+  htop、wget、zip**，**Python 3.14 + pip + numpy/scipy/pillow/lxml**，**Git**。
+  首次启动把 bootstrap（约 205MB 压缩）解压到应用私有目录的 `abcd`，之后直接执行。
   真正的管道、重定向、通配符、命令替换、循环/函数、`&&`/`||`、退出码、后台作业都在。
+- 未内置：`pandoc`、ImageMagick、`gcc/clang`、pandas、matplotlib —— 这些 deb 单个就有
+  30–80MB、装完 100–200MB，再塞进 APK 会让包体失控；Termux 仓库也没有 pandas/matplotlib
+  的 arm64 包。纯 Python 包可以直接 `pip install`（pip 已预装）。
 - 执行命令前，App 会把当前会话工作区从 memfs 镜像到应用私有目录
-  （`/data/data/com.guncat.work/files/guncat-data/workspaces/<会话>`），
+  （`/data/data/com.guncat.work/files/guncat-data/files/workspaces/<会话>`），
   命令结束后把新建/修改/删除的文件同步回工作区 —— 所以 `ls`、`grep -r`、`tar`、`git status`
   看到的就是你在界面上看到的文件。
 - **系统 Shell（兜底）**：内置终端不可用（非 arm64、解压失败）时可切到
-  `/system/bin/sh`（mksh + toybox），仍支持管道、重定向和工作区镜像，但没有 Python/Git。
+  `/system/bin/sh`（mksh + toybox），仍支持管道、重定向和工作区镜像，但没有上面这些工具。
 - 设置页「终端命令执行 (Shell)」可切换后端、查看内置终端安装进度、重新安装。
 
-APK 因此从 7MB 增到约 **60MB**，并把 `targetSdk` 定为 **28**：Android 10+ 禁止
+APK 因此从 7MB 增到约 **208MB**，并把 `targetSdk` 定为 **28**：Android 10+ 禁止
 targetSdk ≥ 29 的应用执行私有目录里的文件（Termux 官方也一直用 28）。这是内置终端的硬前提。
 
 镜像边界：单文件 8MB、单次同步 32MB 封顶；不同步设置/会话历史/API Key；超限文件会在结果里
@@ -211,7 +222,7 @@ npm run typecheck:mobile
 1. PDF 解析后端未接入（桌面版用的 PDF.js + canvas 运行时在 Android 上还未移植）。
 2. 内置终端只提供 **arm64**；其他 ABI 只能用系统 Shell。`targetSdk` 固定为 28（执行私有目录文件的系统限制），
    这不是「懒得升级」，降到更低或升到 29+ 都会直接不能执行。
-3. 内置终端首次启动要解压约 150MB，占用应用私有空间；APK 因此约 61MB。
+3. 内置终端首次启动要解压约 560MB，占用应用私有空间；APK 因此约 208MB。
 4. `pkg install` 安装的新包仍带 Termux 原路径，当前未做逐包路径修复；内置的 Python/Git 可直接用。
 5. 应用退到后台后，长任务可能被系统暂停；没有前台服务/通知来维持执行。
 6. 暂不支持自定义工作区目录与系统「打开方式」接收文件。

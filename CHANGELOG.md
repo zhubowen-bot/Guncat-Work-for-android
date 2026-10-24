@@ -10,14 +10,22 @@
 ## Android 版（0.3.0-android）
 
 把 `run_command` 从「JS 模拟的 POSIX 子集」换成**随 APK 内置的真实 Linux 用户态**，
-不需要用户安装 Termux。产物 `release/Guncat-Work-0.3.0-android.apk`（arm64，约 61MB）。
+不需要用户安装 Termux。产物 `release/Guncat-Work-0.3.0-android.apk`（arm64，约 208MB）。
 
 ### 内置 Linux 终端
 
-- **Termux bootstrap 随包分发**：`assets/termux/bootstrap-aarch64.zip`（约 55MB）来自
+- **Termux bootstrap 随包分发**：`assets/termux/bootstrap-aarch64.zip`（约 205MB）来自
   termux-packages 官方 release，包含 bash、coreutils、grep/sed/awk、tar、curl、apt，
-  并额外合并 **Python 3.14**、**pip** 与 **Git 2.56** 及依赖；首次启动由
+  并追加 **Node 26/npm、ffmpeg、jq、sqlite3、ssh/scp、rsync、make、rg、fd、dig、htop、
+  wget、zip、Git、Python 3.14 + pip + numpy/scipy/pillow/lxml** 及依赖；首次启动由
   `TermuxBootstrap.java` 解压到应用私有目录 `abcd`（HOME 为 `abcde`）。
+- **修复终端与工作区「两套存储」**：真实工作区是 `/guncat/data/files/workspaces/<conv>`
+  （filesDir 是 `/guncat/data/files`），旧镜像写死 `/guncat/data/workspaces`，导致终端与
+  `list_files` 各写一个目录。`mirrorRootFor()` 现在按 cwd 里的 `/workspaces/<conv>` 定位，
+  两侧看到同一批文件；`android-check` 增加回归断言。
+- **提示词按 Android 写**：`run_command` 描述与系统提示不再一律说 Windows cmd，新增
+  `PlatformInfo.shellPlatformNote()`；真机上误用 `dir/type/copy/del/findstr` 会直接返回
+  POSIX 对照，而不是先 127 再猜。
 - **路径等长改写**：Termux 二进制写死 `/data/data/com.termux/files/usr`（31 字符），
   构建期替换为 `/data/data/com.guncat.work/abcd`（31 字符），home 32→32；脚本里的裸路径
   另做文本替换。生成脚本：`scripts/prepare-termux-bootstrap.py`、`scripts/add-termux-packages.py`。
@@ -26,7 +34,7 @@
 - **ShellManager**：`ProcessBuilder` 直接拉起 `abcd/bin/bash --noprofile --norc -c`，
   stdout/stderr 合并后按 UTF-8 逐块读取；环境变量用 `PREFIX`/`HOME`/`TMPDIR`/`LD_LIBRARY_PATH`。
 - **工作区镜像**（`src/mobile/platform/mirror.ts`）：执行前把会话工作区从 memfs 写到
-  `files/guncat-data/workspaces/<会话>`，执行后同步回 memfs。单文件 8MB / 单次 32MB 封顶，
+  `files/guncat-data/files/workspaces/<会话>`，执行后同步回 memfs。单文件 8MB / 单次 32MB 封顶，
   不同步设置、会话历史与 API Key。
 - **进程管理**：输出环形缓冲 + 丢弃计数；超时/停止/`job_kill` 按 `/proc` 递归杀子孙进程。
 - **系统 Shell 兜底**：非 arm64 或解压失败时可切 `/system/bin/sh`，能力降级但工作区镜像照旧。
@@ -37,7 +45,7 @@
 
 ### 已知边界
 
-- 内置终端只提供 arm64；APK 约 61MB、首次解压约 150MB。
+- 内置终端只提供 arm64；APK 约 208MB、首次解压约 560MB。
 - `pkg install` 的新包仍带 `com.termux` 路径，当前未做逐包改写；内置 Python/Git 可直接用。
 - `targetSdk 28` 只适合 sideload，不满足 Google Play 新应用要求。
 

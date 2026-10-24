@@ -39,7 +39,7 @@ import java.util.zip.ZipInputStream;
  */
 final class TermuxBootstrap {
     private static final String TAG = "GuncatBootstrap";
-    static final String VERSION = "2026.10.18-r1+pygit3";
+    static final String VERSION = "2026.10.18-r1+tools1";
     private static final String ASSET = "termux/bootstrap-aarch64.zip";
     private static final String MARKER = ".guncat-bootstrap";
 
@@ -353,7 +353,10 @@ final class TermuxBootstrap {
     }
 
     private static boolean needsExecutable(String name) {
+        // Termux 的 zip 不保留 Unix mode；按路径判断：bin/、libexec/、apt 的 helper/methods，
+        // 以及 node/npm 这类把脚本放在 lib/.../bin/ 下的包（npm-cli.js 被 bin/npm 符号链接指向）。
         return name.startsWith("bin/") || name.startsWith("libexec/") ||
+                name.contains("/bin/") ||
                 name.startsWith("lib/apt/apt-helper") || name.startsWith("lib/apt/methods");
     }
 
