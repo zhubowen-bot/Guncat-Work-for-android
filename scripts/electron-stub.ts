@@ -193,6 +193,10 @@ export const app = {
       // 允许指向临时目录：兼容模式那条路会往 userData 里写标记文件
       return process.env.GUNCAT_STUB_USERDATA ?? '/tmp/guncat-test-userdata'
     }
+    if (name === 'downloads') {
+      // 「分享」会往下载目录留副本：验证时指到临时目录，别污染真实用户目录
+      return process.env.GUNCAT_STUB_DOWNLOADS ?? '/tmp'
+    }
     return '/tmp'
   },
   setPath(name: string, value: string): void {
@@ -242,7 +246,11 @@ export const dialog = {
     return nextOpenDialog ?? { canceled: true, filePaths: [] }
   },
   async showSaveDialog(): Promise<{ canceled: boolean; filePath?: string }> {
-    return { canceled: true }
+    // 一次性：模拟「这一次保存对话框用户选了什么」。用完即清，
+    // 否则后面的导出用例会捡到上一个用例留下的路径（曾因此误触真实导出）。
+    const result = nextSaveDialog ?? { canceled: true }
+    nextSaveDialog = null
+    return result
   },
   /**
    * 确认类对话框（清空工作区等）。默认返回「取消」（response 0）——
@@ -274,6 +282,24 @@ let nextOpenDialog: { canceled: boolean; filePaths: string[] } | null = null
 /** 让验证脚本模拟「用户在文件选择框里挑了几个文件」 */
 export function __setOpenDialog(result: { canceled: boolean; filePaths: string[] } | null): void {
   nextOpenDialog = result
+}
+
+/** 下一次 dialog.showSaveDialog 的返回值（null 表示默认「用户取消」） */
+let nextSaveDialog: { canceled: boolean; filePath?: string } | null = null
+
+/** 让验证脚本模拟「用户在保存对话框里选了哪个路径」 */
+export function __setSaveDialog(result: { canceled: boolean; filePath?: string } | null): void {
+  nextSaveDialog = result
+}
+
+/**
+ * 剪贴板替身：只记录写入了什么。
+ * 桌面端的「分享」= 留副本 + 路径进剪贴板，这条路必须能在无头环境断言。
+ */
+export const clipboard = {
+  writeText(text: string): void {
+    calls.push({ fn: 'clipboard.writeText', args: [text] })
+  }
 }
 
 export const shell = {

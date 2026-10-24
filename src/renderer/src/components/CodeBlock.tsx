@@ -27,6 +27,7 @@ import sql from 'highlight.js/lib/languages/sql'
 import typescript from 'highlight.js/lib/languages/typescript'
 import xml from 'highlight.js/lib/languages/xml'
 import yaml from 'highlight.js/lib/languages/yaml'
+import { copyText } from '../clipboard'
 
 const LANGUAGES: Record<string, Parameters<typeof hljs.registerLanguage>[1]> = {
   bash,
@@ -133,16 +134,16 @@ export function CodeBlock({ language, code }: { language: string; code: string }
   )
 
   function copy(): void {
-    void navigator.clipboard.writeText(code).then(
-      () => {
-        setCopied(true)
-        if (timer.current !== null) {
-          window.clearTimeout(timer.current)
-        }
-        timer.current = window.setTimeout(() => setCopied(false), 1600)
-      },
-      () => setCopied(false)
-    )
+    void copyText(code).then((ok) => {
+      setCopied(ok)
+      if (!ok) {
+        return
+      }
+      if (timer.current !== null) {
+        window.clearTimeout(timer.current)
+      }
+      timer.current = window.setTimeout(() => setCopied(false), 1600)
+    })
   }
 
   return (

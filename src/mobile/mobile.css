@@ -465,6 +465,42 @@ body.platform-android code {
     height: 40px;
   }
 
+  /* 工作区文件行：下载 / 分享 / 删除三个动作常显。
+     注意要排在上面 .icon-btn 的 40px 之后，否则会被撑成 40px×3 把文件名挤没。 */
+  .file-item {
+    gap: 5px;
+    padding: 3px 2px 3px 6px;
+    min-height: 44px;
+  }
+
+  .file-item__act,
+  .file-item__del {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+  }
+
+  .file-item__size {
+    font-size: 10px;
+  }
+
+  /* 预览弹层的操作按钮变多（下载/分享/打开/显示位置）：标题独占一行，按钮换行排 */
+  .preview__head {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 10px calc(6px + env(safe-area-inset-top));
+  }
+
+  .preview__head strong {
+    flex: 1 0 100%;
+  }
+
+  .preview__head .filecard__action {
+    min-height: 30px;
+    padding: 0 8px;
+    font-size: 12px;
+  }
+
   .foot-btn {
     padding: 10px 0 8px;
   }

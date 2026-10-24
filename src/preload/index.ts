@@ -1,4 +1,4 @@
-﻿// Preload：只暴露窄接口，渲染进程拿不到 Node 能力。
+// Preload：只暴露窄接口，渲染进程拿不到 Node 能力。
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { INVOKE, EVENT } from '../ipc/contract'
 import type {
@@ -194,6 +194,15 @@ const api = {
     ): Promise<{ saved: boolean; path?: string }> =>
       ipcRenderer.invoke(INVOKE.messageExportDocx, conversationId, messageId, suggestedName)
   },
+
+  /**
+   * 统一的导出 / 分享入口（工作区压缩包 / 单个文件 / 一条回答的 Word）。
+   * save 先弹系统保存位置选择；share 调起系统分享面板或直接微信。
+   */
+  transfer: (request: import('../ipc/contract').TransferRequestDto) =>
+    ipcRenderer.invoke(INVOKE.fileTransfer, request) as Promise<
+      import('../ipc/contract').TransferResultDto
+    >,
 
   /**
    * 拖拽进来的 File 对象在开启 contextIsolation 后拿不到真实路径，

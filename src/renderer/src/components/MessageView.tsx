@@ -15,6 +15,7 @@ import { APP_ICON_SRC } from './AgentGlyph'
 import { docxFileName } from '../fileName'
 import { useSpeech, speechTextOf } from '../speech/speechStore'
 import { useStore } from '../store'
+import { copyText, selectionTextWithin } from '../clipboard'
 import { formatStats, stripMarkdown } from '../turns'
 import {
   IconBrain,
@@ -166,15 +167,25 @@ export function MessageActions({
   const conversationId = useStore((s) => s.activeId)
   const pushNotice = useStore((s) => s.pushNotice)
   const regenerate = useStore((s) => s.regenerate)
+  const openTransfer = useStore((s) => s.openTransfer)
   const speak = useSpeech((s) => s.speak)
   const speechSupported = useSpeech((s) => s.supported)
   const stats = formatStats(message)
 
-  function copy(value: string, label: string): void {
-    void navigator.clipboard
-      .writeText(value)
-      .then(() => pushNotice('info', label))
-      .catch((e: unknown) => pushNotice('error', `复制失败：${String(e)}`))
+  /**
+   * 复制。用户在正文里刚选过文字时优先复制那一段 —— 此前无论选没选都复制整条，
+   * 于是「选一小段、点复制、粘出来是全文」。
+   */
+  function copy(value: string, label: string, container: Element | null): void {
+    const selected = selectionTextWithin(container)
+    const text = selected !== '' ? selected : value
+    void copyText(text).then((ok) => {
+      if (!ok) {
+        pushNotice('error', '复制失败：请长按选中文字后使用系统的「复制」')
+        return
+      }
+      pushNotice('info', selected !== '' ? '已复制选中内容' : label)
+    })
   }
 
   return (
@@ -183,16 +194,24 @@ export function MessageActions({
       {extra}
       <button
         className="act"
-        title="复制纯文本（剥掉 Markdown 标记）"
-        onClick={() => copy(stripMarkdown(text), '已复制')}
+        title="复制纯文本（剥掉 Markdown 标记；选中了正文的一部分时只复制那一段）"
+        onClick={(e) =>
+          copy(
+            stripMarkdown(text),
+            '已复制',
+            e.currentTarget.closest('.msg, .answer, .task-card')
+          )
+        }
       >
         <IconCopy size={14} />
         文本
       </button>
       <button
         className="act"
-        title="复制 Markdown 原文"
-        onClick={() => copy(text, '已复制 Markdown')}
+        title="复制 Markdown 原文（选中了正文的一部分时只复制那一段）"
+        onClick={(e) =>
+          copy(text, '已复制 Markdown', e.currentTarget.closest('.msg, .answer, .task-card'))
+        }
       >
         <IconCopy size={14} />
         MD
@@ -208,16 +227,19 @@ export function MessageActions({
       </button>
       <button
         className="act"
-        title="导出为 Word（含 LaTeX 转原生公式）"
+        title="导出为 Word（含 LaTeX 转原生公式）—— 会先让你选择保存位置或分享去向"
         onClick={() => {
-          void window.guncat.messages
-            .exportDocx(conversationId ?? '', message.id, docxFileName(text))
-            .then((r) => {
-              if (r.saved) {
-                pushNotice('info', `已导出到 ${r.path ?? ''}`)
-              }
-            })
-            .catch((e: unknown) => pushNotice('error', `导出失败：${String(e)}`))
+          if (conversationId === null) {
+            pushNotice('warn', '还没有可导出的会话')
+            return
+          }
+          openTransfer({
+            kind: 'message',
+            conversationId,
+            messageId: message.id,
+            name: docxFileName(text),
+            title: '导出这条回答'
+          })
         }}
       >
         <IconDownload size={14} />
@@ -350,12 +372,16 @@ export function MessageView({
           ) : null}
           <button
             className="act"
-            title="复制这条消息"
-            onClick={() => {
-              void navigator.clipboard.writeText(body).then(
-                () => pushNotice('info', '已复制'),
-                (e: unknown) => pushNotice('error', `复制失败：${String(e)}`)
-              )
+            title="复制这条消息（选中了一部分时只复制选中内容）"
+            onClick={(e) => {
+              const selected = selectionTextWithin(e.currentTarget.closest('.msg'))
+              void copyText(selected !== '' ? selected : body).then((ok) => {
+                if (!ok) {
+                  pushNotice('error', '复制失败：请长按选中文字后使用系统的「复制」')
+                  return
+                }
+                pushNotice('info', selected !== '' ? '已复制选中内容' : '已复制')
+              })
             }}
           >
             <IconCopy size={14} />

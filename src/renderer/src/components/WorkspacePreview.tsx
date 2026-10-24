@@ -11,7 +11,7 @@
 // 弹层由 App 渲染一份，两处共用同一条链路，也不可能同时出现两层弹层。
 import { useEffect, useState } from 'react'
 import { useStore } from '../store'
-import { IconClose, IconFolder } from '../icons'
+import { IconClose, IconDownload, IconFolder, IconShare } from '../icons'
 import { CodeBlock, normalizeLanguage } from './CodeBlock'
 import { Markdown } from './Markdown'
 
@@ -65,6 +65,7 @@ export function WorkspacePreviewOverlay() {
   const close = useStore((s) => s.closeWorkspaceFile)
   const openLightbox = useStore((s) => s.openLightbox)
   const pushNotice = useStore((s) => s.pushNotice)
+  const runTransfer = useStore((s) => s.runTransfer)
   const [content, setContent] = useState<PreviewContent | null>(null)
 
   useEffect(() => {
@@ -117,6 +118,23 @@ export function WorkspacePreviewOverlay() {
     })
   }
 
+  /** 预览里的这一个文件：下载（选位置）或直接分享到微信 */
+  function transferFile(action: 'save' | 'share', target?: 'system' | 'wechat'): void {
+    const segments: string[] = path.split('/')
+    const name: string = segments[segments.length - 1] ?? path
+    void runTransfer(
+      {
+        kind: 'file',
+        conversationId,
+        path,
+        name,
+        title: action === 'save' ? '下载文件' : '分享文件'
+      },
+      action,
+      target
+    )
+  }
+
   let body: React.ReactNode = null
   if (content !== null) {
     if (content.kind === 'image') {
@@ -151,6 +169,13 @@ export function WorkspacePreviewOverlay() {
         <div className="preview__info">
           <span className="preview__info-hint">{content.hint}</span>
           <div className="preview__info-actions">
+            <button className="btn btn--sm" onClick={() => transferFile('save')}>
+              下载
+            </button>
+            <button className="btn btn--ghost btn--sm" onClick={() => transferFile('share', 'wechat')}>
+              <IconShare size={13} />
+              分享到微信
+            </button>
             <button className="btn btn--sm" onClick={openExternal}>
               用系统默认程序打开
             </button>
@@ -181,6 +206,22 @@ export function WorkspacePreviewOverlay() {
             onClick={openExternal}
           >
             默认程序打开
+          </button>
+          <button
+            className="filecard__action"
+            title="下载这个文件（可选择保存位置）"
+            onClick={() => transferFile('save')}
+          >
+            <IconDownload size={13} />
+            下载
+          </button>
+          <button
+            className="filecard__action"
+            title="分享这个文件到微信"
+            onClick={() => transferFile('share', 'wechat')}
+          >
+            <IconShare size={13} />
+            分享
           </button>
           <button className="filecard__action" title="在文件管理器中定位" onClick={reveal}>
             显示位置

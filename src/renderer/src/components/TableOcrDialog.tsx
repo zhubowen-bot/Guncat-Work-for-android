@@ -15,6 +15,7 @@ import { useEffect, useState } from 'react'
 import type { TableOcrImageDto, TableOcrResultDto } from '@ipc/contract'
 import { useStore } from '../store'
 import { IconClose, IconCopy, IconImage, IconTable } from '../icons'
+import { copyText } from '../clipboard'
 
 const PREF_MODEL = 'table_ocr_provider'
 
@@ -220,8 +221,12 @@ export function TableOcrDialog() {
       onRecognize={() => void recognize()}
       onCopy={() => {
         if (result !== null) {
-          void navigator.clipboard.writeText(result.html)
-          pushNotice('info', '表格 HTML 已复制')
+          void copyText(result.html).then((ok) => {
+            pushNotice(
+              ok ? 'info' : 'error',
+              ok ? '表格 HTML 已复制' : '复制失败：请长按选中表格 HTML 后手动复制'
+            )
+          })
         }
       }}
       onClose={() => openDialog(false)}

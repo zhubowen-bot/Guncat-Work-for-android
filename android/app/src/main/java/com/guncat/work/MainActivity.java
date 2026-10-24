@@ -2,9 +2,15 @@ package com.guncat.work;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.ActivityNotFoundException;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.ContentValues;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
+import android.database.Cursor;
 import android.graphics.Color;
 import android.media.MediaScannerConnection;
 import android.net.Uri;
@@ -14,6 +20,7 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.MediaStore;
+import android.provider.OpenableColumns;
 import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
@@ -42,7 +49,10 @@ import java.io.FileOutputStream;
 import java.io.OutputStream;
 import java.security.SecureRandom;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 唯一 Activity：一个全屏 WebView + 应用内 HTTP 服务。
@@ -55,6 +65,8 @@ public class MainActivity extends Activity {
     private static final int REQ_FILE = 1001;
     private static final int REQ_AUDIO_PERMISSION = 1002;
     private static final int REQ_CAPTURE = 1003;
+    /** 保存到用户选定位置（ACTION_CREATE_DOCUMENT） */
+    private static final int REQ_EXPORT = 1004;
     /** 固定端口：IndexedDB 与 origin 绑定，端口一变上次的数据就看不到了 */
     private static final int APP_PORT = 47653;
 
@@ -64,6 +76,13 @@ public class MainActivity extends Activity {
     private ValueCallback<Uri[]> fileCallback;
     private Uri pendingCameraUri;
     private boolean cameraCaptureRequested;
+    /**
+     * 保存位置选择（ACTION_CREATE_DOCUMENT）是异步的：这里先记住待写字节，
+     * 等 onActivityResult 拿到用户选择的 Uri 再落盘，最后把结果回调给 JS。
+     */
+    private String exportRequestId;
+    private byte[] exportPendingBytes;
+    private String exportPendingName;
     private SpeechRecognizer speechRecognizer;
     private String speechRequestId;
     private boolean speechFinalSent;
@@ -255,6 +274,10 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_EXPORT) {
+            handleExportResult(resultCode, data);
+            return;
+        }
         if (requestCode == REQ_CAPTURE) {
             Uri result = null;
             if (resultCode == Activity.RESULT_OK && pendingCameraUri != null) {
@@ -515,8 +538,198 @@ public class MainActivity extends Activity {
         return out.toString();
     }
 
+    // ===== 导出 / 分享的回调（JS 侧等待结果） =====
+
+    private static String exportJson(String status, String path, String message) {
+        try {
+            JSONObject json = new JSONObject();
+            json.put("status", status);
+            if (path != null) {
+                json.put("path", path);
+            }
+            if (message != null) {
+                json.put("message", message);
+            }
+            return json.toString();
+        } catch (Exception e) {
+            return "{\"status\":\"error\",\"message\":\"结果序列化失败\"}";
+        }
+    }
+
+    private void emitExportResult(final String id, final String payload) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (webView == null) {
+                    return;
+                }
+                try {
+                    String script = "window.__guncatExportResult&&window.__guncatExportResult("
+                            + JSONObject.quote(id) + "," + JSONObject.quote(payload) + ")";
+                    webView.evaluateJavascript(script, null);
+                } catch (Exception ignored) {
+                }
+            }
+        });
+    }
+
+    /** ACTION_CREATE_DOCUMENT 回来了：拿到用户选的 Uri 后把字节写进去 */
+    private void handleExportResult(int resultCode, Intent data) {
+        final String id = exportRequestId;
+        final byte[] bytes = exportPendingBytes;
+        final String pendingName = exportPendingName;
+        exportRequestId = null;
+        exportPendingBytes = null;
+        exportPendingName = null;
+        if (id == null) {
+            return;
+        }
+        if (resultCode != Activity.RESULT_OK || data == null || data.getData() == null) {
+            emitExportResult(id, exportJson("canceled", null, null));
+            return;
+        }
+        final Uri target = data.getData();
+        final String display = displayNameOf(target, pendingName);
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                String payload;
+                try {
+                    OutputStream out = getContentResolver().openOutputStream(target);
+                    if (out == null) {
+                        throw new Exception("无法写入所选位置");
+                    }
+                    try {
+                        out.write(bytes == null ? new byte[0] : bytes);
+                        out.flush();
+                    } finally {
+                        out.close();
+                    }
+                    payload = exportJson("saved", display, "已保存到你选择的位置");
+                } catch (Exception e) {
+                    // 写失败时把刚创建的空文档删掉，免得用户以为导出成功了
+                    try {
+                        getContentResolver().delete(target, null, null);
+                    } catch (Exception ignored) {
+                    }
+                    payload = exportJson("error", null, "写入失败：" + e.getMessage());
+                }
+                emitExportResult(id, payload);
+            }
+        }).start();
+    }
+
+    private String displayNameOf(Uri uri, String fallback) {
+        String name = null;
+        try {
+            Cursor cursor = getContentResolver().query(uri, null, null, null, null);
+            if (cursor != null) {
+                try {
+                    int index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                    if (index >= 0 && cursor.moveToFirst()) {
+                        name = cursor.getString(index);
+                    }
+                } finally {
+                    cursor.close();
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        if (name == null || name.isEmpty()) {
+            name = fallback == null ? "guncat-file" : fallback;
+        }
+        return name;
+    }
+
+    private String copyToClipboard(final String text) {
+        if (text == null) {
+            return "err:没有可复制的文本";
+        }
+        final CountDownLatch latch = new CountDownLatch(1);
+        final String[] error = new String[]{null};
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    ClipboardManager manager = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                    if (manager == null) {
+                        throw new Exception("系统剪贴板不可用");
+                    }
+                    manager.setPrimaryClip(ClipData.newPlainText("Guncat Work", text));
+                } catch (Exception e) {
+                    error[0] = e.getMessage();
+                } finally {
+                    latch.countDown();
+                }
+            }
+        });
+        try {
+            latch.await(1500, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException ignored) {
+            Thread.currentThread().interrupt();
+        }
+        return error[0] == null ? "ok" : "err:" + error[0];
+    }
+
+    private Intent buildSendIntent(Uri uri, String type, String name) {
+        Intent intent = new Intent(Intent.ACTION_SEND);
+        intent.setType(type);
+        intent.putExtra(Intent.EXTRA_STREAM, uri);
+        intent.putExtra(Intent.EXTRA_TITLE, name);
+        intent.putExtra(Intent.EXTRA_SUBJECT, name);
+        intent.setClipData(ClipData.newRawUri(name, uri));
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        return intent;
+    }
+
+    private boolean canResolve(Intent intent) {
+        List<ResolveInfo> matches = getPackageManager().queryIntentActivities(intent, 0);
+        return matches != null && !matches.isEmpty();
+    }
+
     /** WebView 拿不到的系统能力。所有方法都在 JS 线程调用。 */
     private class NativeBridge {
+        /**
+         * 保存到用户自己选择的位置（系统文件管理器）。
+         *
+         * 与 saveFile 的区别是这次「先问再写」：ACTION_CREATE_DOCUMENT 既是确认环节，
+         * 也让用户决定文件落在哪。结果异步回调 window.__guncatExportResult(id, json)。
+         */
+        @JavascriptInterface
+        public String exportFile(final String name, final String mime, final String base64) {
+            try {
+                final byte[] bytes = Base64.decode(base64, Base64.DEFAULT);
+                final String safeName = safeFileName(name);
+                final String id = "exp_" + System.currentTimeMillis() + "_"
+                        + Math.abs(new SecureRandom().nextInt());
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            exportRequestId = id;
+                            exportPendingBytes = bytes;
+                            exportPendingName = safeName;
+                            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                            intent.addCategory(Intent.CATEGORY_OPENABLE);
+                            intent.setType(mime == null || mime.isEmpty()
+                                    ? "application/octet-stream" : mime);
+                            intent.putExtra(Intent.EXTRA_TITLE, safeName);
+                            startActivityForResult(intent, REQ_EXPORT);
+                        } catch (Exception e) {
+                            exportRequestId = null;
+                            exportPendingBytes = null;
+                            exportPendingName = null;
+                            emitExportResult(id, exportJson("error", null,
+                                    "无法打开保存位置选择器：" + e.getMessage()));
+                        }
+                    }
+                });
+                return "pending:" + id;
+            } catch (Exception e) {
+                return "err:" + e.getMessage();
+            }
+        }
+
         @JavascriptInterface
         public String saveFile(String name, String mime, String base64) {
             try {
@@ -530,6 +743,11 @@ public class MainActivity extends Activity {
             } catch (Exception e) {
                 return "err:" + e.getMessage();
             }
+        }
+
+        @JavascriptInterface
+        public String copyText(String text) {
+            return copyToClipboard(text);
         }
 
         private Uri saveToDownloads(String safeName, String mime, byte[] bytes) throws Exception {
@@ -578,16 +796,51 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public String shareFile(String name, String mime, String base64) {
+            return shareFileTo(name, mime, base64, "system");
+        }
+
+        /**
+         * 分享文件。target = wechat 时直接指向微信；微信没装或明确不收这种类型时
+         * 退回系统分享面板（并回一个 ok:fallback，界面据此提示）。
+         *
+         * 文件先写到 cache/share 再由 FileShareProvider 以 content:// 暴露：
+         * 不再为了分享一次就往「下载」里塞一份，也不依赖 MediaStore 的类型推断。
+         */
+        @JavascriptInterface
+        public String shareFileTo(String name, String mime, String base64, String target) {
             try {
                 byte[] bytes = Base64.decode(base64, Base64.DEFAULT);
-                Uri uri = saveToDownloads(safeFileName(name), mime, bytes);
-                if (uri == null) {
-                    return "err:无法写入下载目录";
+                File dir = new File(getCacheDir(), "share");
+                if (!dir.exists() && !dir.mkdirs()) {
+                    return "err:无法创建分享缓存目录";
                 }
-                Intent intent = new Intent(Intent.ACTION_SEND);
-                intent.setType(mime == null || mime.isEmpty() ? "*/*" : mime);
-                intent.putExtra(Intent.EXTRA_STREAM, uri);
-                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                String safeName = safeFileName(name);
+                File file = new File(dir, safeName);
+                FileOutputStream out = new FileOutputStream(file);
+                try {
+                    out.write(bytes);
+                } finally {
+                    out.close();
+                }
+                Uri uri = FileShareProvider.uriFor(MainActivity.this, file);
+                String type = mime == null || mime.isEmpty() ? "*/*" : mime;
+                Intent intent = buildSendIntent(uri, type, safeName);
+                if ("wechat".equals(target)) {
+                    Intent wechat = new Intent(intent);
+                    wechat.setPackage("com.tencent.mm");
+                    if (canResolve(wechat)) {
+                        startActivity(wechat);
+                        return "ok";
+                    }
+                    // 微信对部分类型（zip / office 文档）只注册了宽泛的 */* 过滤器：换类型再试一次
+                    wechat.setType("*/*");
+                    if (canResolve(wechat)) {
+                        startActivity(wechat);
+                        return "ok";
+                    }
+                    startActivity(Intent.createChooser(intent, "分享文件"));
+                    return "ok:fallback";
+                }
                 startActivity(Intent.createChooser(intent, "分享文件"));
                 return "ok";
             } catch (Exception e) {

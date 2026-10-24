@@ -1,4 +1,4 @@
-﻿// 渲染进程可见的 preload 接口类型。
+// 渲染进程可见的 preload 接口类型。
 // 只声明用到的部分，避免把 Electron 类型带进渲染进程的编译范围。
 import type {
   AgentDto,
@@ -17,6 +17,8 @@ import type {
   RendererStage,
   TableOcrImageDto,
   TableOcrResultDto,
+  TransferRequestDto,
+  TransferResultDto,
   WorkArtifactsDto,
   SearchEngineDto,
   WorkspaceBinaryDto,
@@ -135,6 +137,11 @@ export interface GuncatApi {
       suggestedName?: string
     ): Promise<{ saved: boolean; path?: string }>
   }
+  /**
+   * 统一的导出 / 分享入口：工作区压缩包 / 单个工作区文件 / 一条回答的 Word。
+   * save 一定先经过系统保存位置选择（可取消、可自选目录）；share 调起分享。
+   */
+  transfer(request: TransferRequestDto): Promise<TransferResultDto>
   files: {
     pathForFile(file: File): string
   }

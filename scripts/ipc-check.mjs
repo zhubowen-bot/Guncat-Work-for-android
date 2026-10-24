@@ -23,7 +23,7 @@ fs.writeFileSync(
 export { SessionManager } from '@main/session/SessionManager'
 export { collectFileArgs } from '@main/intake'
 export { resolveTranscriptionUrl, loadAsrConfig, transcribeAudio } from '@main/asr'
-export { __invoke, __channels, __events, __calls, __setOpenDialog, __setMessageBox, __setSafeStorage, safeStorage as stubSafeStorage, __reset } from 'electron'
+export { __invoke, __channels, __events, __calls, __setOpenDialog, __setSaveDialog, __setMessageBox, __setSafeStorage, safeStorage as stubSafeStorage, __reset } from 'electron'
 export { initAppPaths, clearTempDir } from '@core/platform/appPaths'
 export { LocalWebSearch, SearchEngineSettings } from '@core/service/LocalWebSearch'
 export { ContextBudget } from '@core/common/ContextBudget'
@@ -110,6 +110,8 @@ const dataRoot = path.join(os.tmpdir(), `guncat-ipc-${Date.now()}`)
 // 启动日志也写到临时目录：注册 IPC 不再触发日志，但「渲染进程阶段上报」会写日志 ——
 // 绝不能因此覆盖用户真实的那份启动日志（排查问题时要看的正是它）。
 process.env.GUNCAT_BOOTLOG_DIR = dataRoot
+// 「分享」会往下载目录留副本：指到临时目录，别污染运行验证的机器
+process.env.GUNCAT_STUB_DOWNLOADS = path.join(dataRoot, 'downloads')
 mod.initAppPaths({ dataRoot, resourcesRoot: path.resolve('resources') })
 mod.clearTempDir()
 
@@ -173,6 +175,7 @@ const required = [
   'tableOcr:pickImage',
   'tableOcr:run',
   'message:exportDocx',
+  'file:transfer',
   'asr:transcribe'
 ]
 const missing = required.filter((c) => !channels.includes(c))
@@ -619,6 +622,60 @@ try {
   openMissing = String(e.message ?? e)
 }
 check('workspace:openFile 对不存在路径报错', openMissing.includes('不存在'), openMissing.slice(0, 60))
+
+// --- 导出 / 分享：必须先问「存哪 / 分享到哪」，取消不能谎报成功 ---
+mod.__setSaveDialog({ canceled: true })
+const transferCanceled = await inv('file:transfer', {
+  conversationId: conv3.id,
+  path: '素材.txt',
+  action: 'save'
+})
+check('导出取消时返回 canceled（不再谎报「已导出」）', transferCanceled.status === 'canceled')
+
+const chosenPath = path.join(dataRoot, '用户选择的素材.txt')
+mod.__setSaveDialog({ canceled: false, filePath: chosenPath })
+const transferSaved = await inv('file:transfer', {
+  conversationId: conv3.id,
+  path: '素材.txt',
+  suggestedName: '素材.txt',
+  action: 'save'
+})
+check(
+  '导出写到用户选定的位置',
+  transferSaved.status === 'saved' &&
+    fs.existsSync(chosenPath) &&
+    fs.readFileSync(chosenPath, 'utf8') === 'hello intake',
+  transferSaved.path ?? ''
+)
+const transferShared = await inv('file:transfer', {
+  conversationId: conv3.id,
+  path: '素材.txt',
+  action: 'share',
+  target: 'wechat'
+})
+check(
+  '分享到微信：留一份副本并把路径放进剪贴板',
+  transferShared.status === 'shared' &&
+    transferShared.path !== undefined &&
+    fs.existsSync(transferShared.path) &&
+    mod.__calls().some((c) => c.fn === 'clipboard.writeText' && c.args[0] === transferShared.path),
+  transferShared.path ?? ''
+)
+
+const zipPath = path.join(dataRoot, '整包.zip')
+mod.__setSaveDialog({ canceled: false, filePath: zipPath })
+const transferZip = await inv('file:transfer', { conversationId: conv3.id, action: 'save' })
+check(
+  '打包工作区走同一条通道（可自选位置）',
+  transferZip.status === 'saved' && fs.existsSync(zipPath) && fs.statSync(zipPath).size > 0
+)
+
+const transferTraversal = await inv('file:transfer', {
+  conversationId: conv3.id,
+  path: '../../../etc/passwd',
+  action: 'save'
+})
+check('导出同样拒绝目录穿越', transferTraversal.status === 'error', transferTraversal.message ?? '')
 
 // --- 自定义工作区：把任意目录接进本会话，工具链/面板全局跟随该根 ---
 const infoSandbox = await inv('workspace:info', conv3.id)

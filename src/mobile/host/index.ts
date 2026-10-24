@@ -23,6 +23,8 @@ import type {
   RendererStage,
   SearchEngineDto,
   TableOcrImageDto,
+  TransferRequestDto,
+  TransferResultDto,
   WorkArtifactsDto,
   WorkAnswerRequest,
   WorkRunRequest,
@@ -43,7 +45,7 @@ import { sanitizeTableHtml } from '@main/sanitizeHtml'
 import { transcribeAudio } from '@main/asr'
 import { pickFilesFromDevice } from '../native/picker'
 import { nativeAsrStart, nativeAsrStatus, nativeAsrStop } from '../native/asr'
-import { openBytes, saveBytes, shareBytes, toast, bytesToBase64, ttsSpeak, ttsStop, ttsSupported } from '../native/bridge'
+import { openBytes, saveBytesToUserLocation, shareBytesTo, toast, bytesToBase64, ttsSpeak, ttsStop, ttsSupported } from '../native/bridge'
 
 type Emit = (event: GuncatEvent) => void
 
@@ -69,12 +71,33 @@ function mimeTypeForFile(filePath: string): string {
       return 'image/svg+xml'
     case '.pdf':
       return 'application/pdf'
+    case '.doc':
+      return 'application/msword'
     case '.docx':
       return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    case '.xls':
+      return 'application/vnd.ms-excel'
     case '.xlsx':
       return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    case '.ppt':
+      return 'application/vnd.ms-powerpoint'
     case '.pptx':
       return 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+    case '.zip':
+      return 'application/zip'
+    case '.txt':
+    case '.md':
+    case '.markdown':
+    case '.log':
+    case '.csv':
+    case '.json':
+    case '.yaml':
+    case '.yml':
+      return 'text/plain'
+    case '.mp4':
+      return 'video/mp4'
+    case '.mp3':
+      return 'audio/mpeg'
     default:
       return 'application/octet-stream'
   }
@@ -87,6 +110,47 @@ function resolveWorkspaceFile(session: SessionManager, conversationId: string, r
     throw new Error('路径越界')
   }
   return full
+}
+
+const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+
+/**
+ * 按请求取出要传出去的那份文件（与桌面主进程同一条口径）：
+ * messageId → 该条回答的 Word；path → 工作区单个文件；都没有 → 打包整个工作区。
+ */
+async function buildTransferPayload(
+  session: SessionManager,
+  request: TransferRequestDto
+): Promise<{ name: string; mime: string; bytes: Uint8Array }> {
+  const conversationId: string = request?.conversationId ?? ''
+  if (conversationId === '') {
+    throw new Error('缺少会话 id')
+  }
+  const messageId: string = request.messageId ?? ''
+  if (messageId !== '') {
+    const bytes: Uint8Array = await session.exportMessageDocx(conversationId, messageId)
+    const base: string = (request.suggestedName ?? '').trim() || 'Guncat 回答.docx'
+    return { name: /\.docx$/i.test(base) ? base : `${base}.docx`, mime: DOCX_MIME, bytes }
+  }
+  const relPath: string = (request.path ?? '').replace(/\\/g, '/')
+  if (relPath !== '') {
+    const full: string = resolveWorkspaceFile(session, conversationId, relPath)
+    if (!fs.existsSync(full)) {
+      throw new Error('文件不存在')
+    }
+    if (fs.statSync(full).isDirectory()) {
+      throw new Error('该路径是目录，请打包导出')
+    }
+    return {
+      name: path.basename(full),
+      mime: mimeTypeForFile(full),
+      bytes: new Uint8Array(fs.readFileSync(full))
+    }
+  }
+  const { WorkFileService } = await import('@core/service/WorkFileService')
+  const bytes: Uint8Array = WorkFileService.zipWorkspace(appContext(), conversationId)
+  const base: string = (request.suggestedName ?? '').trim() || `guncat-workspace-${conversationId}.zip`
+  return { name: /\.zip$/i.test(base) ? base : `${base}.zip`, mime: 'application/zip', bytes }
 }
 
 async function makeAttachmentThumbnail(filePath: string): Promise<string> {
@@ -318,7 +382,12 @@ export function createMobileHost(): MobileHost {
       exportZip: async (conversationId: string) => {
         const { WorkFileService } = await import('@core/service/WorkFileService')
         const bytes = WorkFileService.zipWorkspace(appContext(), conversationId)
-        const saved = saveBytes(`guncat-workspace-${conversationId}.zip`, 'application/zip', bytes)
+        // 走系统「保存到…」，让用户自己选目录/改文件名，也能取消
+        const saved = await saveBytesToUserLocation(
+          `guncat-workspace-${conversationId}.zip`,
+          'application/zip',
+          bytes
+        )
         return saved.ok ? { saved: true, path: saved.path } : { saved: false }
       },
       info: async (conversationId: string): Promise<WorkspaceInfoDto> =>
@@ -431,12 +500,46 @@ export function createMobileHost(): MobileHost {
         const bytes = await session.exportMessageDocx(conversationId, messageId)
         const name =
           suggestedName !== undefined && suggestedName !== '' ? suggestedName : 'Guncat 回答.docx'
-        const saved = saveBytes(
-          name,
-          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-          bytes
-        )
+        // 老入口也改成「先选位置再写」：直接扔进下载目录会让用户不知道文件去了哪
+        const saved = await saveBytesToUserLocation(name, DOCX_MIME, bytes)
         return saved.ok ? { saved: true, path: saved.path } : { saved: false }
+      }
+    },
+
+    /**
+     * 统一导出 / 分享。save 走系统文件管理器（用户选位置、可取消）；
+     * share 交给原生分享（target=wechat 时直接指向微信，不可用则退回系统面板）。
+     */
+    transfer: async (request: TransferRequestDto): Promise<TransferResultDto> => {
+      try {
+        const payload = await buildTransferPayload(session, request)
+        if (request.action === 'share') {
+          const target = request.target === 'wechat' ? 'wechat' : 'system'
+          const outcome = shareBytesTo(payload.name, payload.mime, payload.bytes, target)
+          if (!outcome.ok) {
+            return { status: 'error', message: outcome.error ?? '分享失败' }
+          }
+          return {
+            status: 'shared',
+            message: outcome.fallback
+              ? target === 'wechat'
+                ? '没有找到可用的微信接收入口，已打开系统分享面板'
+                : '已打开系统分享面板'
+              : target === 'wechat'
+                ? `已调起微信分享：${payload.name}`
+                : '已打开系统分享面板'
+          }
+        }
+        const saved = await saveBytesToUserLocation(payload.name, payload.mime, payload.bytes)
+        if (saved.ok) {
+          return { status: 'saved', path: saved.path }
+        }
+        if (saved.canceled === true) {
+          return { status: 'canceled' }
+        }
+        return { status: 'error', message: saved.error ?? '保存失败' }
+      } catch (e) {
+        return { status: 'error', message: String(e instanceof Error ? e.message : e) }
       }
     },
 

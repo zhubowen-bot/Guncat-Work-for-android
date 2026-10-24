@@ -15,6 +15,7 @@ import { WorkArtifactsCard } from './components/WorkArtifactsCard'
 import { TableOcrDialog } from './components/TableOcrDialog'
 import { ImageLightbox } from './components/ImageLightbox'
 import { WorkspacePreviewOverlay } from './components/WorkspacePreview'
+import { TransferSheet } from './components/TransferSheet'
 import { useSpeech, speechTextOf } from './speech/speechStore'
 import { IconBrain, IconFolder, IconGlobe, IconSidebar, IconTable } from './icons'
 
@@ -184,6 +185,13 @@ export default function App() {
     // 界面块里的本地状态回传会临时冻结自动置底（用户正在拖滑块/填表时，
     // 页面突然被拽到底部是原版专门修过的问题）
     if (Date.now() < useStore.getState().scrollFreezeUntil) {
+      return
+    }
+    // 用户正在选文字（长按拖选区）：这时候改 scrollTop 会把选区拽掉/撑开，
+    // Android WebView 上表现为「选了一点、复制出来却是整段甚至全文」。
+    // 选区还活着就完全不碰滚动，松手后下一帧再恢复自动置底。
+    const selection = window.getSelection()
+    if (selection !== null && !selection.isCollapsed) {
       return
     }
     const nearBottom =
@@ -409,6 +417,8 @@ export default function App() {
       {/* 文件预览弹层只渲染这一份：工作区面板与产物汇总卡点开的都是 store 里的同一个目标
           （弹层不能挤进 300 多像素宽的面板里，正文根本读不了） */}
       <WorkspacePreviewOverlay />
+      {/* 导出 / 分享弹层只渲染这一份：工作区、单文件、消息 Word 共用 */}
+      <TransferSheet />
 
       <SettingsDialog />
       <TableOcrDialog />

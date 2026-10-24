@@ -4,6 +4,11 @@ import App from './App'
 import './styles.css'
 import 'katex/dist/katex.min.css'
 import { reportStage, describeError } from './bootReport'
+import { installSelectionCopyGuard } from './clipboard'
+
+// 选中文字直接「复制」时的剪贴板守卫（见 clipboard.ts 的说明）。
+// 必须在 React 挂载前就装上：用户完全可能不经过任何按钮，直接用系统选区复制。
+installSelectionCopyGuard()
 
 // 只有鼠标/触控板才启用 :hover。手机 WebView 会把上一次点击的 :hover 状态粘住，
 // 表现为「点一下按钮一直深色，点空白才恢复」；这里给 CSS 一个总开关。

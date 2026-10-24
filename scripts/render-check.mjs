@@ -671,7 +671,10 @@ const wsHtml = mod.renderWorkspacePanel()
 check('面板头部有「上传」按钮', wsHtml.includes('workspace__upload') && wsHtml.includes('上传'))
 check('空工作区里也有一个显眼的上传入口', wsHtml.includes('workspace__empty-btn'))
 check('空态把「怎么加文件」说清楚（不再是只有拖拽这条隐形路径）', decode(wsHtml).includes('拖进窗口'))
-check('导出 zip / 打开文件夹 / 刷新 三个入口都还在', wsHtml.includes('打包导出为 zip'))
+check(
+  '导出/分享 / 打开文件夹 / 刷新 三个入口都还在（导出改走「先选位置或分享」的弹层）',
+  wsHtml.includes('导出或分享工作区')
+)
 
 // 命令审批档位行：面板能把「跑命令要问不问」交给用户，前提是那几档主进程都认
 const permRows = mod.commandPermissionRows()
@@ -740,15 +743,20 @@ const composerChat = mod.renderComposer('chat')
 const composerWork = mod.renderComposer('work')
 check('聊天模式的输入区有附件入口（回形针）', composerChat.includes('composer__upload'))
 check(
-  '附件入口的提示说清是「发给模型直接看」',
-  composerChat.includes('添加图片或文档')
+  '附件入口的提示说清是「发给模型直接查看」',
+  composerChat.includes('发送给模型直接查看')
 )
 check(
   '工作/交互模式的上传入口进工作区（标题不同，不是附件直传）',
-  composerWork.includes('composer__upload') && composerWork.includes('上传文件到工作区')
+  composerWork.includes('composer__upload') && composerWork.includes('加入工作区')
 )
 check('发送按钮仍在', composerChat.includes('composer__send'))
-check('语音输入按钮仍在', composerChat.includes('composer__mic'))
+// 语音按钮当前是显式关掉的（Composer 的 VOICE_BUTTON_VISIBLE=false）：
+// 这条断言钉住的是「别在没接好链路时又把它放出来」这个现状，而不是要求它出现。
+check(
+  '语音输入按钮按既定开关隐藏（未接好链路前不放出来）',
+  !composerChat.includes('composer__mic')
+)
 
 // 执行中的输入区（审计 P1-4：此前只有「停止」，想补充要求只能中止重来）
 const composerWorkRunning = mod.renderComposer('work', true)

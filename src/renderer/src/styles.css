@@ -2794,18 +2794,51 @@ select {
   flex: none;
 }
 
+.file-item__acts {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  flex: none;
+}
+
+/*
+ * 行内动作（下载 / 分享 / 删除）**常显**。
+ *
+ * 早先删除按钮是 opacity:0 + `.hoverable .file-item:hover` 才露出来 —— 桌面鼠标
+ * 能用，但 Android WebView 没有 hover（boot.ts 还主动去掉了 hoverable），
+ * 手机上这个按钮就永远不可见。触屏场景下「隐藏到悬停」等于没有入口。
+ */
+.file-item__act,
 .file-item__del {
-  width: 24px;
-  height: 24px;
-  opacity: 0;
-}
-
-.hoverable .file-item:hover .file-item__del {
+  width: 26px;
+  height: 26px;
   opacity: 1;
+  color: var(--text-faint);
 }
 
-.hoverable .file-item__del:hover {
+.file-item__act:active:not(:disabled) {
+  color: var(--accent);
+  background: var(--bg-sunken);
+}
+
+.file-item__del:active:not(:disabled) {
   color: var(--danger);
+  background: var(--bg-sunken);
+}
+
+.hoverable .file-item__act:hover:not(:disabled) {
+  color: var(--accent);
+  background: var(--bg-sunken);
+}
+
+.hoverable .file-item__del:hover:not(:disabled) {
+  color: var(--danger);
+  background: var(--bg-sunken);
+}
+
+.file-item__act:disabled,
+.file-item__del:disabled {
+  opacity: 0.35;
 }
 
 .workspace__empty {
@@ -3779,4 +3812,31 @@ select {
   border-radius: 12px;
   background: var(--bg-sunken);
   color: var(--accent);
+}
+
+/* ===== 导出 / 分享弹层 =====
+   与选择器/附件来源共用 .picker__overlay + .picker__sheet：
+   手机上从底部升起，桌面上是居中浮层。这里只补「文件名 + 说明」那一块。 */
+.transfer__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 2px 12px 10px;
+}
+
+.transfer__name {
+  font-size: 13px;
+  color: var(--text);
+  word-break: break-all;
+  line-height: 1.4;
+}
+
+.transfer__hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.transfer__sheet .picker__option {
+  padding: 10px 12px;
 }

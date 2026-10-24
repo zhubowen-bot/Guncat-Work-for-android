@@ -334,6 +334,49 @@ try {
     stacking.previewZ > stacking.workspaceZ,
     `preview=${stacking.previewZ} workspace=${stacking.workspaceZ}`
   )
+
+  // 文件行的三个动作必须**常显**：手机没有 hover，靠悬停才出现的按钮等于不存在。
+  // 顺带钉住「导出先弹去向选择」，而不是点一下就直接写下载目录。
+  const seeded = await page.evaluate(async () => {
+    // 启动时刚建的那个会话就是列表里最新的一条（listConversations 按 updatedAt 倒序）
+    const conversations = await window.guncat.conversations.list()
+    if (conversations.length === 0) {
+      return ''
+    }
+    const convId = conversations[0].id
+    const root = '/guncat/data/files/workspaces/' + convId
+    window.__guncatDebug.writeFileBase64(root + '/行动测试.txt', btoa('hello actions'))
+    return convId
+  })
+  if (seeded !== '') {
+    await page.click('.workspace__head .icon-btn[title="刷新"]')
+    await page.waitForTimeout(600)
+  }
+  const rowActionCount = await page.locator('.file-item__act').count()
+  check('工作区文件行有下载/分享入口', rowActionCount >= 2, `${rowActionCount} 个`)
+  const delOpacity = await page
+    .locator('.file-item__del')
+    .first()
+    .evaluate((el) => getComputedStyle(el).opacity)
+    .catch(() => 'missing')
+  check('文件行删除按钮在触屏上常显（不再依赖 hover）', delOpacity === '1', `opacity=${delOpacity}`)
+
+  if (rowActionCount > 0) {
+    await page.locator('.filecard__head .filecard__action', { hasText: '导出' }).click()
+    await page.waitForSelector('.transfer__sheet', { timeout: 3000 })
+    const transferText = await page.locator('.transfer__sheet').innerText()
+    check(
+      '导出先弹「存哪 / 分享到哪」的选择（不再点一下就报已导出）',
+      transferText.includes('保存到') && transferText.includes('分享到微信'),
+      transferText.replace(/\s+/g, ' ').slice(0, 80)
+    )
+    await page.waitForTimeout(250)
+    await page.screenshot({ path: path.join(SHOTS, 'transfer-sheet.png') })
+    await page.click('.transfer__sheet .picker__close')
+  } else {
+    check('导出先弹「存哪 / 分享到哪」的选择（不再点一下就报已导出）', false, '工作区里没有文件')
+  }
+
   await page.screenshot({ path: path.join(SHOTS, 'workspace.png') })
   await page.click('.workspace .mobile-only')
   await page.waitForTimeout(300)

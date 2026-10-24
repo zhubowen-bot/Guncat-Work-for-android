@@ -23,6 +23,7 @@ import { Disclosure } from './Disclosure'
 import { AskUserCard } from './AskUserCard'
 import { groupTurns, formatDuration, turnStats, finalRound, STOPPED_NOTE, type Turn } from '../turns'
 import { useStore } from '../store'
+import { copyText } from '../clipboard'
 import { IconCheck, IconInteractive, IconWork } from '../icons'
 
 interface Props {
@@ -136,6 +137,7 @@ function TaskCard({
   message: MessageDto
   onEditToInput: (text: string) => void
 }) {
+  const pushNotice = useStore((s) => s.pushNotice)
   return (
     <div className="task-card">
       <div className="task-card__row">
@@ -156,7 +158,9 @@ function TaskCard({
           className="act"
           title="复制任务原文"
           onClick={() => {
-            void navigator.clipboard.writeText(message.content)
+            void copyText(message.content).then((ok) => {
+              pushNotice(ok ? 'info' : 'error', ok ? '已复制' : '复制失败：请长按选中文字后手动复制')
+            })
           }}
         >
           复制

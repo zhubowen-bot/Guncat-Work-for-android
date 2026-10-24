@@ -30,6 +30,7 @@ import {
   IconPdf,
   IconPlus,
   IconRefresh,
+  IconShare,
   IconTrash,
   IconVideo,
   IconZip
@@ -338,7 +339,8 @@ export function WorkspacePanel() {
   const running = useStore((s) => s.running)
   const deleteEntry = useStore((s) => s.deleteWorkspaceEntry)
   const clear = useStore((s) => s.clearWorkspace)
-  const exportZip = useStore((s) => s.exportWorkspace)
+  const openTransfer = useStore((s) => s.openTransfer)
+  const runTransfer = useStore((s) => s.runTransfer)
   const openFolder = useStore((s) => s.openWorkspaceFolder)
   const loadWorkspace = useStore((s) => s.loadWorkspace)
   const pickFiles = useStore((s) => s.pickWorkspaceFiles)
@@ -479,6 +481,58 @@ export function WorkspacePanel() {
     })
   }
 
+  /**
+   * 打包导出：先开「导出/分享」弹层，让用户选保存位置还是分享到微信。
+   * 不再点一下就直接写下载目录再提示「已导出」。
+   */
+  function exportWorkspace(): void {
+    if (activeId === null) {
+      pushNotice('warn', '还没有可导出的会话')
+      return
+    }
+    openTransfer({
+      kind: 'workspace',
+      conversationId: activeId,
+      name: `guncat-workspace-${activeId}.zip`,
+      title: '导出工作区'
+    })
+  }
+
+  /** 单个文件直接下载：走同一个 transfer 通道的 save（系统保存位置选择） */
+  function downloadEntry(entry: WorkspaceEntryDto): void {
+    if (activeId === null) {
+      return
+    }
+    void runTransfer(
+      {
+        kind: 'file',
+        conversationId: activeId,
+        path: entry.path,
+        name: entry.name,
+        title: '下载文件'
+      },
+      'save'
+    )
+  }
+
+  /** 单个文件直接分享到微信（原生侧不可用时自动退回系统分享面板） */
+  function shareEntry(entry: WorkspaceEntryDto): void {
+    if (activeId === null) {
+      return
+    }
+    void runTransfer(
+      {
+        kind: 'file',
+        conversationId: activeId,
+        path: entry.path,
+        name: entry.name,
+        title: '分享文件'
+      },
+      'share',
+      'wechat'
+    )
+  }
+
   function renderTreeRows(dir: string, depth: number): React.ReactNode {
     const items = tree[dir]
     if (items === undefined) {
@@ -528,14 +582,35 @@ export function WorkspacePanel() {
           <span className="file-item__size">
             {previewPath === entry.path ? '读取中…' : formatSize(entry.size)}
           </span>
-          <button
-            className="icon-btn file-item__del"
-            title="删除"
-            disabled={running}
-            onClick={() => removeEntry(entry.path)}
-          >
-            <IconTrash size={14} />
-          </button>
+          {/* 每行的三个动作常显：下载 / 分享到微信 / 删除。
+              此前删除只在桌面鼠标悬停时才露出（.file-item__del opacity:0 + .hoverable），
+              手机上根本没有 hover，按钮就永远看不见 —— 这是真机报障的原形。 */}
+          <span className="file-item__acts">
+            <button
+              className="icon-btn file-item__act"
+              title="下载这个文件（可选择保存位置）"
+              disabled={running}
+              onClick={() => downloadEntry(entry)}
+            >
+              <IconDownload size={14} />
+            </button>
+            <button
+              className="icon-btn file-item__act"
+              title="分享这个文件到微信"
+              disabled={running}
+              onClick={() => shareEntry(entry)}
+            >
+              <IconShare size={14} />
+            </button>
+            <button
+              className="icon-btn file-item__act file-item__del"
+              title="删除"
+              disabled={running}
+              onClick={() => removeEntry(entry.path)}
+            >
+              <IconTrash size={14} />
+            </button>
+          </span>
         </div>
       )
     )
@@ -616,8 +691,8 @@ export function WorkspacePanel() {
         <button
           className="icon-btn"
           disabled={activeId === null || workspace.length === 0 || running}
-          title="打包导出为 zip"
-          onClick={() => void exportZip()}
+          title="导出或分享工作区（打包为 zip）"
+          onClick={exportWorkspace}
         >
           <IconDownload size={15} />
         </button>
@@ -733,8 +808,8 @@ export function WorkspacePanel() {
         <button
           className="filecard__action"
           disabled={activeId === null || workspace.length === 0 || running}
-          title="打包导出为 zip"
-          onClick={() => void exportZip()}
+          title="导出或分享整个工作区（打包为 zip）"
+          onClick={exportWorkspace}
         >
           导出
         </button>

@@ -1,4 +1,4 @@
-﻿// 渲染进程状态镜像。
+// 渲染进程状态镜像。
 //
 // 主进程是业务权威，这里只保存「展示所需」的投影：
 // 会话摘要列表、当前会话的完整消息、运行态标志与工作区清单。
@@ -128,6 +128,21 @@ export function requestThinking(
   return { thinkingEnabled, reasoningEffort: undefined }
 }
 
+/**
+ * 导出 / 分享弹层要处置的对象。
+ *
+ * 三选一：messageId（一条回答 → Word）、path（工作区里的单个文件）、两者都空（打包工作区）。
+ * name 是建议文件名；title 只用于弹层标题。
+ */
+export interface TransferSubject {
+  kind: 'workspace' | 'file' | 'message'
+  conversationId: string
+  path?: string
+  messageId?: string
+  name: string
+  title: string
+}
+
 interface State {
   ready: boolean
   /** 真实智能体（agents.json，IPC 原样） */
@@ -230,6 +245,18 @@ interface State {
   openWorkspaceFile(path: string): void
   /** 关闭工作区预览弹层 */
   closeWorkspaceFile(): void
+  /**
+   * 导出 / 分享弹层（工作区打包、单文件、一条回答的 Word）。
+   * 打开弹层只是「问一句怎么处置」，真正落盘/分享在 runTransfer 里。
+   */
+  transferSubject: TransferSubject | null
+  openTransfer(subject: TransferSubject): void
+  closeTransfer(): void
+  runTransfer(
+    subject: TransferSubject,
+    action: 'save' | 'share',
+    target?: 'system' | 'wechat'
+  ): Promise<void>
   /** 在接下来这段时间内不要自动置底（界面块的本地状态回传用） */
   freezeAutoScroll(ms: number): void
   reloadSettings(): Promise<void>
@@ -450,6 +477,7 @@ export const useStore = create<State>((set, get) => {
     tableOcrOpen: false,
     lightboxUrl: '',
     workspacePreview: null,
+    transferSubject: null,
     scrollFreezeUntil: 0,
     pendingDraft: null,
     pendingAsk: null,
@@ -723,6 +751,62 @@ export const useStore = create<State>((set, get) => {
       set({ workspacePreview: null })
     },
 
+    openTransfer(subject) {
+      set({ transferSubject: subject })
+    },
+
+    closeTransfer() {
+      set({ transferSubject: null })
+    },
+
+    /**
+     * 真正的导出 / 分享。
+     *
+     * 关键口径：save 一定先经过系统保存位置选择（桌面是保存对话框，Android 是
+     * ACTION_CREATE_DOCUMENT）—— 这既是用户要的「确认流程」，也让他们自己决定
+     * 文件落在哪。取消不再提示「已导出」，失败如实报错。
+     */
+    async runTransfer(subject, action, target) {
+      set({ transferSubject: null })
+      const conversationId: string = subject.conversationId || get().activeId || ''
+      if (conversationId === '') {
+        get().pushNotice('warn', '还没有可导出的会话')
+        return
+      }
+      const verb: string = action === 'share' ? '分享' : '保存'
+      // 打包/生成 Word 需要一点时间，先给一句「在准备」，避免点了没反应
+      get().pushNotice('info', `正在准备${verb}：${subject.name}`)
+      try {
+        const result = await window.guncat.transfer({
+          conversationId,
+          path: subject.path,
+          messageId: subject.messageId,
+          suggestedName: subject.name,
+          action,
+          target
+        })
+        if (result.status === 'saved') {
+          const where: string = result.path ?? subject.name
+          get().pushNotice(
+            'info',
+            result.message !== undefined ? `${result.message}：${where}` : `已保存到 ${where}`
+          )
+          return
+        }
+        if (result.status === 'shared') {
+          get().pushNotice('info', result.message ?? '已打开分享')
+          return
+        }
+        if (result.status === 'canceled') {
+          // 用户自己取消的，不需要提示（提示反而像出错了）
+          return
+        }
+        get().pushNotice('error', `${verb}失败：${result.message ?? '未知原因'}`)
+      } catch (e) {
+        get().pushNotice('error', `${verb}失败：${String(e instanceof Error ? e.message : e)}`)
+      }
+    },
+
     freezeAutoScroll(ms) {
       set({ scrollFreezeUntil: Date.now() + ms })
     },
@@ -910,10 +994,16 @@ export const useStore = create<State>((set, get) => {
       if (activeId === null) {
         return
       }
-      const result = await window.guncat.workspace.exportZip(activeId)
-      if (result.saved) {
-        get().pushNotice('info', `已导出到 ${result.path ?? ''}`)
-      }
+      // 旧入口保留给可能的调用方，但语义已改成「先让用户选保存位置」
+      await get().runTransfer(
+        {
+          kind: 'workspace',
+          conversationId: activeId,
+          name: `guncat-workspace-${activeId}.zip`,
+          title: '导出工作区'
+        },
+        'save'
+      )
     },
 
     async openWorkspaceFolder() {

@@ -40,5 +40,11 @@
             android:authorities="com.guncat.work.camera"
             android:exported="false"
             android:grantUriPermissions="true" />
+
+        <provider
+            android:name=".FileShareProvider"
+            android:authorities="com.guncat.work.share"
+            android:exported="false"
+            android:grantUriPermissions="true" />
     </application>
 </manifest>

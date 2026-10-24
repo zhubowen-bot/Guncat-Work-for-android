@@ -1,5 +1,5 @@
 // IPC 注册：把渲染进程的调用路由到 SessionManager，并把事件推回去。
-import { ipcMain, app, shell, dialog } from 'electron'
+import { ipcMain, app, shell, dialog, clipboard } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { INVOKE, EVENT } from '../ipc/contract'
@@ -15,6 +15,8 @@ import type {
   MultimodalConfigDto,
   PickedAttachmentDto,
   RendererStage,
+  TransferRequestDto,
+  TransferResultDto,
   WorkspaceBinaryDto,
   WorkspaceInfoDto,
   WorkAnswerRequest,
@@ -315,6 +317,48 @@ export function registerIpcHandlers(session: SessionManager): void {
     return { saved: true, path: result.filePath }
   })
 
+  /**
+   * 统一导出 / 分享（工作区压缩包 / 单个文件 / 一条回答的 Word）。
+   *
+   * save：先弹系统保存位置选择 —— 这既是确认环节，也让用户自己决定落在哪。
+   * share：留一份副本到下载目录、路径进剪贴板并在资源管理器里定位（桌面没有系统分享面板）。
+   */
+  ipcMain.handle(
+    INVOKE.fileTransfer,
+    async (_e, request: TransferRequestDto): Promise<TransferResultDto> => {
+      let payload: TransferPayload
+      try {
+        payload = await buildTransferPayload(session, request)
+      } catch (e) {
+        return { status: 'error', message: String(e instanceof Error ? e.message : e) }
+      }
+      if (request.action === 'share') {
+        try {
+          return shareOnDesktop(payload, request.target)
+        } catch (e) {
+          return { status: 'error', message: String(e instanceof Error ? e.message : e) }
+        }
+      }
+      const window = getMainWindow()
+      const ext: string = path.extname(payload.name).replace(/^\./, '')
+      const result = await dialog.showSaveDialog(window ?? undefined!, {
+        title: '选择保存位置',
+        defaultPath: payload.name,
+        buttonLabel: '保存',
+        filters: ext === '' ? [] : [{ name: ext.toUpperCase(), extensions: [ext] }]
+      })
+      if (result.canceled || result.filePath === undefined) {
+        return { status: 'canceled' }
+      }
+      try {
+        fs.writeFileSync(result.filePath, payload.bytes)
+        return { status: 'saved', path: result.filePath }
+      } catch (e) {
+        return { status: 'error', message: String(e instanceof Error ? e.message : e) }
+      }
+    }
+  )
+
   // ===== 端侧增强 =====
 
   /** 文件收件：拖拽 / 命令行 / 系统「打开方式」进来的文件导入当前会话工作区 */
@@ -559,8 +603,148 @@ function mimeTypeForFile(filePath: string): string {
       return 'image/x-icon'
     case '.avif':
       return 'image/avif'
+    // 以下类型以前一律退回 octet-stream：预览层无所谓，但「分享到微信」这类
+    // 需要真实 MIME 的出口会因此被微信拒收（它按类型决定收不收文件）。
+    case '.pdf':
+      return 'application/pdf'
+    case '.docx':
+      return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    case '.doc':
+      return 'application/msword'
+    case '.xlsx':
+      return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    case '.xls':
+      return 'application/vnd.ms-excel'
+    case '.pptx':
+      return 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+    case '.ppt':
+      return 'application/vnd.ms-powerpoint'
+    case '.zip':
+      return 'application/zip'
+    case '.txt':
+    case '.md':
+    case '.markdown':
+    case '.log':
+    case '.csv':
+    case '.json':
+    case '.yaml':
+    case '.yml':
+      return 'text/plain; charset=utf-8'
+    case '.mp4':
+      return 'video/mp4'
+    case '.mp3':
+      return 'audio/mpeg'
     default:
       return 'application/octet-stream'
+  }
+}
+
+/** 导出/分享的内容载荷：文件名、MIME 与字节。 */
+interface TransferPayload {
+  name: string
+  mime: string
+  bytes: Uint8Array
+}
+
+const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+
+/** 清掉文件名里非法的路径字符（与 Android 侧重名规则一致）。 */
+function safeFileName(name: string, fallback: string): string {
+  const value = (name ?? '').trim().replace(/[\\/:*?"<>|]/g, '_')
+  return value === '' ? fallback : value
+}
+
+/**
+ * 按请求取出要传出去的那份文件。
+ * 三选一：messageId（一条回答的 Word）→ path（工作区里的单个文件）→ 都没有（打包整个工作区）。
+ */
+async function buildTransferPayload(
+  session: SessionManager,
+  request: TransferRequestDto
+): Promise<TransferPayload> {
+  const conversationId: string = request?.conversationId ?? ''
+  if (conversationId === '') {
+    throw new Error('缺少会话 id')
+  }
+  const messageId: string = request.messageId ?? ''
+  if (messageId !== '') {
+    const bytes: Uint8Array = await session.exportMessageDocx(conversationId, messageId)
+    const name: string = safeFileName(request.suggestedName ?? '', 'Guncat 回答.docx')
+    return {
+      name: name.toLowerCase().endsWith('.docx') ? name : `${name}.docx`,
+      mime: DOCX_MIME,
+      bytes
+    }
+  }
+  const relPath: string = (request.path ?? '').replace(/\\/g, '/')
+  if (relPath !== '') {
+    const full: string = resolveWorkspaceFile(session, conversationId, relPath)
+    if (!fs.existsSync(full)) {
+      throw new Error('文件不存在')
+    }
+    if (fs.statSync(full).isDirectory()) {
+      throw new Error('该路径是目录，请打包导出')
+    }
+    return {
+      name: path.basename(full),
+      mime: mimeTypeForFile(full),
+      bytes: new Uint8Array(fs.readFileSync(full))
+    }
+  }
+  const { WorkFileService } = await import('@core/service/WorkFileService')
+  const { appContext } = await import('@core/platform/kit/AbilityKit')
+  const bytes: Uint8Array = WorkFileService.zipWorkspace(appContext(), conversationId)
+  const fallback = `guncat-workspace-${conversationId}.zip`
+  const name: string = safeFileName(request.suggestedName ?? '', fallback)
+  return {
+    name: name.toLowerCase().endsWith('.zip') ? name : `${name}.zip`,
+    mime: 'application/zip',
+    bytes
+  }
+}
+
+/** 同名文件已存在时追加 (1)/(2)…，避免分享一次就覆盖上一次的副本 */
+function uniqueFilePath(filePath: string): string {
+  if (!fs.existsSync(filePath)) {
+    return filePath
+  }
+  const dir: string = path.dirname(filePath)
+  const ext: string = path.extname(filePath)
+  const base: string = path.basename(filePath, ext)
+  for (let i = 1; i < 1000; i++) {
+    const next: string = path.join(dir, `${base} (${i})${ext}`)
+    if (!fs.existsSync(next)) {
+      return next
+    }
+  }
+  return filePath
+}
+
+/**
+ * 桌面端的「分享」：这里没有 Android 那样的系统分享面板，能兑现的是
+ * 「在下载目录留一份副本 + 把路径放进剪贴板 + 在资源管理器里定位」——
+ * 微信桌面版支持直接粘贴路径/拖入文件，这条链路是真正可用的。
+ * 目标为微信时顺手尝试唤起微信（协议失败不影响已完成的那份副本）。
+ */
+function shareOnDesktop(payload: TransferPayload, target?: 'system' | 'wechat'): TransferResultDto {
+  const dir: string = path.join(app.getPath('downloads'), 'Guncat Work')
+  fs.mkdirSync(dir, { recursive: true })
+  const file: string = uniqueFilePath(path.join(dir, payload.name))
+  fs.writeFileSync(file, payload.bytes)
+  clipboard.writeText(file)
+  shell.showItemInFolder(file)
+  if (target === 'wechat') {
+    void Promise.resolve(shell.openExternal('weixin://')).catch((): void => undefined)
+    return {
+      status: 'shared',
+      path: file,
+      message: `已保存并复制路径：${file}。可直接在微信里粘贴或拖入发送`
+    }
+  }
+  return {
+    status: 'shared',
+    path: file,
+    message: `已保存并复制路径：${file}。可在微信中粘贴或拖入发送`
   }
 }
 

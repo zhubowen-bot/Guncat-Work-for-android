@@ -125,6 +125,12 @@ export const INVOKE = {
   intakePickFiles: 'intake:pickFiles',
   /** 端侧增强：把一条回答导出为 Word */
   messageExportDocx: 'message:exportDocx',
+  /**
+   * 统一的「导出 / 分享」通道：工作区压缩包、单个工作区文件、一条回答的 Word，
+   * 全部走这一条。save 会弹系统保存位置选择（用户可自选目录、可取消），
+   * share 调起系统分享面板或直接指向微信。
+   */
+  fileTransfer: 'file:transfer',
   /** 端侧增强：语音输入（录音 → 转写） */
   asrTranscribe: 'asr:transcribe'
 } as const
@@ -472,6 +478,43 @@ export interface ConversationRef {
 
 export interface WorkspaceRef {
   conversationId: string
+}
+
+/**
+ * 导出/分享的一次请求。
+ *
+ * 为什么不复用 workspace:exportZip / message:exportDocx：那两条命令的语义是
+ * 「立刻写进默认下载目录」，用户既没有确认环节也选不了位置（Android 上表现为
+ * 点一下就提示「已导出」，连文件落在哪都不知道）。这里把「要哪份文件」与
+ * 「怎么处置」拆开：save 一定先经过系统保存位置选择，share 一定先给出分享去向。
+ *
+ * 三选一确定内容：path（工作区相对路径）→ messageId（导出该条回答）→ 两者都空（打包工作区）。
+ */
+export interface TransferRequestDto {
+  conversationId: string
+  /** 工作区内的相对路径；空串/undefined 表示「打包整个工作区」 */
+  path?: string
+  /** 把某条回答导出为 Word（与 path 互斥） */
+  messageId?: string
+  /** 建议文件名（保存对话框的默认名、分享时的标题） */
+  suggestedName?: string
+  action: 'save' | 'share'
+  /** share 的去向：system = 系统分享面板；wechat = 直接微信（不可用时退回系统面板） */
+  target?: 'system' | 'wechat'
+}
+
+export interface TransferResultDto {
+  /**
+   * saved   已写入用户选定的位置
+   * shared  已调起分享（微信 / 系统面板）
+   * canceled 用户在保存位置选择里取消
+   * error   失败（message 里是原因）
+   */
+  status: 'saved' | 'shared' | 'canceled' | 'error'
+  /** 保存成功后的展示路径；桌面是绝对路径，Android 是「下载/Guncat Work/x」这类友好位置 */
+  path?: string
+  /** 需要额外告诉用户的一句话（分享去向、失败原因等） */
+  message?: string
 }
 
 export interface WorkspacePathRef {

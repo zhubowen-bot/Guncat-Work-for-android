@@ -112,6 +112,27 @@
 - 移除 0.3.0 早期版本的外部 Termux `RUN_COMMAND` 后端与权限/接收器，避免「还要装 Termux」的歧义。
 - 文档同步：README / README_EN / `docs/ANDROID.md` / `docs/THIRD-PARTY.md` / `AGENTS.md`。
 
+### 导出 / 分享 / 剪贴板（真机反馈）
+
+- **导出不再「点一下就说已导出」**：工作区打包、单个文件、一条回答的 Word 统一走
+  `file:transfer` 通道与「导出/分享」弹层。保存一定先经过系统保存位置选择
+  （桌面是保存对话框，Android 是 `ACTION_CREATE_DOCUMENT`），可自选目录、可改名、可取消；
+  取消不再弹「已导出」，失败如实报错。
+- **分享到微信**：单个文件、文件预览、工作区压缩包都能直接分享；Android 原生侧优先
+  `setPackage("com.tencent.mm")` 直发，微信不可用（没装 / 不收该类型）时退回系统分享面板并
+  明确提示。分享文件改由 `FileShareProvider` 以 `content://` 暴露，不再为了分享一次就往
+  「下载」里塞一份副本。
+- **工作区文件树每行三个动作常显**：下载 / 分享到微信 / 删除。删除按钮此前是
+  `opacity:0` + `.hoverable .file-item:hover` 才出现，手机没有 hover，等于永远不可见。
+- **复制失败修复**：Android WebView 不授予页面剪贴板写权限，
+  `navigator.clipboard.writeText` 必抛 `NotAllowedError`。新增原生 `copyText`
+  （ClipboardManager），并按「原生桥 → navigator.clipboard → execCommand」三级回退；
+  「文本 / MD / 代码块 / 任务 / 表格 HTML」全部改走同一条路径。
+- **选中一小段、复制出全文**：两处收口。其一，流式输出时自动置底会改 `scrollTop`，
+  把正在拖选的选区拽掉/撑开 —— 选区还活着时现在完全不碰滚动；其二，`copy` 事件守卫
+  把当前选区原文显式写进 `clipboardData`，不再依赖内核选区与 DOM 选区同步。
+  消息操作行的「复制 / 文本 / MD」也会优先复制正文里刚选中的那一段。
+
 ### 已知边界
 
 - 内置终端只提供 arm64；APK 约 211MB、首次解压约 560MB。
