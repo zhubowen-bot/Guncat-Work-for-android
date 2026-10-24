@@ -7,7 +7,7 @@ import { Timeline } from './components/Timeline'
 import { WorkspacePanel } from './components/WorkspacePanel'
 import { SettingsDialog } from './components/SettingsDialog'
 import { SpeechBar } from './components/SpeechBar'
-import { MODE_HINT, agentById, isVirtualAgentId } from './conversations'
+import { agentById, isVirtualAgentId } from './conversations'
 import { AgentGlyph } from './components/AgentGlyph'
 import { EmptyState } from './components/EmptyState'
 import { WorkArtifactsCard } from './components/WorkArtifactsCard'
@@ -276,10 +276,6 @@ export default function App() {
           </button>
           <div className="topbar__title">
             <strong>{active?.title || engine?.name || '新会话'}</strong>
-            <small title={engine?.description ?? ''}>
-              {engine !== undefined ? `${engine.name} · ` : ''}
-              {MODE_HINT[mode] ?? ''}
-            </small>
           </div>
           <button
             className="mobile-icon-btn mobile-workspace-btn"

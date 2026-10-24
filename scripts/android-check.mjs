@@ -151,6 +151,7 @@ try {
   await page.waitForSelector('.app', { timeout: 15_000 })
   check('首屏渲染', await page.locator('.app').isVisible())
   check('手机布局（抽屉按钮可见）', await page.locator('.mobile-menu-btn').isVisible())
+  check('顶栏不再显示状态副标题', (await page.locator('.topbar__title small').count()) === 0)
   check('输入框上方胶囊可见', await page.locator('.composer__chips').isVisible())
   check('上传/拍照按钮可见', (await page.locator('.composer__upload').isVisible()) && (await page.locator('.composer__camera').isVisible()))
   await page.screenshot({ path: path.join(SHOTS, 'home.png') })
