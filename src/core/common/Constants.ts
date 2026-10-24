@@ -12,7 +12,7 @@ export class Constants {
   // 预置配置方案是否已经播种过。只在第一次升级/首次安装时合并一次，
   // 之后用户删掉预置方案也不会在下次启动时又冒出来。
   static readonly LS_KEY_API_PROFILES_SEEDED: string = 'guncat_api_profiles_seeded';
-  static readonly API_PROFILES_SEED_VERSION: string = '2';
+  static readonly API_PROFILES_SEED_VERSION: string = '3';
   static readonly LS_KEY_THINKING_ENABLED: string = 'guncat_thinking_enabled';
   // 本地内置联网搜索配置(JSON: 引擎选择 + 各引擎 API Key/BaseUrl), 与服务端联网搜索开关独立
   static readonly LS_KEY_LOCAL_SEARCH_CONFIG: string = 'guncat_local_search_config';

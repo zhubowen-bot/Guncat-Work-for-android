@@ -592,11 +592,11 @@ check(
   `merged=${seededProfiles.merged} key=${seededDeepseek.apiConfig.apiKey} models=${seededDeepseek.apiConfig.models.join(',')}`
 )
 check(
-  '预置方案第二个是 Opencode Go（Go 套餐 Base URL + deepseek-v4.1-flash 的 Chat Completions 协议）',
+  '预置方案第二个是 Opencode Go（Go 套餐 Base URL + deepseek-v4.1-flash 的 Anthropic Messages 协议）',
   seededOpencode.id === 'preset-opencode-go' &&
     seededOpencode.name === 'Opencode Go' &&
     seededOpencode.apiConfig.baseUrl === 'https://opencode.ai/inference/go' &&
-    seededOpencode.apiConfig.provider === 'openai-completions' &&
+    seededOpencode.apiConfig.provider === 'anthropic-messages' &&
     seededOpencode.apiConfig.models.length === 1 &&
     seededOpencode.apiConfig.models[0] === 'deepseek-v4.1-flash',
   `${seededOpencode.name} / ${seededOpencode.apiConfig.provider} / ${seededOpencode.apiConfig.models.join(',')}`
@@ -634,8 +634,8 @@ check(
   `${reseededDeepseek.apiConfig.model} / ${reseededDeepseek.apiConfig.models.join(',')}`
 )
 check(
-  '升级播种：Opencode Go 只留 deepseek-v4.1-flash + Chat Completions，Key 不丢',
-  reseededOpencode.apiConfig.provider === 'openai-completions' &&
+  '升级播种：Opencode Go 只留 deepseek-v4.1-flash + Anthropic Messages，Key 不丢',
+  reseededOpencode.apiConfig.provider === 'anthropic-messages' &&
     reseededOpencode.apiConfig.models.length === 1 &&
     reseededOpencode.apiConfig.models[0] === 'deepseek-v4.1-flash' &&
     reseededOpencode.apiConfig.model === 'deepseek-v4.1-flash' &&

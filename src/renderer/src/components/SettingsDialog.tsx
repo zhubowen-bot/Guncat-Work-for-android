@@ -653,8 +653,8 @@ export function SettingsDialog({ open: openOverride }: SettingsDialogProps = {})
                 本应用会按对话自动附带，不需要手动填写。Go 套餐的 Base URL 是
                 <code>https://opencode.ai/inference/go</code>。
                 注意：同一个方案只能用一种协议，当前按「{provider.label}」发请求。
-                Go 的每个模型在官方文档里只归一种协议：deepseek-v4.1-flash 走
-                OpenAI Chat Completions，Claude / Qwen / MiniMax M3 走 Anthropic Messages；
+                deepseek-v4.1-flash 支持 Anthropic Messages 与 OpenAI Responses，
+                不支持 OpenAI Chat Completions；本预置按 Anthropic Messages 接入，
                 换协议请另建方案。
               </div>
             ) : null}

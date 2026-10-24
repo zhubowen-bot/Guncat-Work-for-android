@@ -11,8 +11,9 @@ import { MultimodalConfig } from './MultimodalConfig';
 //   · DeepSeek Anthropic 兼容端点的 base_url 是 https://api.deepseek.com/anthropic
 //     （官方文档「使用 Anthropic API」），预留模型为 deepseek-flash；
 //   · OpenCode Go 的 base_url 是 https://opencode.ai/inference/go。
-//     Go 的每个模型只归属一种协议，deepseek-v4.1-flash 官方给的是 OpenAI Chat Completions
-//     （.../openai/v1/chat/completions），所以这套预置按 Chat Completions 接入；
+//     Go 的每个模型只归属一种协议；deepseek-v4.1-flash 支持 OpenAI Responses 与
+//     Anthropic Messages，不支持 OpenAI Chat Completions —— 这里按 Anthropic Messages 接入
+//     （.../anthropic/v1/messages）；
 //   · 从 2025-09-05 起 OpenCode Go 的每个请求还必须带 x-opencode-session（会话级稳定 ID），
 //     这一条由 LLMProtocol.authHeaders 统一补，聊天、工作流与自动审查都走同一处。
 export class ApiPresets {
@@ -49,7 +50,7 @@ export class ApiPresets {
     profile.id = ApiPresets.OPENCODE_GO_ID;
     profile.name = ApiPresets.OPENCODE_GO_NAME;
     profile.apiConfig = ApiPresets.configFor(
-      'openai-completions',
+      'anthropic-messages',
       ApiPresets.OPENCODE_GO_BASE_URL,
       'deepseek-v4.1-flash',
       ApiPresets.OPENCODE_GO_MODELS
