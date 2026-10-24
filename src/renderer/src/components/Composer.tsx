@@ -6,6 +6,7 @@ import { useStore } from '../store'
 import { MODE_HINT } from '../conversations'
 import { AttachmentBar } from './AttachmentBar'
 import { Picker } from './Picker'
+import { PhotoSourceSheet } from './PhotoSourceSheet'
 import {
   detectMention,
   MentionPopup,
@@ -44,6 +45,7 @@ export function Composer({ running, mode, onSend, onSteer, onAbort }: Props) {
   // @ 文件引用的输入态：null = 当前没有正在敲的引用
   const [mention, setMention] = useState<MentionQuery | null>(null)
   const [mentionIndex, setMentionIndex] = useState(0)
+  const [photoSheet, setPhotoSheet] = useState(false)
   const [wsFiles, setWsFiles] = useState<WorkspaceEntryDto[]>([])
   // 选完文件要把光标放回插入点之后，setText 之后在 effect 里落地（那时 DOM 才是新值）
   const pendingCaret = useRef<number | null>(null)
@@ -175,7 +177,7 @@ export function Composer({ running, mode, onSend, onSteer, onAbort }: Props) {
     setMention(null)
   }
 
-  async function pickAttachments(source: 'file' | 'camera' = 'file'): Promise<void> {
+  async function pickAttachments(source: 'file' | 'camera' | 'gallery' = 'file'): Promise<void> {
     try {
       const picked = await window.guncat.attachments.pick(source)
       if (picked.length === 0) {
@@ -192,7 +194,7 @@ export function Composer({ running, mode, onSend, onSteer, onAbort }: Props) {
   }
 
   /** 手机输入区的上传入口：聊天模式进附件，工作/交互模式进工作区 */
-  async function pickUpload(source: 'file' | 'camera' = 'file'): Promise<void> {
+  async function pickUpload(source: 'file' | 'camera' | 'gallery' = 'file'): Promise<void> {
     if (mode === 'chat') {
       await pickAttachments(source)
       return
@@ -299,6 +301,12 @@ export function Composer({ running, mode, onSend, onSteer, onAbort }: Props) {
 
   return (
     <div className="composer" data-running={running ? 'true' : 'false'}>
+      <PhotoSourceSheet
+        open={photoSheet}
+        onClose={() => setPhotoSheet(false)}
+        onCamera={() => void pickUpload('camera')}
+        onGallery={() => void pickUpload('gallery')}
+      />
       <AttachmentBar
         attachments={attachments}
         onRemove={(target) => setAttachments((prev) => prev.filter((a) => a.path !== target))}
@@ -395,7 +403,11 @@ export function Composer({ running, mode, onSend, onSteer, onAbort }: Props) {
                   ? '生成中，暂不能录音'
                   : parsing
                     ? '文件解析中，暂不能录音'
-                    : '语音输入（点击开始录音）'
+                    : voice.nativeStatus === 'on-device'
+                      ? '语音输入（端侧识别）'
+                      : voice.native
+                        ? '语音输入（系统识别）'
+                        : '语音输入（点击开始录音）'
           }
           // 原版的门禁是 `!isStreaming && !isParsing`（MessageInputView.ets:83）：
           // 生成中与解析中都不该再起一段录音，否则转写结果会插到正在跑的轮次里
@@ -408,9 +420,9 @@ export function Composer({ running, mode, onSend, onSteer, onAbort }: Props) {
         <button
           type="button"
           className="composer__tool composer__camera"
-          title={mode === 'chat' ? '拍照发送' : '拍照并加入工作区'}
+          title={mode === 'chat' ? '拍照或从相册选图发送' : '拍照或从相册选图加入工作区'}
           disabled={running || parsing || voice.state !== 'idle'}
-          onClick={() => void pickUpload('camera')}
+          onClick={() => setPhotoSheet(true)}
         >
           <IconCamera size={18} />
         </button>

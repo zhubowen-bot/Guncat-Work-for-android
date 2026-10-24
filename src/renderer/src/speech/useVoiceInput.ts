@@ -12,6 +12,10 @@ const VOICE_ERROR_MS = 5000
 interface VoiceInput {
   state: VoiceState
   supported: boolean
+  /** true = 走 Android 原生识别（优先端侧），false = 录音 + 服务商转写 */
+  native: boolean
+  /** on-device = API 31+ 离线模型；system = 系统识别服务 */
+  nativeStatus: 'on-device' | 'system' | null
   error: string
   toggle(): void
 }
@@ -22,6 +26,11 @@ export function useVoiceInput(onText: (text: string) => void): VoiceInput {
   const recorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
   const streamRef = useRef<MediaStream | null>(null)
+  const nativeModeRef = useRef(false)
+  const nativeAsr =
+    typeof window !== 'undefined' && window.guncat?.asr !== undefined
+      ? window.guncat.asr.native
+      : undefined
 
   // 错误提示必须自己消失（用户报障：没配语音识别时那条提示一直挂在输入区上方）。
   // 每一次新错误都重新计时 —— 连点两次不会因为第一次的计时器提前把它清掉。
@@ -34,10 +43,11 @@ export function useVoiceInput(onText: (text: string) => void): VoiceInput {
   }, [error])
 
   const supported =
-    typeof navigator !== 'undefined' &&
-    typeof navigator.mediaDevices !== 'undefined' &&
-    typeof navigator.mediaDevices.getUserMedia === 'function' &&
-    typeof MediaRecorder !== 'undefined'
+    nativeAsr !== undefined ||
+    (typeof navigator !== 'undefined' &&
+      typeof navigator.mediaDevices !== 'undefined' &&
+      typeof navigator.mediaDevices.getUserMedia === 'function' &&
+      typeof MediaRecorder !== 'undefined')
 
   const cleanup = useCallback((): void => {
     if (streamRef.current !== null) {
@@ -61,7 +71,11 @@ export function useVoiceInput(onText: (text: string) => void): VoiceInput {
     setError('')
 
     if (state === 'recording') {
-      stop()
+      if (nativeModeRef.current) {
+        nativeAsr?.stop()
+      } else {
+        stop()
+      }
       return
     }
     if (state !== 'idle') {
@@ -69,6 +83,29 @@ export function useVoiceInput(onText: (text: string) => void): VoiceInput {
     }
     if (!supported) {
       setError('当前环境不支持录音')
+      return
+    }
+
+    // Android 原生识别：SpeechRecognizer 内部完成录音，优先走 API 31+ 的端侧模型。
+    // 它不经过服务商，也不需要在这里拿 MediaRecorder。
+    if (nativeAsr !== undefined) {
+      nativeModeRef.current = true
+      setState('recording')
+      void (async (): Promise<void> => {
+        try {
+          const result = await nativeAsr.start()
+          if (result.ok) {
+            onText(result.text)
+          } else {
+            setError(result.error)
+          }
+        } catch (e) {
+          setError(`语音识别失败：${String(e)}`)
+        } finally {
+          nativeModeRef.current = false
+          setState('idle')
+        }
+      })()
       return
     }
 
@@ -122,7 +159,14 @@ export function useVoiceInput(onText: (text: string) => void): VoiceInput {
         setError(`无法开始录音（请确认已授予麦克风权限）：${String(e)}`)
       }
     })()
-  }, [state, supported, stop, cleanup, onText])
+  }, [state, supported, stop, cleanup, onText, nativeAsr])
 
-  return { state, supported, error, toggle }
+  return {
+    state,
+    supported,
+    native: nativeAsr !== undefined,
+    nativeStatus: nativeAsr?.status ?? null,
+    error,
+    toggle
+  }
 }

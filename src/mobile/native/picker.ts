@@ -61,6 +61,15 @@ export function pickFilesFromDevice(options: PickOptions = {}): Promise<string[]
     if (options.camera === true) {
       input.multiple = false
       input.setAttribute('capture', 'environment')
+      // 部分 WebView 不把 capture 转成 isCaptureEnabled()；显式通知原生这次一定开相机
+      const bridge = window.GuncatAndroid
+      if (bridge !== undefined && typeof bridge.armCameraCapture === 'function') {
+        try {
+          bridge.armCameraCapture()
+        } catch {
+          // 原生不支持时仍走 input capture 的默认行为
+        }
+      }
     }
     input.style.display = 'none'
     document.body.appendChild(input)

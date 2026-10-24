@@ -1,4 +1,4 @@
-// 渲染进程可见的 preload 接口类型。
+﻿// 渲染进程可见的 preload 接口类型。
 // 只声明用到的部分，避免把 Electron 类型带进渲染进程的编译范围。
 import type {
   AgentDto,
@@ -110,12 +110,12 @@ export interface GuncatApi {
     /** 弹系统文件选择框并导入（工作区面板的「上传」按钮）；source='camera' 直接调起相机 */
     pickFiles(
       conversationId: string,
-      source?: 'file' | 'camera'
+      source?: 'file' | 'camera' | 'gallery'
     ): Promise<{ names: string[]; imported: number; failed: string[]; canceled: boolean }>
   }
   /** 聊天模式的附件：选文件（立刻返回 parsing；解析结果经 attachment:parsed 事件回报） */
   attachments: {
-    pick(source?: 'file' | 'camera'): Promise<PickedAttachmentDto[]>
+    pick(source?: 'file' | 'camera' | 'gallery'): Promise<PickedAttachmentDto[]>
   }
   /** 工作模式执行中插话；返回是否被接受（false 时应改走普通发送） */
   steer(conversationId: string, text: string): Promise<boolean>
@@ -140,6 +140,12 @@ export interface GuncatApi {
   }
   asr: {
     transcribe(audio: Uint8Array, mime: string): Promise<{ ok: boolean; text: string; error: string }>
+    /** Android 原生识别（端侧优先）；桌面端没有这一项 */
+    native?: {
+      status: 'on-device' | 'system'
+      start(): Promise<{ ok: boolean; text: string; error: string }>
+      stop(): void
+    }
   }
   /** 系统 TTS（Android 宿主提供；桌面端没有这一项，朗读退回 Web Speech API） */
   speech?: {

@@ -15,12 +15,17 @@ export interface AndroidBridge {
   ttsStop(): void
   pickDirectory(): string
   getVersion(): string
+  asrStatus(): string
+  asrStart(): string
+  asrStop(): void
+  armCameraCapture(): void
 }
 
 declare global {
   interface Window {
     GuncatAndroid?: AndroidBridge
     __GUNCAT_NATIVE__?: { token?: string; version?: string }
+    __guncatAsrResult?: (id: string, json: string) => void
   }
 }
 

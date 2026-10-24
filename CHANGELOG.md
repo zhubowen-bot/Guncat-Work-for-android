@@ -69,6 +69,13 @@
   统一走 `Picker`（按钮 + 底部弹层，选中项打勾、命令审批带说明），不再弹 Android 默认大列表。
 - **提示条层级**：工作区全屏层 `z-index:65`，提示条原来只有 40，被压在下面；手机端提到 100，
   导出/下载提示现在在工作区上方也能看到。
+- **Android 端侧语音识别**：新增 `GuncatAndroid.asrStart/asrStop/asrStatus`，用系统
+  `SpeechRecognizer`：API 31+ 且离线模型可用时走 `createOnDeviceSpeechRecognizer`（真端侧），
+  否则退回系统识别服务；桌面端继续用 MediaRecorder + `/audio/transcriptions`。识别结果经
+  `window.__guncatAsrResult` 回传，不再默认上传音频。
+- **相机真正接上**：新增 `CameraProvider`（content://，无 AndroidX FileProvider 依赖），
+  `onShowFileChooser` 检测 `isCaptureEnabled()` 后走 `ACTION_IMAGE_CAPTURE`，拍完把 Uri 回给
+  WebView 的 `<input type=file>`；拍照按钮改为「拍照 / 从相册选择」底部选择条，相册入口保留。
 - **系统 Shell 兜底**：非 arm64 或解压失败时可切 `/system/bin/sh`，能力降级但工作区镜像照旧。
 - **设置页**「终端命令执行 (Shell)」：切换内置/系统后端、显示首次解压进度、重新安装。
 - **浏览器预览**仍回退到 `src/mobile/platform/shell.ts` 的 JS 子集（无 `window.GuncatShell` 时）。

@@ -11,7 +11,12 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.MediaStore;
+import android.speech.RecognitionListener;
+import android.speech.RecognizerIntent;
+import android.speech.SpeechRecognizer;
 import android.speech.tts.TextToSpeech;
 import android.util.Base64;
 import android.view.View;
@@ -36,6 +41,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
 import java.security.SecureRandom;
+import java.util.ArrayList;
 import java.util.Locale;
 
 /**
@@ -48,6 +54,7 @@ import java.util.Locale;
 public class MainActivity extends Activity {
     private static final int REQ_FILE = 1001;
     private static final int REQ_AUDIO_PERMISSION = 1002;
+    private static final int REQ_CAPTURE = 1003;
     /** 固定端口：IndexedDB 与 origin 绑定，端口一变上次的数据就看不到了 */
     private static final int APP_PORT = 47653;
 
@@ -55,6 +62,11 @@ public class MainActivity extends Activity {
     private GuncatServer server;
     private ShellManager shellManager;
     private ValueCallback<Uri[]> fileCallback;
+    private Uri pendingCameraUri;
+    private boolean cameraCaptureRequested;
+    private SpeechRecognizer speechRecognizer;
+    private String speechRequestId;
+    private boolean speechFinalSent;
     private TextToSpeech tts;
     private boolean ttsReady = false;
     private String token;
@@ -185,6 +197,12 @@ public class MainActivity extends Activity {
                 }
                 fileCallback = callback;
                 try {
+                    boolean camera = params.isCaptureEnabled() || cameraCaptureRequested;
+                    cameraCaptureRequested = false;
+                    if (camera) {
+                        startCameraCapture();
+                        return true;
+                    }
                     Intent intent = params.createIntent();
                     intent.addCategory(Intent.CATEGORY_OPENABLE);
                     startActivityForResult(intent, REQ_FILE);
@@ -220,9 +238,39 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** 真正调起系统相机：输出到 cache/camera，经 CameraProvider 换成 content:// 交给 WebView。 */
+    private void startCameraCapture() throws Exception {
+        File dir = new File(getCacheDir(), "camera");
+        if (!dir.exists() && !dir.mkdirs()) {
+            throw new Exception("无法创建相机缓存目录");
+        }
+        File output = new File(dir, "capture_" + System.currentTimeMillis() + ".jpg");
+        pendingCameraUri = CameraProvider.uriFor(this, output);
+        Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+        intent.putExtra(MediaStore.EXTRA_OUTPUT, pendingCameraUri);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        startActivityForResult(intent, REQ_CAPTURE);
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_CAPTURE) {
+            Uri result = null;
+            if (resultCode == Activity.RESULT_OK && pendingCameraUri != null) {
+                File output = new File(new File(getCacheDir(), "camera"),
+                        pendingCameraUri.getLastPathSegment() == null ? "" : pendingCameraUri.getLastPathSegment());
+                if (output.exists() && output.length() > 0) {
+                    result = pendingCameraUri;
+                }
+            }
+            if (fileCallback != null) {
+                fileCallback.onReceiveValue(result == null ? null : new Uri[]{result});
+                fileCallback = null;
+            }
+            pendingCameraUri = null;
+            return;
+        }
         if (requestCode == REQ_FILE) {
             Uri[] result = null;
             if (resultCode == Activity.RESULT_OK && data != null) {
@@ -268,6 +316,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        releaseSpeech();
         if (shellManager != null) {
             shellManager.shutdown();
         }
@@ -282,6 +331,170 @@ public class MainActivity extends Activity {
             webView.destroy();
         }
         super.onDestroy();
+    }
+
+    private String asrStatusValue() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                && SpeechRecognizer.isOnDeviceRecognitionAvailable(this)) {
+            return "on-device";
+        }
+        return SpeechRecognizer.isRecognitionAvailable(this) ? "system" : "none";
+    }
+
+    private void startSpeech(final String requestId) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                releaseSpeech();
+                speechRequestId = requestId;
+                speechFinalSent = false;
+                boolean onDevice = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                        && SpeechRecognizer.isOnDeviceRecognitionAvailable(MainActivity.this);
+                if (!onDevice && !SpeechRecognizer.isRecognitionAvailable(MainActivity.this)) {
+                    emitAsr(requestId, false, "", "设备没有可用的语音识别服务");
+                    return;
+                }
+                try {
+                    speechRecognizer = onDevice
+                            ? SpeechRecognizer.createOnDeviceSpeechRecognizer(MainActivity.this)
+                            : SpeechRecognizer.createSpeechRecognizer(MainActivity.this);
+                } catch (Exception e) {
+                    emitAsr(requestId, false, "", "语音识别初始化失败：" + e.getMessage());
+                    return;
+                }
+                speechRecognizer.setRecognitionListener(new RecognitionListener() {
+                    @Override
+                    public void onReadyForSpeech(Bundle params) {
+                    }
+
+                    @Override
+                    public void onBeginningOfSpeech() {
+                    }
+
+                    @Override
+                    public void onRmsChanged(float rmsdB) {
+                    }
+
+                    @Override
+                    public void onBufferReceived(byte[] buffer) {
+                    }
+
+                    @Override
+                    public void onEndOfSpeech() {
+                    }
+
+                    @Override
+                    public void onError(int error) {
+                        emitAsr(requestId, false, "", asrErrorMessage(error));
+                    }
+
+                    @Override
+                    public void onResults(Bundle results) {
+                        ArrayList<String> list = results == null ? null
+                                : results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+                        String text = list == null || list.isEmpty() ? "" : list.get(0);
+                        if (text == null || text.trim().isEmpty()) {
+                            emitAsr(requestId, false, "", "没有识别到语音，请再说一次");
+                        } else {
+                            emitAsr(requestId, true, text.trim(), "");
+                        }
+                    }
+
+                    @Override
+                    public void onPartialResults(Bundle partialResults) {
+                    }
+
+                    @Override
+                    public void onEvent(int eventType, Bundle params) {
+                    }
+                });
+                Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+                intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                        RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+                intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag());
+                intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false);
+                intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true);
+                try {
+                    speechRecognizer.startListening(intent);
+                } catch (Exception e) {
+                    emitAsr(requestId, false, "", "无法启动语音识别：" + e.getMessage());
+                }
+            }
+        });
+    }
+
+    private void stopSpeech() {
+        if (speechRecognizer != null) {
+            try {
+                speechRecognizer.stopListening();
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private void releaseSpeech() {
+        if (speechRecognizer != null) {
+            try {
+                speechRecognizer.cancel();
+            } catch (Exception ignored) {
+            }
+            try {
+                speechRecognizer.destroy();
+            } catch (Exception ignored) {
+            }
+            speechRecognizer = null;
+        }
+    }
+
+    private void emitAsr(String requestId, boolean ok, String text, String error) {
+        if (speechFinalSent) {
+            return;
+        }
+        speechFinalSent = true;
+        String id = requestId == null || requestId.isEmpty() ? speechRequestId : requestId;
+        speechRequestId = null;
+        try {
+            JSONObject out = new JSONObject();
+            out.put("ok", ok);
+            out.put("text", text == null ? "" : text);
+            out.put("error", error == null ? "" : error);
+            final String js = "window.__guncatAsrResult(" + JSONObject.quote(id == null ? "" : id)
+                    + "," + JSONObject.quote(out.toString()) + ")";
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    if (webView != null) {
+                        webView.evaluateJavascript(js, null);
+                    }
+                    releaseSpeech();
+                }
+            });
+        } catch (Exception ignored) {
+        }
+    }
+
+    private String asrErrorMessage(int error) {
+        switch (error) {
+            case SpeechRecognizer.ERROR_AUDIO:
+                return "录音出错，请检查麦克风";
+            case SpeechRecognizer.ERROR_CLIENT:
+                return "语音识别客户端出错";
+            case SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS:
+                return "没有麦克风权限，请在系统设置里允许录音";
+            case SpeechRecognizer.ERROR_NETWORK:
+            case SpeechRecognizer.ERROR_NETWORK_TIMEOUT:
+                return "语音识别网络错误";
+            case SpeechRecognizer.ERROR_NO_MATCH:
+                return "没有识别到语音，请再说一次";
+            case SpeechRecognizer.ERROR_RECOGNIZER_BUSY:
+                return "语音识别忙，请稍后再试";
+            case SpeechRecognizer.ERROR_SERVER:
+                return "语音识别服务出错";
+            case SpeechRecognizer.ERROR_SPEECH_TIMEOUT:
+                return "没有检测到语音输入";
+            default:
+                return "语音识别失败（错误码 " + error + "）";
+        }
     }
 
     private String versionName() {
@@ -432,6 +645,41 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String pickDirectory() {
             return "";
+        }
+
+        @JavascriptInterface
+        public String asrStatus() {
+            return asrStatusValue();
+        }
+
+        @JavascriptInterface
+        public String asrStart() {
+            String id = "asr_" + System.currentTimeMillis() + "_" + Math.abs(new SecureRandom().nextInt());
+            startSpeech(id);
+            return id;
+        }
+
+        @JavascriptInterface
+        public void asrStop() {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    stopSpeech();
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void armCameraCapture() {
+            // WebView 在不同版本对 input[capture] 的 isCaptureEnabled() 支持不一致；
+            // JS 在点 input 前显式举旗，原生侧据此一定走系统相机。
+            cameraCaptureRequested = true;
+            new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    cameraCaptureRequested = false;
+                }
+            }, 5000);
         }
 
         @JavascriptInterface

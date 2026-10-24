@@ -3740,8 +3740,8 @@ select {
 }
 
 @keyframes picker-rise {
-  from { transform: translateY(14px); opacity: 0.6; }
-  to { transform: translateY(0); opacity: 1; }
+  from { transform: translateY(14px); }
+  to { transform: translateY(0); }
 }
 
 @media (min-width: 720px) {
@@ -3760,4 +3760,23 @@ select {
 
 .hoverable .picker__option:hover {
   background: var(--bg-sunken);
+}
+
+.photo-sheet__action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.photo-sheet__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border-radius: 12px;
+  background: var(--bg-sunken);
+  color: var(--accent);
 }

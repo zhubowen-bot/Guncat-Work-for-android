@@ -180,6 +180,17 @@ try {
   await page.waitForTimeout(350)
   await page.screenshot({ path: path.join(SHOTS, 'picker.png') })
   await page.click('.picker__close')
+  await page.click('.composer__camera')
+  await page.waitForSelector('.picker__sheet', { timeout: 3000 })
+  const photoChoices = await page.locator('.picker__sheet').innerText()
+  check(
+    '拍照/相册两个入口都在',
+    photoChoices.includes('拍照') && photoChoices.includes('从相册选择'),
+    photoChoices.replace(/\s+/g, ' ').slice(0, 80)
+  )
+  await page.waitForTimeout(300)
+  await page.screenshot({ path: path.join(SHOTS, 'photo-sheet.png') })
+  await page.click('.picker__close')
   check('上传/拍照按钮可见', (await page.locator('.composer__upload').isVisible()) && (await page.locator('.composer__camera').isVisible()))
   await page.screenshot({ path: path.join(SHOTS, 'home.png') })
 

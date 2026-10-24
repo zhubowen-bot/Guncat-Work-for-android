@@ -42,6 +42,7 @@ import { image } from '@core/platform/kit/ImageKit'
 import { sanitizeTableHtml } from '@main/sanitizeHtml'
 import { transcribeAudio } from '@main/asr'
 import { pickFilesFromDevice } from '../native/picker'
+import { nativeAsrStart, nativeAsrStatus, nativeAsrStop } from '../native/asr'
 import { openBytes, saveBytes, shareBytes, toast, bytesToBase64, ttsSpeak, ttsStop, ttsSupported } from '../native/bridge'
 
 type Emit = (event: GuncatEvent) => void
@@ -139,14 +140,14 @@ export function createMobileHost(): MobileHost {
 
   async function pickAndImport(
     conversationId: string,
-    options: { extensions?: string[]; multiple?: boolean; camera?: boolean }
+    options: { extensions?: string[]; multiple?: boolean; camera?: boolean; imagesOnly?: boolean }
   ): Promise<{ names: string[]; imported: number; failed: string[]; canceled: boolean }> {
     const paths = await pickFilesFromDevice({
       extensions: options.extensions,
       maxCount: options.multiple === true ? 20 : 1,
       multiple: options.multiple === true,
       camera: options.camera === true,
-      imagesOnly: options.camera === true
+      imagesOnly: options.camera === true || options.imagesOnly === true
     })
     if (paths.length === 0) {
       return { names: [], imported: 0, failed: [], canceled: true }
@@ -356,21 +357,22 @@ export function createMobileHost(): MobileHost {
 
     intake: {
       importPaths: (conversationId: string, paths: string[]) => session.intakePaths(conversationId, paths),
-      pickFiles: (conversationId: string, source?: 'file' | 'camera') =>
+      pickFiles: (conversationId: string, source?: 'file' | 'camera' | 'gallery') =>
         pickAndImport(conversationId, {
           multiple: source !== 'camera',
           camera: source === 'camera',
+          imagesOnly: source === 'gallery',
           extensions: ['pdf', 'docx', 'xlsx', 'pptx', 'txt', 'md', 'csv', 'json', 'png', 'jpg', 'jpeg', 'webp']
         })
     },
 
     attachments: {
-      pick: async (source?: 'file' | 'camera'): Promise<PickedAttachmentDto[]> => {
+      pick: async (source?: 'file' | 'camera' | 'gallery'): Promise<PickedAttachmentDto[]> => {
         const paths = await pickFilesFromDevice({
           multiple: source !== 'camera',
           maxCount: source === 'camera' ? 1 : 12,
           camera: source === 'camera',
-          imagesOnly: source === 'camera'
+          imagesOnly: source === 'camera' || source === 'gallery'
         })
         const picked: PickedAttachmentDto[] = await Promise.all(
           paths.map(async (filePath) => ({
@@ -443,7 +445,14 @@ export function createMobileHost(): MobileHost {
     },
 
     asr: {
-      transcribe: async (audio: Uint8Array, mime: string) => transcribeAudio(audio, mime ?? '')
+      transcribe: async (audio: Uint8Array, mime: string) => transcribeAudio(audio, mime ?? ''),
+      native: (() => {
+        const status = nativeAsrStatus()
+        if (status === 'none') {
+          return undefined
+        }
+        return { status, start: nativeAsrStart, stop: nativeAsrStop }
+      })()
     },
 
     speech: {
