@@ -125,6 +125,13 @@ function verifyApkZipEntries(apk) {
   if (!entries.includes('assets/termux/bootstrap-aarch64.zip')) {
     fail('APK 内缺少 assets/termux/bootstrap-aarch64.zip（内置终端无法工作）')
   }
+  // PDF 工具依赖 PDF.js worker 与随包数据；缺了不会「文件损坏」，而是整条解析链不可用
+  if (!entries.includes('assets/public/pdfjs/pdf.worker.mjs')) {
+    fail('APK 内缺少 assets/public/pdfjs/pdf.worker.mjs（PDF 工具无法工作）')
+  }
+  if (!entries.some((name) => name.startsWith('assets/public/pdfjs/cmaps/'))) {
+    fail('APK 内缺少 assets/public/pdfjs/cmaps/（中文 PDF 文字层会读不出来）')
+  }
 }
 
 function ensureKeystore(javaHome, keytool) {

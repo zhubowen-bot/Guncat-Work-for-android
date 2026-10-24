@@ -1,8 +1,10 @@
 // 平台适配层：鸿蒙 `@kit.PDFKit` 的等价实现（Node 侧）
 //
-// 落地状态：**后端已接**，实现在 core/platform/native/pdfBackend.ts（PDF.js / pdfjs-dist）。
-// 后端不在这里直接 import 的原因：PDF.js 体积不小，且只在真的打开 PDF 时才需要 ——
-// 由 core/platform/native/pdfBackend.ts 的 installPdfJsBackend() 在应用启动时注入。
+// 落地状态：**后端已接**。桌面端实现在 core/platform/native/pdfBackend.ts
+// （PDF.js / pdfjs-dist + @napi-rs/canvas），Android 端实现在
+// mobile/platform/pdfBackend.ts（PDF.js + DOM canvas）。两端各自在启动时调用
+// installPdfJsBackend() 注入，接口与语义保持一致。
+// 后端不在这里直接 import 的原因：PDF.js 体积不小，且只在真的打开 PDF 时才需要。
 //
 // 与鸿蒙侧的两处平台差异（详见 pdfBackend.ts 的说明）：
 //   1. 异步 —— 鸿蒙是同步原生调用；PDF.js 从打开到取内容全是异步的。

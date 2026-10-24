@@ -1,5 +1,6 @@
-import { resolve } from 'node:path'
-import { defineConfig } from 'vite'
+import { cpSync, createReadStream, existsSync, mkdirSync, statSync } from 'node:fs'
+import { extname, resolve, sep } from 'node:path'
+import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import { nodePolyfills } from 'vite-plugin-node-polyfills'
 import pkg from './package.json'
@@ -46,6 +47,73 @@ function mobilePlatformRedirect() {
   }
 }
 
+// ===== PDF.js 随包数据 =====
+//
+// 浏览器版 PDF.js 要从同源 URL 取四组数据：
+//   cmaps/          CJK 预定义 CMap（没有它，中文 PDF 的文字层抽不出来）
+//   standard_fonts/ 标准 14 字体的度量（渲染 PDF 时用）
+//   wasm/           JPEG2000 / JBIG2 图片解码器
+//   iccs/           CMYK ICC 色彩配置
+// worker 本身是独立脚本，也必须能从同源加载（CSP worker-src 'self'）。
+//
+// 这些文件不适合经 Vite 的 import 打进 bundle（169 个 bcmap + 二进制），
+// 因此构建结束时原样拷进 assets/public/pdfjs；`vite dev` 则由中间件直接
+// 从 node_modules 提供同一批路径，开发态与打包态 URL 完全一致。
+const PDFJS_ROOT = resolve(ROOT, 'node_modules/pdfjs-dist')
+const PDFJS_DIRS = ['cmaps', 'standard_fonts', 'wasm', 'iccs']
+const PDFJS_OUT = resolve(ROOT, 'android/app/src/main/assets/public/pdfjs')
+
+function pdfjsMime(file: string): string {
+  switch (extname(file).toLowerCase()) {
+    case '.js':
+    case '.mjs':
+      return 'text/javascript; charset=utf-8'
+    case '.wasm':
+      return 'application/wasm'
+    case '.ttf':
+      return 'font/ttf'
+    case '.woff2':
+      return 'font/woff2'
+    default:
+      return 'application/octet-stream'
+  }
+}
+
+function pdfjsAssets(): Plugin {
+  return {
+    name: 'guncat-pdfjs-assets',
+    configureServer(server) {
+      server.middlewares.use('/pdfjs', (req, res, next) => {
+        const raw = (req.url ?? '').split('?')[0]
+        const rel = decodeURIComponent(raw).replace(/^\/+/, '')
+        // 运行时 worker 固定叫 pdf.worker.mjs；node_modules 里是压缩版
+        const mapped = rel === 'pdf.worker.mjs' ? 'build/pdf.worker.min.mjs' : rel
+        const file = resolve(PDFJS_ROOT, mapped)
+        if (!file.startsWith(PDFJS_ROOT + sep) || !existsSync(file) || statSync(file).isDirectory()) {
+          next()
+          return
+        }
+        res.setHeader('Content-Type', pdfjsMime(file))
+        res.setHeader('Cache-Control', 'no-cache')
+        createReadStream(file).pipe(res)
+      })
+    },
+    closeBundle() {
+      mkdirSync(PDFJS_OUT, { recursive: true })
+      for (const dir of PDFJS_DIRS) {
+        const from = resolve(PDFJS_ROOT, dir)
+        if (existsSync(from)) {
+          cpSync(from, resolve(PDFJS_OUT, dir), { recursive: true })
+        }
+      }
+      const worker = resolve(PDFJS_ROOT, 'build/pdf.worker.min.mjs')
+      if (existsSync(worker)) {
+        cpSync(worker, resolve(PDFJS_OUT, 'pdf.worker.mjs'))
+      }
+    }
+  }
+}
+
 export default defineConfig({
   root: resolve(ROOT, 'src/mobile'),
   base: './',
@@ -81,6 +149,7 @@ export default defineConfig({
   },
   plugins: [
     mobilePlatformRedirect(),
+    pdfjsAssets(),
     react(),
     nodePolyfills({
       include: ['events', 'stream', 'url', 'buffer', 'process', 'util'],

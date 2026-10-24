@@ -1,13 +1,13 @@
-// 平台适配层：鸿蒙 `@kit.PDFKit` 的等价实现（Node 侧）
+// 平台适配层：鸿蒙 `@kit.PDFKit` 的等价实现（Android / WebView 侧）
 //
-// 落地状态：**后端已接**，实现在 core/platform/native/pdfBackend.ts（PDF.js / pdfjs-dist）。
+// 落地状态：**后端已接**，实现在 mobile/platform/pdfBackend.ts（PDF.js / pdfjs-dist）。
 // 后端不在这里直接 import 的原因：PDF.js 体积不小，且只在真的打开 PDF 时才需要 ——
-// 由 core/platform/native/pdfBackend.ts 的 installPdfJsBackend() 在应用启动时注入。
+// 由 mobile/platform/pdfBackend.ts 的 installPdfJsBackend() 在启动时注入。
 //
 // 与鸿蒙侧的两处平台差异（详见 pdfBackend.ts 的说明）：
 //   1. 异步 —— 鸿蒙是同步原生调用；PDF.js 从打开到取内容全是异步的。
 //      因此这里多开了一个 loadDocumentAsync 入口，并把「页内容要等」显式化成 PdfPage.prepare()。
-//   2. 渲染 —— 主进程没有 DOM/canvas，PDF.js 的页面渲染依赖 @napi-rs/canvas。
+//   2. 渲染 —— PDF.js 要一个 canvas；WebView 里直接创建 DOM canvas，主进程侧则用 @napi-rs/canvas。
 //
 // 其余语义与鸿蒙完全一致：加密归因 PARSE_ERROR_PASSWORD、扫描件返回空文本、
 // searchKey 不可用时由 PdfTextExtractor 逐页子串扫描兜底。

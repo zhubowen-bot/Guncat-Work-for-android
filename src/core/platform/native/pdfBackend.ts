@@ -24,21 +24,12 @@ import { pdfService } from '../kit/PDFKit'
 import { image } from '../kit/ImageKit'
 import { resource } from '../appPaths'
 import { loadCanvasModule, type CanvasModule, CANVAS_UNAVAILABLE } from './canvas'
+import { itemsToObjects, itemsToText, type PdfJsTextItem } from '../pdfTextLayout'
 const nodeRequire = createRequire(import.meta.url)
 
-// ===== PDF.js 的结构化类型（只声明用到的部分）=====
-//
-// 刻意不从 'pdfjs-dist/...' 里 import 类型：那会把一个 1MB 级依赖的类型树拉进编译期，
-// 而这里真正依赖的只有几个方法。把接口边界写清楚，比拿到一堆用不上的类型更有价值。
-
-interface PdfJsTextItem {
-  str: string
-  hasEOL?: boolean
-  /** PDF 用户空间变换矩阵 [a, b, c, d, e, f]；e/f 是字形原点（f = 距页面底部的距离） */
-  transform?: number[]
-  width?: number
-  height?: number
-}
+// 文本拼装（itemsToText / itemsToObjects）已抽到 ../pdfTextLayout.ts，与 Android 端共用。
+// 这里重新导出，保持桌面端既有调用点（scripts/smoke.ts 等）不变。
+export { itemsToObjects, itemsToText }
 
 interface PdfJsViewport {
   width: number
@@ -169,49 +160,6 @@ export async function renderPdfPageToPng(
   } finally {
     void doc.destroy()
   }
-}
-
-// ===== 文本拼装 =====
-
-/**
- * 把 PDF.js 的文本项拼成整页文本。
- * 关键在 hasEOL：只有它能表示「这一行结束了」。直接把各项的 str 连起来，
- * 相邻两行会被粘成一行（"第一行第二行"），读起来完全不对。
- */
-export function itemsToText(items: PdfJsTextItem[]): string {
-  let out: string = ''
-  for (const item of items) {
-    out += item.str
-    if (item.hasEOL === true) {
-      out += '\n'
-    }
-  }
-  return out
-}
-
-/**
- * 把文本项转成版面对象（供 PdfTextExtractor 的 graphicsFallback 使用）。
- * 坐标系与鸿蒙侧一致：x 从左算，y 从**页面底部**算。
- */
-export function itemsToObjects(items: PdfJsTextItem[]): pdfService.GraphicsObject[] {
-  const out: pdfService.GraphicsObject[] = []
-  for (const item of items) {
-    if (item.str === '') {
-      continue
-    }
-    const t: number[] = item.transform ?? []
-    const obj: pdfService.TextObject = {
-      type: pdfService.GraphicsObjectType.OBJECT_TEXT,
-      x: t.length > 4 ? t[4] : 0,
-      y: t.length > 5 ? t[5] : 0,
-      width: item.width ?? 0,
-      height: item.height ?? 0,
-      text: item.str,
-      charRects: []
-    }
-    out.push(obj)
-  }
-  return out
 }
 
 // ===== 页 / 文档 =====

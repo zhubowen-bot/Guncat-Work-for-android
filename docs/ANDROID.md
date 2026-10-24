@@ -39,9 +39,10 @@
 4. `bindSafeStorage(null)`：Android 版没有系统凭据保险库，设置页会如实显示「明文保存」；
 5. `registerPickerHost()`：把鸿蒙 `picker` 语义接到 HTML 文件选择器；
 6. `installFetchProxy()`：把跨域请求改道到本机代理；
-7. `createMobileHost()`：实例化 `SessionManager`，挂上 `window.guncat`；
-8. `session.bootstrap()`：加载智能体与会话；
-9. React 挂载（`src/mobile/main.tsx`）。
+7. `installPdfJsBackend()`：注入 PDF.js 后端（只注册，PDF.js 在第一次打开文档时才加载）；
+8. `createMobileHost()`：实例化 `SessionManager`，挂上 `window.guncat`；
+9. `session.bootstrap()`：加载智能体与会话；
+10. React 挂载（`src/mobile/main.tsx`）。
 
 顺序不能反：core 第一次读配置会创建目录/读写文件，必须等 IndexedDB 恢复完成。
 
@@ -65,7 +66,7 @@
 | --- | --- | --- |
 | `@kit.ArkTS` | `src/mobile/kit/ArkTS.ts` | 桌面版从 `node:util` 取 TextEncoder；浏览器原生已有，且 node:util 的 polyfill 在 bundle 里不可靠 |
 | `@kit.ImageKit` | `src/mobile/kit/ImageKit.ts` | 浏览器没有 `nativeImage`：用 `createImageBitmap` + canvas 解码/缩放/编码 |
-| `@kit.PDFKit` | `src/mobile/kit/PDFKit.ts` | 保留接口；**后端未接入**，PDF 工具会返回明确的「后端不可用」 |
+| `@kit.PDFKit` | `src/mobile/kit/PDFKit.ts` + `src/mobile/platform/pdfBackend.ts` | 后端接 PDF.js（WebView 内 worker + DOM canvas）；CMap / 标准字体 / wasm 随包 |
 | `@core/platform/shellExec` | `src/mobile/platform/shellExec.ts` | 没有 `child_process`：走原生 `GuncatShell` 桥（真机）或内置 JS Shell（浏览器预览） |
 | `libguncatjs.so` | `src/mobile/platform/libguncatjs.ts` | `node:vm` → Web Worker（可真正终止） |
 | `@core/platform/native/svgRaster` | `src/mobile/platform/svgRaster.ts` | `@napi-rs/canvas` → 浏览器 Image + canvas |
@@ -85,6 +86,29 @@
 
 持久化策略的取舍：不能每次写都全量快照（流式回答时对话 JSON 每几百毫秒落一次盘），
 所以只记录真正变动的路径；目录删除按前缀清理；应用切后台/页面卸载时再全量兜底。
+
+### 3.4 PDF 解析（PDF.js）
+
+PDF 三件套（`parse_document` / `search_pdf` / `pdf_to_images`）与桌面端共用
+`core/service/PdfTextExtractor.ts` 和 `@kit.PDFKit` 的接口，Android 侧只补一个后端：
+
+| 环节 | Android 做法 |
+| --- | --- |
+| 后端注入 | `src/mobile/platform/pdfBackend.ts` 的 `installPdfJsBackend()`，在 `boot.ts` 里调用 |
+| 解析引擎 | `pdfjs-dist/legacy/build/pdf.mjs`，动态 import（首次打开 PDF 才加载，约 474KB gzip 144KB） |
+| Worker | 构建期把 `pdf.worker.min.mjs` 拷成 `assets/public/pdfjs/pdf.worker.mjs`，与页面同源 |
+| 随包数据 | `pdfjs/{cmaps,standard_fonts,wasm,iccs}` 原样拷进 assets；中文 PDF 的文字层依赖 `cmaps` |
+| 文件读取 | 仍走 `node:fs` 替身（memfs）：`fs.readFileSync(absPath)` → `Uint8Array` → PDF.js |
+| 页面渲染 | 直接创建 DOM `<canvas>`，铺白底后交给 `page.render()`；`transferToImageBitmap()` 转成 `PixelMap` |
+| 输出图片 | `ImagePacker.packToFile()` 走 canvas → JPEG，落到 `pdf_images/<文件名>/p001.jpg` |
+| 文本拼装 | 与桌面端共用 `core/platform/pdfTextLayout.ts`（`hasEOL` 换行、版面兜底），避免两端读出不同结果 |
+
+`vite.mobile.config.ts` 里的 `guncat-pdfjs-assets` 插件负责两件事：构建结束时把上述四组
+数据与 worker 拷进产物；`vite dev` 时用中间件从 `node_modules/pdfjs-dist` 提供同一批
+`/pdfjs/*` 路径。开发态与打包态的 URL 完全一致，不依赖 CDN 或网络。
+
+已知边界（与桌面端一致）：加密 PDF 需要密码（返回 `PARSE_ERROR_PASSWORD`）；扫描件没有
+文字层，文本为空，需 `pdf_to_images` + `view_image`；不提供 PDF 创建/编辑/合并/OCR。
 
 ## 4. 真实 Shell（`run_command`）
 
@@ -173,7 +197,7 @@ dig/nslookup、htop、wget、zip、Git 2.56、Python 3.14 + pip + numpy/scipy/pi
 基础镜像另有 apt/dpkg。
 
 未内置的 `pandoc`、ImageMagick、`gcc/clang`、pandas、matplotlib：前四个的 deb 单个 30–80MB、
-装完 100–200MB；pandas/matplotlib 在 Termux 仓库没有 arm64 包。APK 已经 208MB，再加这些会让
+装完 100–200MB；pandas/matplotlib 在 Termux 仓库没有 arm64 包。APK 已经 211MB，再加这些会让
 包体和首次解压进一步失控。纯 Python 包可直接 `pip install`。
 
 Termux 仓库的新包仍引用 `/data/data/com.termux/...`，`pkg install` 装出来的文件路径不会自动
@@ -292,7 +316,7 @@ JS 侧 `src/mobile/native/net.ts` 只改写跨域 URL，同源资源请求保持
 - 不用 Gradle：`aapt2` → `javac --release 8` → `d8` → `jar uf` → `zipalign` → `apksigner`；
 - Java 侧 `ShellManager.java` / `TermuxBootstrap.java` 没有第三方依赖，d8 直接能编；
 - `minSdk 28`、**`targetSdk 28`**（执行私有目录文件的系统限制；Termux 同款做法）；
-- `assets/termux/bootstrap-aarch64.zip` 约 205MB，构建时由 `aapt2 -A` 打进 APK；产物 APK 约 208MB；
+- `assets/termux/bootstrap-aarch64.zip` 约 205MB，构建时由 `aapt2 -A` 打进 APK；产物 APK 约 211MB；
 - 清单与主题在 `android/app/src/main/`；
 - 签名密钥在 `android/keystore/guncat.jks`（git 忽略）；换钥匙会导致覆盖安装失败。
 
@@ -313,10 +337,10 @@ python scripts/add-termux-packages.py
 
 | 限制 | 说明 |
 | --- | --- |
-| PDF 解析 | `@kit.PDFKit` 后端未接；`parse_document` / `search_pdf` / `pdf_to_images` 返回清楚的能力缺失提示 |
+| PDF 能力边界 | 只读：解析/搜索/页面转图可用；不提供创建、编辑、合并、加水印、填表与 OCR 文字层 |
 | 内置终端架构 | 只带 arm64；x86/armv7 设备只能用系统 Shell |
 | `targetSdk 28` | Android 10+ 才允许执行应用私有目录文件，降到 28 是内置终端的硬前提；Play 商店新应用不适用此版本，本应用走 sideload |
-| APK 体积 / 磁盘 | APK 约 208MB；首次解压约占 560MB 私有空间 |
+| APK 体积 / 磁盘 | APK 约 211MB；首次解压约占 560MB 私有空间 |
 | `pkg install` | 新装 deb 的路径仍写死 `com.termux`，当前未做逐包改写；内置 Python/pip/Git 可用，其他工具需后续适配 |
 | 工作区镜像 | 单文件 8MB / 单次 32MB；大文件、超大目录（如完整 `node_modules`）不会完整落地 |
 | 后台执行 | WebView 退后台可能被冻结；没有前台服务与常驻通知 |
@@ -334,6 +358,8 @@ python scripts/add-termux-packages.py
 - Shell：`echo >`、`>>`、`cat`、`ls -la`、`grep -n`、`cat | grep | wc -l`、`find`、`sed`、
   `rm -r`、回退实现对不存在命令的 127；
 - `run_js`：输入/输出、完成值、`while(true)` 在 1.5s 被终止；
+- PDF：`parse_document` 文字层（英文与中文 CMap 各一份）、`search_pdf` 命中页码、
+  `pdf_to_images` 渲染出可读 JPEG，并校验 `/pdfjs/*` 随包数据全部可访问；
 - `npm run typecheck`（node/web/mobile）。
 
 真机验证建议：安装 APK 后依次测

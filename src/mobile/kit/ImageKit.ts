@@ -295,10 +295,8 @@ export namespace image {
   export function createPixelMapFromBuffer(data: Uint8Array | ArrayBuffer): PixelMap {
     const bytes = toU8(data)
     // 同步接口拿不到 bitmap：先占位一个 1×1，真正解码在 getImageInfo/打包时发生。
-    // 桌面端这个入口只用于 PDF 页面 PNG，移动端 PDF 渲染暂未启用。
-    const placeholder = document.createElement('canvas')
-    placeholder.width = 1
-    placeholder.height = 1
+    // Android 端 PDF 渲染走 createPixelMapFromCanvas（见 platform/pdfBackend.ts），
+    // 不走这里；保留它是为了与桌面端 ImageKit 的接口面保持一致。
     const dims = dimensionsOf(bytes)
     const promise = decode(bytes)
     const pixelMap = new PixelMap(
@@ -311,6 +309,23 @@ export namespace image {
     )
     void promise.catch((): void => undefined)
     return pixelMap
+  }
+
+  /**
+   * 把浏览器 canvas 转成 PixelMap（PDF 页面渲染用）。
+   *
+   * 优先 transferToImageBitmap：它是零拷贝转移，canvas 随即失效；
+   * 老 WebView 没有这个 API 时退回 createImageBitmap（多一次像素拷贝）。
+   */
+  export async function createPixelMapFromCanvas(canvas: HTMLCanvasElement): Promise<PixelMap> {
+    const transferable = canvas as HTMLCanvasElement & {
+      transferToImageBitmap?: () => ImageBitmap
+    }
+    const bitmap: ImageBitmap =
+      typeof transferable.transferToImageBitmap === 'function'
+        ? transferable.transferToImageBitmap()
+        : await createImageBitmap(canvas)
+    return new PixelMap(bitmap, null)
   }
 }
 

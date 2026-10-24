@@ -22,11 +22,98 @@ if (!fs.existsSync(path.join(WEB_ROOT, 'index.html'))) {
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript',
+  '.mjs': 'text/javascript',
   '.css': 'text/css',
   '.json': 'application/json',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.wasm': 'application/wasm',
+  '.bcmap': 'application/octet-stream',
+  '.pfb': 'application/octet-stream',
+  '.icc': 'application/octet-stream',
+  '.ttf': 'font/ttf',
   '.woff2': 'font/woff2'
+}
+
+/**
+ * 造一份最小可解析的 PDF（Helvetica + 一行文字）。
+ * 用 latin1 逐字节拼，xref 偏移按真实字节数算，PDF.js 才能正常打开。
+ */
+function buildSamplePdf() {
+  const parts = []
+  let offset = 0
+  const push = (text) => {
+    const bytes = Buffer.from(text, 'latin1')
+    parts.push(bytes)
+    offset += bytes.length
+  }
+  const offsets = []
+  push('%PDF-1.4\n')
+  const obj = (body) => {
+    offsets.push(offset)
+    push(`${offsets.length} 0 obj\n${body}\nendobj\n`)
+  }
+  obj('<< /Type /Catalog /Pages 2 0 R >>')
+  obj('<< /Type /Pages /Kids [3 0 R] /Count 1 >>')
+  obj(
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>'
+  )
+  obj('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>')
+  const stream = 'BT /F1 24 Tf 72 700 Td (Hello PDF smoke) Tj ET'
+  offsets.push(offset)
+  push(`5 0 obj\n<< /Length ${Buffer.byteLength(stream, 'latin1')} >>\nstream\n${stream}\nendstream\nendobj\n`)
+  const xref = offset
+  push('xref\n0 6\n0000000000 65535 f \n')
+  for (const entry of offsets) {
+    push(`${String(entry).padStart(10, '0')} 00000 n \n`)
+  }
+  push(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`)
+  return Buffer.concat(parts).toString('base64')
+}
+
+/**
+ * 中文 PDF：Type0 字体 + 预定义 CMap（UniGB-UCS2-H）。
+ * 文字层能不能抽出来，完全取决于随包的 cmaps/*.bcmap —— 这正是「中文 PDF 在
+ * 桌面读得出、手机上读不出」的根因，因此单独做一条断言。
+ */
+function buildCjkPdf() {
+  const parts = []
+  let offset = 0
+  const push = (text) => {
+    const bytes = Buffer.from(text, 'latin1')
+    parts.push(bytes)
+    offset += bytes.length
+  }
+  const offsets = []
+  push('%PDF-1.4\n')
+  const obj = (body) => {
+    offsets.push(offset)
+    push(`${offsets.length} 0 obj\n${body}\nendobj\n`)
+  }
+  obj('<< /Type /Catalog /Pages 2 0 R >>')
+  obj('<< /Type /Pages /Kids [3 0 R] /Count 1 >>')
+  obj(
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 6 0 R >>'
+  )
+  obj(
+    '<< /Type /Font /Subtype /Type0 /BaseFont /STSong-Light /Encoding /UniGB-UCS2-H /DescendantFonts [5 0 R] >>'
+  )
+  obj(
+    '<< /Type /Font /Subtype /CIDFontType0 /BaseFont /STSong-Light /CIDSystemInfo << /Registry (Adobe) /Ordering (GB1) /Supplement 4 >> /FontDescriptor 7 0 R /DW 1000 >>'
+  )
+  const stream = 'BT /F1 24 Tf 72 700 Td <FEFF4F60597D> Tj ET'
+  offsets.push(offset)
+  push(`6 0 obj\n<< /Length ${Buffer.byteLength(stream, 'latin1')} >>\nstream\n${stream}\nendstream\nendobj\n`)
+  obj(
+    '<< /Type /FontDescriptor /FontName /STSong-Light /Flags 6 /FontBBox [-25 -254 1000 880] /ItalicAngle 0 /Ascent 880 /Descent -120 /CapHeight 880 /StemV 93 >>'
+  )
+  const xref = offset
+  push('xref\n0 8\n0000000000 65535 f \n')
+  for (const entry of offsets) {
+    push(`${String(entry).padStart(10, '0')} 00000 n \n`)
+  }
+  push(`trailer\n<< /Size 8 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`)
+  return Buffer.concat(parts).toString('base64')
 }
 
 const failures = []
@@ -139,7 +226,13 @@ const page = await browser.newPage({
   deviceScaleFactor: 2
 })
 const pageErrors = []
+const missing = []
 page.on('pageerror', (error) => pageErrors.push(error.message))
+page.on('response', (response) => {
+  if (response.status() === 404) {
+    missing.push(new URL(response.url()).pathname)
+  }
+})
 page.on('console', (message) => {
   if (message.type() === 'error' && !message.text().includes('favicon')) {
     pageErrors.push(message.text())
@@ -271,6 +364,75 @@ try {
   check('run_js 输入/输出/完成值', js.ok.ok && js.ok.outputs['out.txt'] === 'ABC' && js.ok.result === '3')
   check('run_js 死循环被 Worker 终止', !js.loop.ok && js.loop.error.includes('超时'))
 
+  // PDF：解析文字层 → 搜索 → 渲染成 JPG（走真实的 PDF.js worker 与随包数据）
+  const pdfSmoke = await page.evaluate(async (pdfBase64) => {
+    const conversation = await window.guncat.conversations.create('work', 'work')
+    const root = '/guncat/data/files/workspaces/' + conversation.id
+    const abs = root + '/smoke.pdf'
+    window.__guncatDebug.writeFileBase64(abs, pdfBase64)
+    const debug = window.__guncatDebug
+    const extracted = await debug.pdf.extract(abs, 1, 5)
+    const hits = await debug.pdf.search(abs, 'hello')
+    const rendered = await debug.pdf.render(abs, root + '/pdf_images/smoke', 1, 1)
+    const jpg = await window.guncat.workspace.readBinary(conversation.id, 'pdf_images/smoke/p001.jpg')
+    return {
+      ready: debug.pdf.ready,
+      extracted,
+      hits,
+      rendered,
+      jpg: { mimeType: jpg.mimeType, size: jpg.size, prefix: jpg.dataUrl.slice(0, 30) }
+    }
+  }, buildSamplePdf())
+  check('PDF 后端已注入', pdfSmoke.ready === true)
+  check(
+    'PDF 文字层解析',
+    pdfSmoke.extracted.pageCount === 1 && pdfSmoke.extracted.pages[0]?.includes('Hello PDF smoke'),
+    pdfSmoke.extracted.pages[0]?.slice(0, 40)
+  )
+  check(
+    'PDF 关键词搜索',
+    pdfSmoke.hits.length === 1 && pdfSmoke.hits[0].pageIndex === 1,
+    JSON.stringify(pdfSmoke.hits[0] ?? null)
+  )
+  check('PDF 页面转图', pdfSmoke.rendered.files.length === 1)
+  check(
+    'PDF 转图写出 JPEG',
+    pdfSmoke.jpg.mimeType === 'image/jpeg' &&
+      pdfSmoke.jpg.size > 1000 &&
+      pdfSmoke.jpg.prefix.startsWith('data:image/jpeg;base64,'),
+    `${pdfSmoke.jpg.mimeType} ${pdfSmoke.jpg.size}B`
+  )
+
+  const pdfAssets = await page.evaluate(async () => {
+    const urls = [
+      './pdfjs/cmaps/UniGB-UCS2-H.bcmap',
+      './pdfjs/standard_fonts/LiberationSans-Regular.ttf',
+      './pdfjs/wasm/openjpeg.wasm',
+      './pdfjs/iccs/CGATS001Compat-v2-micro.icc'
+    ]
+    const out = {}
+    for (const url of urls) {
+      const response = await fetch(url)
+      out[url] = response.ok
+    }
+    return out
+  })
+  check(
+    'PDF 随包数据可访问（CMap/字体/wasm/ICC）',
+    Object.values(pdfAssets).every(Boolean),
+    JSON.stringify(pdfAssets)
+  )
+
+  const pdfCjk = await page.evaluate(async (pdfBase64) => {
+    const conversation = await window.guncat.conversations.create('work', 'work')
+    const root = '/guncat/data/files/workspaces/' + conversation.id
+    const abs = root + '/cjk.pdf'
+    window.__guncatDebug.writeFileBase64(abs, pdfBase64)
+    const result = await window.__guncatDebug.pdf.extract(abs, 1, 2)
+    return result.pages[0] ?? ''
+  }, buildCjkPdf())
+  check('中文 PDF 文字层（随包 CMap）', pdfCjk.includes('你好'), pdfCjk.slice(0, 40))
+
   const chat = await page.evaluate(async (mockPort) => {
     const events = []
     window.guncat.onEvent((event) => events.push(event.type))
@@ -316,7 +478,7 @@ try {
   check('刷新后会话持久化', persisted.count > 0, `会话 ${persisted.count}`)
   check('刷新后配置持久化', persisted.model === 'mock', String(persisted.model))
 
-  check('无页面级异常', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '))
+  check('无页面级异常', pageErrors.length === 0, [...pageErrors.slice(0, 3), ...missing.slice(0, 5)].join(' | '))
 } finally {
   await browser.close()
   mock.close()

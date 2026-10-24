@@ -121,7 +121,7 @@ behavior. The APK is the source of truth for full capability.
   failure), the app can use `/system/bin/sh` (mksh + toybox) without the tools above.
 - Settings → “Terminal (Shell)” switches backends, shows extraction progress and can reinstall.
 
-The APK grows to ~208MB and `targetSdk` is pinned to **28**: Android 10+ forbids apps targeting
+The APK grows to ~211MB and `targetSdk` is pinned to **28**: Android 10+ forbids apps targeting
 29+ from executing files in app-private storage (Termux itself has always used 28). This is a hard
 requirement for the built-in terminal.
 
@@ -143,7 +143,7 @@ never mirrored. Oversized files are reported explicitly instead of silently skip
 | Voice input | ✅ MediaRecorder + provider transcription |
 | Persistence | ✅ IndexedDB (app-private, removed on uninstall) |
 | Built-in Linux terminal (bash / Python / pip / Git) | ✅ bundled in the APK, arm64; extracted on first launch |
-| PDF parsing / page rendering | ⚠️ backend not ported yet; tools return a clear "backend unavailable" |
+| PDF parsing / search / page rendering | ✅ PDF.js (WebView worker + canvas); CJK CMaps, standard fonts and wasm bundled |
 | Custom workspace directory | ⚠️ not supported; use the app sandbox and ZIP export |
 | "Reveal in file manager" | ⚠️ replaced by save/share to Downloads |
 | Long background tasks | ⚠️ WebView may be frozen in background; keep the app in foreground |
@@ -175,15 +175,16 @@ redirections; the JS fallback used by the browser preview and its 127 hint for m
 
 ## Known limitations
 
-1. PDF parsing backend is not ported yet.
-2. The built-in terminal is **arm64-only**; other ABIs fall back to the system shell. `targetSdk`
+1. The built-in terminal is **arm64-only**; other ABIs fall back to the system shell. `targetSdk`
    is pinned to 28 (apps targeting 29+ cannot execute app-private files), which is why the app is
    sideload-only.
-3. First launch extracts ~560MB; the APK is ~208MB.
-4. `pkg install` packages still contain Termux's original paths and are not rewritten yet; the
+2. First launch extracts ~560MB; the APK is ~211MB.
+3. `pkg install` packages still contain Termux's original paths and are not rewritten yet; the
    bundled Python/pip/Git work out of the box.
-5. Background execution is not guaranteed (no foreground service).
-6. No custom workspace directory and no system "open with" intake.
+4. Background execution is not guaranteed (no foreground service).
+5. No custom workspace directory and no system "open with" intake.
+6. PDF is read-only: parsing, search and page rendering are available; creation, editing, merging,
+   watermarking, form filling and OCR text layers are not.
 
 ## Docs
 

@@ -122,7 +122,7 @@ node scripts/check-emoji.mjs src/mobile    # 改了手机端界面文案/样式�
 npm run dist:android
 ```
 
-产物：`release/Guncat-Work-<version>-android.apk`（arm64，约 208MB）。脚本依次完成：
+产物：`release/Guncat-Work-<version>-android.apk`（arm64，约 211MB）。脚本依次完成：
 
 1. `vite build --config vite.mobile.config.ts` → `assets/public`
 2. 复制 `resources/`（智能体提示词、技能库、图标）

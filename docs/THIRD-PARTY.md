@@ -26,6 +26,17 @@
 上述生成脚本，便于复现同一份二进制。若需要某个子包的完整源码归档，请按包名在
 termux-packages 仓库中找到对应 `packages/<包名>/build.sh` 及其源码地址。
 
+## PDF.js
+
+- 项目：<https://github.com/mozilla/pdf.js>
+- 包：`pdfjs-dist@5.7.284`（`legacy/build/pdf.mjs` 与 `pdf.worker.min.mjs`）
+- 许可：Apache-2.0（见 `node_modules/pdfjs-dist/LICENSE`，打包产物中的
+  `assets/public/pdfjs/*` 保留上游 LICENSE 文件）
+- 用途：Android 端的 PDF 文字层解析、关键词搜索与页面转图（`parse_document` /
+  `search_pdf` / `pdf_to_images`）
+- 随包数据：`cmaps/`、`standard_fonts/`、`wasm/`、`iccs/` 由 `vite.mobile.config.ts`
+  在构建时从 `node_modules/pdfjs-dist` 原样复制，未做修改
+
 ## 说明
 
 - Termux 是 Termux 社区的项目名称；本项目只是复用其公开的 bootstrap 与包构建产物，

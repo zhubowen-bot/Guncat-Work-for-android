@@ -143,7 +143,7 @@ npm run dev:android   # http://127.0.0.1:5174
   `/system/bin/sh`（mksh + toybox），仍支持管道、重定向和工作区镜像，但没有上面这些工具。
 - 设置页「终端命令执行 (Shell)」可切换后端、查看内置终端安装进度、重新安装。
 
-APK 因此从 7MB 增到约 **208MB**，并把 `targetSdk` 定为 **28**：Android 10+ 禁止
+APK 因此从 7MB 增到约 **211MB**，并把 `targetSdk` 定为 **28**：Android 10+ 禁止
 targetSdk ≥ 29 的应用执行私有目录里的文件（Termux 官方也一直用 28）。这是内置终端的硬前提。
 
 镜像边界：单文件 8MB、单次同步 32MB 封顶；不同步设置/会话历史/API Key；超限文件会在结果里
@@ -164,7 +164,7 @@ targetSdk ≥ 29 的应用执行私有目录里的文件（Termux 官方也一�
 | 语音输入 | ✅ MediaRecorder + 服务商转写（需另配或复用多模态配置） |
 | 内置 Linux 终端（bash / Python / pip / Git） | ✅ 随 APK 打包，arm64；首次启动解压 |
 | 数据持久化 | ✅ IndexedDB（应用私有，卸载即清除） |
-| PDF 解析 / 页面转图 | ⚠️ 暂未接后端：PDF 工具会返回明确的「后端不可用」，不会误报文件损坏 |
+| PDF 解析 / 搜索 / 页面转图 | ✅ PDF.js（WebView 内 worker + canvas）；中文 CMap、标准字体、wasm 随包 |
 | 自定义工作区目录 | ⚠️ 不支持：使用应用沙箱工作区，可用 ZIP 导出 |
 | 文件管理器「定位」 | ⚠️ 改为保存/分享到系统下载目录 |
 | 后台长任务 | ⚠️ WebView 退到后台可能被系统冻结，长任务请保持前台 |
@@ -181,7 +181,7 @@ src/
     ├── host/             #   window.guncat 的 WebView 实现（对应 src/main/ipc.ts）
     ├── kit/              #   @kit.* 的浏览器实现（ImageKit / ArkTS / PDFKit）
     ├── shims/            #   node:fs / node:path / node:util 的浏览器实现
-    ├── platform/         #   内置终端适配 / 工作区镜像、run_js Worker、SVG 栅格化
+    ├── platform/         #   内置终端适配 / 工作区镜像、run_js Worker、SVG 栅格化、PDF.js 后端
     └── native/           #   原生桥（含 Shell 桥）、文件选择、同源代理 fetch
 android/
 ├── app/src/main/assets/termux/  # 内置 Termux bootstrap（构建产物，勿手改）
@@ -201,6 +201,7 @@ android/
 - 首屏启动、抽屉、快捷设置、全屏设置页（390×844）；
 - 保存配置 → 新建会话 → 流式回答（mock SSE）→ 重启后会话与配置仍在；
 - 工作模式：模型发起 `run_command` → 内置终端执行 `ls` → 结果回传 → 收尾；
+- PDF：`parse_document` 文字层（含中文 CMap）、`search_pdf` 关键词、`pdf_to_images` 渲染 JPEG；
 - Shell：管道、追加写、grep、find、sed；无原生桥时退回 JS Shell 的回退路径；
 - `run_js`：输入/输出、完成值、`while(true)` 1.5 秒内被 Worker 终止；
 - `npm run typecheck`（node/web/mobile 三套 tsconfig）。
@@ -219,13 +220,13 @@ npm run typecheck:mobile
 
 ## 已知限制
 
-1. PDF 解析后端未接入（桌面版用的 PDF.js + canvas 运行时在 Android 上还未移植）。
-2. 内置终端只提供 **arm64**；其他 ABI 只能用系统 Shell。`targetSdk` 固定为 28（执行私有目录文件的系统限制），
+1. 内置终端只提供 **arm64**；其他 ABI 只能用系统 Shell。`targetSdk` 固定为 28（执行私有目录文件的系统限制），
    这不是「懒得升级」，降到更低或升到 29+ 都会直接不能执行。
-3. 内置终端首次启动要解压约 560MB，占用应用私有空间；APK 因此约 208MB。
-4. `pkg install` 安装的新包仍带 Termux 原路径，当前未做逐包路径修复；内置的 Python/Git 可直接用。
-5. 应用退到后台后，长任务可能被系统暂停；没有前台服务/通知来维持执行。
-6. 暂不支持自定义工作区目录与系统「打开方式」接收文件。
+2. 内置终端首次启动要解压约 560MB，占用应用私有空间；APK 因此约 211MB。
+3. `pkg install` 安装的新包仍带 Termux 原路径，当前未做逐包路径修复；内置的 Python/Git 可直接用。
+4. 应用退到后台后，长任务可能被系统暂停；没有前台服务/通知来维持执行。
+5. 暂不支持自定义工作区目录与系统「打开方式」接收文件。
+6. PDF 只做**读取**：解析/搜索/转图可用，不提供创建、编辑、合并、加水印、填表与 OCR 文字层。
 
 ## 文档
 

@@ -5,6 +5,8 @@ import { initAppPaths, clearTempDir } from '@core/platform/appPaths'
 import { bindSafeStorage } from '@core/platform/kit/ArkData'
 import { registerPickerHost } from '@core/platform/kit/CoreFileKit'
 import { setShellPlatform } from '@core/common/PlatformInfo'
+import { PdfTextExtractor } from '@core/service/PdfTextExtractor'
+import fs from './shims/fs'
 import { hydrateFs } from './shims/fs'
 import { installBundledResources } from './resources'
 import { installFetchProxy } from './native/net'
@@ -14,9 +16,28 @@ import { runShell } from './platform/shell'
 import { shellStatus } from './platform/shellExec'
 import { mirrorRootFor } from './platform/mirror'
 import { runJs } from './platform/libguncatjs'
+import { pdfService } from '@kit.PDFKit'
+import { installPdfJsBackend } from './platform/pdfBackend'
 
 export const DATA_ROOT = '/guncat/data'
 export const RESOURCES_ROOT = '/guncat/resources'
+
+/**
+ * 浏览器冒烟用：把 base64 内容写进 memfs。
+ * 生产路径不经过它（文件来自选择器/工作区工具），仅供 android-check 造测试素材。
+ */
+function writeFileBase64(absPath: string, base64: string): void {
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  const parent = absPath.slice(0, absPath.lastIndexOf('/'))
+  if (parent !== '') {
+    fs.mkdirSync(parent, { recursive: true })
+  }
+  fs.writeFileSync(absPath, bytes)
+}
 
 /**
  * Android 的软键盘不会改变 CSS `vh`，但会缩小 visualViewport。
@@ -44,6 +65,9 @@ export async function bootMobile(): Promise<void> {
   clearTempDir()
   bindSafeStorage(null)
   installFetchProxy()
+  // PDF 工具（parse_document / search_pdf / pdf_to_images）走 PDF.js；
+  // 这里只注入后端，PDF.js 本身在第一次打开文档时才动态加载。
+  installPdfJsBackend()
 
   registerPickerHost({
     async selectFiles(options): Promise<string[]> {
@@ -70,7 +94,18 @@ export async function bootMobile(): Promise<void> {
     runShell,
     runJs,
     shellStatus,
-    mirrorRootFor
+    mirrorRootFor,
+    // 浏览器冒烟专用：造测试素材 + 直接驱动 PDF 三件套（与工具执行走同一套内核）
+    writeFileBase64,
+    pdf: {
+      ready: pdfService.hasPdfBackend(),
+      extract: (absPath: string, page?: number, pageCount?: number) =>
+        PdfTextExtractor.extractPages(absPath, page ?? 1, pageCount ?? 5, 20000),
+      search: (absPath: string, query: string) =>
+        PdfTextExtractor.searchText(absPath, query, 20),
+      render: (absPath: string, outDir: string, page?: number, pageCount?: number) =>
+        PdfTextExtractor.renderPages(absPath, page ?? 1, pageCount ?? 1, outDir)
+    }
   }
   await session.bootstrap()
   document.documentElement.dataset.platform = 'android'
