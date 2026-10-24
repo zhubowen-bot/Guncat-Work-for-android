@@ -161,19 +161,7 @@ export class AgentLoopService {
       if (msg.role === 'user') {
         out.push(LoopMessage.user(msg.content));
       } else if (msg.role === 'assistant') {
-        let loop: LoopMessage = LoopMessage.assistant(msg.content, []);
-        // Anthropic 思考块跨轮必须原样回传(含签名), 否则模型从第二轮起看不到
-        // 自己上一轮是怎么想的 —— 只剩一句结论正文, 表现为「跨轮失忆」。
-        // 签名缺失(旧会话/服务端没返回签名)或思考文本被截断(前缀「…」)时不回传:
-        // 残缺文本与签名不匹配, 服务端直接 400, 比失忆更糟。
-        if (msg.reasoning !== '' && msg.thinkingSignature !== '' && msg.reasoning.charAt(0) !== '…') {
-          loop.reasoning = msg.reasoning;
-          loop.thinkingSignature = msg.thinkingSignature;
-        }
-        if (msg.redactedThinking !== '') {
-          loop.redactedThinking = msg.redactedThinking;
-        }
-        out.push(loop);
+        out.push(LoopMessage.assistant(msg.content, []));
       }
     }
     return out;

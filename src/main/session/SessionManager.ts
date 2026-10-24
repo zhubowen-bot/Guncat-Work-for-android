@@ -1585,9 +1585,6 @@ export class SessionManager {
           }
 
           targetMsg.reasoning = turn.reasoning
-          // Anthropic 思考块跨轮重放要签名: 这里不落盘的话第二轮就回传不了思考块(只剩正文)
-          targetMsg.thinkingSignature = turn.thinkingSignature
-          targetMsg.redactedThinking = turn.redactedThinking
           targetMsg.tokenSpeed = turn.tokenSpeed
           targetMsg.cacheHitRate = turn.cacheHitRate
           finishReason = turn.finishReason ?? ''

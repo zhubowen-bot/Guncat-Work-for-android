@@ -195,12 +195,6 @@ export class StorageManager {
       let msgs: Object[] = rawMsgs as Object[];
       for (let j: number = 0; j < msgs.length; j++) {
         let m: Record<string, Object> = msgs[j] as Record<string, Object>;
-        // Anthropic 思考块带签名: 签名覆盖完整思考文本, 截断后跨轮回传必然 400,
-        // 所以这类消息原样落盘(跨轮重放要的就是未截断的原文)
-        let sig: Object = m['thinkingSignature'];
-        if (typeof sig === 'string' && (sig as string) !== '') {
-          continue;
-        }
         let r: Object = m['reasoning'];
         if (typeof r === 'string' && (r as string).length > Constants.REASONING_SAVE_MAX_CHARS) {
           m['reasoning'] = '…' +
