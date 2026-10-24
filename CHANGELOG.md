@@ -28,9 +28,16 @@
 - **随包数据**：构建期把 `pdfjs-dist` 的 `cmaps/`（169 个）、`standard_fonts/`、`wasm/`、
   `iccs/` 拷进 `assets/public/pdfjs/`；`vite dev` 由中间件提供同一批路径。
   中文 PDF 的文字层依赖 CMap，缺少时只能读出空白或乱码。
+- **老 WebView 兼容**：给 `ReadableStream.prototype` 补 `Symbol.asyncIterator`。PDF.js 的
+  `getTextContent()` 用 `for await` 遍历页面文本流，老 Android WebView 缺这个符号会抛
+  `e is not async iterable`，parse_document / search_pdf 全部失败。
+- **pdf_to_images 不再误报**：单页渲染失败以前被静默吞掉，最后统一报成「页码超出范围」；
+  现在把底层错误带出来，只有起始页真的越界才报页码问题。渲染也改成只准备页对象/宽高
+  （`prepareForRender`），不再顺带读文字层，文字层异常不会拖死转图。
 - **冒烟**：`android-check` 新增英文/中文 PDF 的文字层、搜索、渲染 JPEG 与随包数据的
   可访问性断言（中文样例用 Type0 + `UniGB-UCS2-H`，专门覆盖 CMap 路径），并在
-  「Worker 一构造就抛错」的条件下跑完整条 PDF 链路，确保不再依赖 Web Worker。
+  「Worker 一构造就抛错」+「删掉 ReadableStream 原生异步迭代器」的条件下跑完整条
+  PDF 链路，确保兼容路径都由 App 自己补上。
 
 ### 内置 Linux 终端
 

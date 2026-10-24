@@ -201,7 +201,7 @@ android/
 - 首屏启动、抽屉、快捷设置、全屏设置页（390×844）；
 - 保存配置 → 新建会话 → 流式回答（mock SSE）→ 重启后会话与配置仍在；
 - 工作模式：模型发起 `run_command` → 内置终端执行 `ls` → 结果回传 → 收尾；
-- PDF：`parse_document` 文字层（含中文 CMap）、`search_pdf` 关键词、`pdf_to_images` 渲染 JPEG；并在禁用 `Worker` 的条件下跑完整链路；
+- PDF：`parse_document` 文字层（含中文 CMap）、`search_pdf` 关键词、`pdf_to_images` 渲染 JPEG；并在禁用 `Worker`、删掉 `ReadableStream` 原生异步迭代器的条件下跑完整链路；
 - Shell：管道、追加写、grep、find、sed；无原生桥时退回 JS Shell 的回退路径；
 - `run_js`：输入/输出、完成值、`while(true)` 1.5 秒内被 Worker 终止；
 - `npm run typecheck`（node/web/mobile 三套 tsconfig）。

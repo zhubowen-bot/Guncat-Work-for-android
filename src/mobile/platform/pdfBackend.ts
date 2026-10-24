@@ -26,6 +26,57 @@ import { pdfService } from '@kit.PDFKit'
 import { image } from '@kit.ImageKit'
 import { itemsToObjects, itemsToText, type PdfJsTextItem } from '@core/platform/pdfTextLayout'
 
+/**
+ * 老 Android WebView 的 ReadableStream 没有 `Symbol.asyncIterator`。
+ *
+ * PDF.js 5.x 的 `page.getTextContent()` 内部是：
+ *   `for await (const value of readableStream) { ... }`
+ * 缺少这个符号时直接抛 `TypeError: e is not async iterable` —— 这正是真机上
+ * parse_document / search_pdf 报的那条错（桌面 Chromium 支持异步迭代，所以冒烟
+ * 发现不了）。标准语义就是 getReader() 循环，这里补一个最小 polyfill。
+ */
+function installReadableStreamAsyncIterator(): void {
+  const ctor = (globalThis as { ReadableStream?: typeof ReadableStream }).ReadableStream
+  if (ctor === undefined) {
+    return
+  }
+  const proto = ctor.prototype as unknown as {
+    [Symbol.asyncIterator]?: () => AsyncIterator<unknown>
+  }
+  if (typeof proto[Symbol.asyncIterator] === 'function') {
+    return
+  }
+  Object.defineProperty(proto, Symbol.asyncIterator, {
+    configurable: true,
+    writable: true,
+    value: function (this: ReadableStream<unknown>): AsyncIterator<unknown> {
+      const reader = this.getReader()
+      return {
+        next: (): Promise<IteratorResult<unknown>> => reader.read(),
+        return: async (): Promise<IteratorResult<unknown>> => {
+          try {
+            await reader.cancel()
+          } catch {
+            // 已关闭/已取消时忽略
+          }
+          try {
+            reader.releaseLock()
+          } catch {
+            // 还有未完成的 read 时 release 会抛，忽略即可
+          }
+          return { done: true, value: undefined }
+        },
+        [Symbol.asyncIterator](): AsyncIterator<unknown> {
+          return this
+        }
+      } as AsyncIterator<unknown>
+    }
+  })
+}
+
+// 必须在加载 PDF.js 之前装好（boot 时本模块就会被 import）
+installReadableStreamAsyncIterator()
+
 interface PdfJsViewport {
   width: number
   height: number
@@ -185,10 +236,10 @@ class PdfPage implements pdfService.PdfPageBackend {
     this.index = index
   }
 
-  /** 取页并抽好文本 —— 之后所有同步访问器才有数据（见 PDFKit 里 prepare 的说明） */
-  async prepare(): Promise<void> {
-    if (this.text !== null) {
-      return
+  /** 取页 + 宽高（渲染只需要这些，不碰文字层） */
+  private async preparePage(): Promise<PdfJsRawPage> {
+    if (this.raw !== null) {
+      return this.raw
     }
     const raw: PdfJsRawPage = await withTimeout(
       this.doc.getPage(this.index + 1),
@@ -199,6 +250,15 @@ class PdfPage implements pdfService.PdfPageBackend {
     const viewport = raw.getViewport({ scale: 1 })
     this.width = viewport.width
     this.height = viewport.height
+    return raw
+  }
+
+  /** 取页并抽好文本 —— 之后所有同步访问器才有数据（见 PDFKit 里 prepare 的说明） */
+  async prepare(): Promise<void> {
+    if (this.text !== null) {
+      return
+    }
+    const raw: PdfJsRawPage = await this.preparePage()
     const content = await withTimeout(
       raw.getTextContent(),
       PDF_PAGE_TIMEOUT_MS,
@@ -206,6 +266,11 @@ class PdfPage implements pdfService.PdfPageBackend {
     )
     this.text = itemsToText(content.items)
     this.objects = itemsToObjects(content.items)
+  }
+
+  /** 渲染前只准备页对象与宽高；文字层坏了也不影响转图 */
+  async prepareForRender(): Promise<void> {
+    await this.preparePage()
   }
 
   getTextContent(): string {
@@ -225,7 +290,7 @@ class PdfPage implements pdfService.PdfPageBackend {
   }
 
   async renderToPixelMap(width: number, height: number): Promise<image.PixelMap> {
-    await this.prepare()
+    await this.prepareForRender()
     if (this.raw === null) {
       throw new Error('PDF 页面尚未准备完成')
     }

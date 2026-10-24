@@ -42,6 +42,7 @@ export class PdfRenderResult {
   endPage: number = 0;        // 本次渲染末页(0 表示未渲染出任何页)
   nextStartPage: number = 0;  // 建议的下一批起始页(0 表示已到末页)
   files: string[] = [];       // 生成的图片绝对路径(与页码顺序一致)
+  errors: string[] = [];      // 单页失败原因(页码 + 底层错误), 不再被静默吞掉
 }
 
 export class PdfTextExtractor {
@@ -240,11 +241,14 @@ export class PdfTextExtractor {
       for (let i: number = s - 1; i < result.pageCount && i < s - 1 + maxPages; i++) {
         let page: pdfService.PdfPage = doc.getPage(i);
         let outFile: string = outDir + '/p' + PdfTextExtractor.pad3(i + 1) + '.jpg';
-        let done: boolean = await PdfTextExtractor.renderOnePage(page, packer, outFile);
+        let error: string = await PdfTextExtractor.renderOnePage(page, packer, outFile);
         page.release();
-        if (done) {
+        if (error === '') {
           result.files.push(outFile);
           result.endPage = i + 1;
+        } else {
+          // 不能再静默吞掉: 否则上层只能看到「0 张图」并误报成页码越界
+          result.errors.push('第 ' + (i + 1).toString() + ' 页: ' + error);
         }
         // 页间让出主线程, 避免连续渲染冻结
         await PdfTextExtractor.yieldNow();
@@ -270,11 +274,11 @@ export class PdfTextExtractor {
   // 异步的 renderToPixelMap, 所以这里统一走异步那一条 —— getWidth/getHeight 之前必须先
   // await page.prepare(), 否则拿到的还是 0(见 PDFKit 里 prepare 的说明)。
   private static async renderOnePage(page: pdfService.PdfPage, packer: image.ImagePacker,
-    outFile: string): Promise<boolean> {
+    outFile: string): Promise<string> {
     let pm: image.PixelMap | null = null;
     let file: fileIo.File | null = null;
     try {
-      await page.prepare();
+      await page.prepareForRender();
       let pw: number = page.getWidth();
       let ph: number = page.getHeight();
       let targetW: number = Math.round(pw * 2);
@@ -286,15 +290,15 @@ export class PdfTextExtractor {
       let targetH: number = pw > 0 ? Math.round(targetW * ph / pw) : targetW;
       pm = await page.renderToPixelMap(targetW, targetH);
       if (pm === null) {
-        return false;
+        return '页面渲染返回空像素';
       }
       let opt: image.PackingOption = { format: 'image/jpeg', quality: 88 };
       file = fileIo.openSync(outFile,
         fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
       await packer.packToFile(pm, file.fd, opt);
-      return true;
+      return '';
     } catch (e) {
-      return false;
+      return PdfTextExtractor.errMessage(e as Object);
     } finally {
       if (pm !== null) {
         try {

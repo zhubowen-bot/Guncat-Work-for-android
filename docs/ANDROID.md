@@ -97,10 +97,11 @@ PDF 三件套（`parse_document` / `search_pdf` / `pdf_to_images`）与桌面端
 | 后端注入 | `src/mobile/platform/pdfBackend.ts` 的 `installPdfJsBackend()`，在 `boot.ts` 里调用；启动后 `preloadPdfJs()` 预热 |
 | 解析引擎 | `pdfjs-dist/legacy/build/pdf.mjs`，动态 import（首次打开 PDF 才加载，约 474KB gzip 144KB） |
 | Worker | **不使用 Web Worker**：同时 import `pdf.worker.min.mjs` 并挂到 `globalThis.pdfjsWorker`，走 PDF.js 的 LoopbackPort/fake worker。Android WebView 的 module worker 失败时会让 `getDocument()` 永远不 settle，这是「一直转圈」的根因 |
+| 老 WebView 兼容 | 启动时给 `ReadableStream.prototype` 补 `Symbol.asyncIterator`。PDF.js 的 `getTextContent()` 用 `for await (... of readableStream)`；老 WebView 缺这个符号会报 `TypeError: e is not async iterable`，parse_document / search_pdf 都会挂在这 |
 | 超时 | 引擎加载 20s、打开 30s、取页/文字 20s、渲染 30s；超时返回明确原因，不再无限转圈 |
 | 随包数据 | `pdfjs/{cmaps,standard_fonts,wasm,iccs}` 原样拷进 assets；中文 PDF 的文字层依赖 `cmaps` |
 | 文件读取 | 仍走 `node:fs` 替身（memfs）：`fs.readFileSync(absPath)` → `Uint8Array` → PDF.js |
-| 页面渲染 | 直接创建 DOM `<canvas>`，铺白底后交给 `page.render()`；`transferToImageBitmap()` 转成 `PixelMap` |
+| 页面渲染 | 直接创建 DOM `<canvas>`，铺白底后交给 `page.render()`；`transferToImageBitmap()` 转成 `PixelMap`。渲染只走 `prepareForRender()`（页对象/宽高），不读文字层 |
 | 输出图片 | `ImagePacker.packToFile()` 走 canvas → JPEG，落到 `pdf_images/<文件名>/p001.jpg` |
 | 文本拼装 | 与桌面端共用 `core/platform/pdfTextLayout.ts`（`hasEOL` 换行、版面兜底），避免两端读出不同结果 |
 
@@ -361,7 +362,8 @@ python scripts/add-termux-packages.py
 - `run_js`：输入/输出、完成值、`while(true)` 在 1.5s 被终止；
 - PDF：`parse_document` 文字层（英文与中文 CMap 各一份）、`search_pdf` 命中页码、
   `pdf_to_images` 渲染出可读 JPEG，并校验 `/pdfjs/*` 随包数据全部可访问；
-  同时把 `Worker` 换成一构造就抛错的实现，确认整条链路不再依赖 Web Worker；
+  同时把 `Worker` 换成一构造就抛错的实现，并删掉 `ReadableStream` 的原生异步迭代器
+  （模拟老 WebView），确认这两条兼容路径都由 App 自己补上；
 - `npm run typecheck`（node/web/mobile）。
 
 真机验证建议：安装 APK 后依次测

@@ -178,19 +178,33 @@ class PdfPage implements pdfService.PdfPageBackend {
     this.index = index
   }
 
-  /** 取页并抽好文本 —— 之后所有同步访问器才有数据（见 PDFKit 里 prepare 的说明） */
-  async prepare(): Promise<void> {
-    if (this.text !== null) {
-      return
+  /** 取页 + 宽高（渲染只需要这些，不碰文字层） */
+  private async preparePage(): Promise<PdfJsRawPage> {
+    if (this.raw !== null) {
+      return this.raw
     }
     const raw: PdfJsRawPage = await this.doc.getPage(this.index + 1)
     this.raw = raw
     const viewport = raw.getViewport({ scale: 1 })
     this.width = viewport.width
     this.height = viewport.height
+    return raw
+  }
+
+  /** 取页并抽好文本 —— 之后所有同步访问器才有数据（见 PDFKit 里 prepare 的说明） */
+  async prepare(): Promise<void> {
+    if (this.text !== null) {
+      return
+    }
+    const raw: PdfJsRawPage = await this.preparePage()
     const content = await raw.getTextContent()
     this.text = itemsToText(content.items)
     this.objects = itemsToObjects(content.items)
+  }
+
+  /** 渲染前只准备页对象与宽高；文字层坏了也不影响转图 */
+  async prepareForRender(): Promise<void> {
+    await this.preparePage()
   }
 
   getTextContent(): string {
@@ -214,7 +228,7 @@ class PdfPage implements pdfService.PdfPageBackend {
     if (canvasMod === null) {
       throw new Error(PDF_RENDER_UNAVAILABLE)
     }
-    await this.prepare()
+    await this.prepareForRender()
     if (this.raw === null) {
       throw new Error('PDF 页面尚未准备完成')
     }

@@ -96,6 +96,14 @@ export namespace pdfService {
      * 不实现（或已备好）的后端返回 resolved Promise 即可。
      */
     prepare?(): Promise<void>
+    /**
+     * 只准备「渲染页面」所需的最小状态（页对象与宽高），不读文字层。
+     *
+     * 为什么单独开一个：渲染一页并不需要 getTextContent()。若把两者绑在一起，
+     * 文字层抽取出问题（例如老 WebView 的 ReadableStream 兼容性）会连带把
+     * pdf_to_images 也拖死。不实现时退回 prepare()。
+     */
+    prepareForRender?(): Promise<void>
   }
 
   /** 文档抽象：由后端实现 */
@@ -187,6 +195,18 @@ export namespace pdfService {
     async prepare(): Promise<void> {
       if (this.inner.prepare !== undefined) {
         await this.inner.prepare()
+      }
+    }
+
+    /**
+     * 只准备渲染所需状态（页对象与宽高），不读文字层。
+     * 后端没实现 prepareForRender 时退回 prepare()，行为与旧版一致。
+     */
+    async prepareForRender(): Promise<void> {
+      if (this.inner.prepareForRender !== undefined) {
+        await this.inner.prepareForRender()
+      } else {
+        await this.prepare()
       }
     }
 

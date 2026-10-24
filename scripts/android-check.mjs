@@ -225,6 +225,16 @@ const page = await browser.newPage({
   hasTouch: true,
   deviceScaleFactor: 2
 })
+// 模拟老 Android WebView：ReadableStream 没有异步迭代器。
+// PDF.js 的 getTextContent() 用 `for await (... of readableStream)`，缺了它会报
+// 「e is not async iterable」；App 启动时应由 pdfBackend 的 polyfill 补回来。
+await page.addInitScript(() => {
+  const proto = ReadableStream.prototype
+  window.__hadNativeStreamIterator = typeof proto[Symbol.asyncIterator] === 'function'
+  if (window.__hadNativeStreamIterator) {
+    delete proto[Symbol.asyncIterator]
+  }
+})
 const pageErrors = []
 const missing = []
 page.on('pageerror', (error) => pageErrors.push(error.message))
@@ -243,6 +253,15 @@ try {
   await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'domcontentloaded' })
   await page.waitForSelector('.app', { timeout: 15_000 })
   check('首屏渲染', await page.locator('.app').isVisible())
+  const streamIterator = await page.evaluate(() => ({
+    hadNative: window.__hadNativeStreamIterator === true,
+    patched: typeof ReadableStream.prototype[Symbol.asyncIterator] === 'function'
+  }))
+  check(
+    'ReadableStream 异步迭代 polyfill（模拟老 WebView）',
+    streamIterator.hadNative && streamIterator.patched,
+    JSON.stringify(streamIterator)
+  )
   check('手机布局（抽屉按钮可见）', await page.locator('.mobile-menu-btn').isVisible())
   check('顶栏不再显示状态副标题', (await page.locator('.topbar__title small').count()) === 0)
   check('输入框上方胶囊可见', await page.locator('.composer__chips').isVisible())

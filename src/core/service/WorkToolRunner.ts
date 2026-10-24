@@ -1269,8 +1269,16 @@ export class WorkToolRunner {
         return WorkToolRunner.failMsg('该 PDF 无有效页面(可能是加密或损坏文件)');
       }
       if (r.files.length === 0) {
-        return WorkToolRunner.failMsg('共 ' + r.pageCount.toString() + ' 页, 传入的 page=' +
-          r.startPage.toString() + ' 超出范围(1-' + r.pageCount.toString() + ')');
+        // 只有「起始页真的越界」才报页码问题；渲染失败必须把底层原因带出来，
+        // 否则会出现「范围 (1-1) 却拒绝 page=1」这种自相矛盾的提示。
+        if (r.startPage > r.pageCount) {
+          return WorkToolRunner.failMsg('共 ' + r.pageCount.toString() + ' 页, 传入的 page=' +
+            r.startPage.toString() + ' 超出范围(1-' + r.pageCount.toString() + ')');
+        }
+        if (r.errors.length > 0) {
+          return WorkToolRunner.failMsg('渲染失败: ' + r.errors[0]);
+        }
+        return WorkToolRunner.failMsg('未能渲染出任何页面');
       }
       let out: string = '已渲染《' + rel + '》第 ' + r.startPage.toString() + '-' +
         r.endPage.toString() + ' 页(共 ' + r.pageCount.toString() + ' 页) → ' +
@@ -1281,6 +1289,10 @@ export class WorkToolRunner {
           shown = shown.substring(root.length + 1);
         }
         out = out + shown + ' (第 ' + (r.startPage + i).toString() + ' 页)\n';
+      }
+      if (r.errors.length > 0) {
+        out = out + '—— 有 ' + r.errors.length.toString() + ' 页渲染失败: ' +
+          r.errors.slice(0, 3).join('; ') + '\n';
       }
       if (r.nextStartPage > 0) {
         out = out + '—— 用 view_image 逐张查看(每次传一个 path); 需要更多页: pdf_to_images 传 {"path":"' +
