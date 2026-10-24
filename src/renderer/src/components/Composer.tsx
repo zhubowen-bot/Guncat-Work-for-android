@@ -6,7 +6,7 @@ import { useStore } from '../store'
 import { MODE_HINT } from '../conversations'
 import { AttachmentBar } from './AttachmentBar'
 import { Picker } from './Picker'
-import { PhotoSourceSheet } from './PhotoSourceSheet'
+import { AttachmentSourceSheet } from './AttachmentSourceSheet'
 import {
   detectMention,
   MentionPopup,
@@ -15,15 +15,17 @@ import {
   type MentionQuery
 } from './MentionPopup'
 import {
-  IconCamera,
   IconGlobe,
   IconMic,
-  IconPaperclip,
+  IconPlus,
   IconRefresh,
   IconSend,
   IconSteer,
   IconStop
 } from '../icons'
+
+// 语音识别方案还在评估；按钮先隐藏，代码与原生桥保留，定了再打开。
+const VOICE_BUTTON_VISIBLE = false
 
 interface Props {
   running: boolean
@@ -301,11 +303,12 @@ export function Composer({ running, mode, onSend, onSteer, onAbort }: Props) {
 
   return (
     <div className="composer" data-running={running ? 'true' : 'false'}>
-      <PhotoSourceSheet
+      <AttachmentSourceSheet
         open={photoSheet}
         onClose={() => setPhotoSheet(false)}
         onCamera={() => void pickUpload('camera')}
         onGallery={() => void pickUpload('gallery')}
+        onFile={() => void pickUpload('file')}
       />
       <AttachmentBar
         attachments={attachments}
@@ -389,43 +392,33 @@ export function Composer({ running, mode, onSend, onSteer, onAbort }: Props) {
       </div>
 
       <div className="composer__inner">
-        {/* 手机端一行排布：左侧语音 + 拍照，中间输入框，右侧上传 + 发送 */}
-        <button
-          type="button"
-          className="composer__mic"
-          data-recording={voice.state === 'recording'}
-          title={
-            voice.state === 'recording'
-              ? '点击结束录音并转写'
-              : voice.state === 'transcribing'
-                ? '正在转写…'
-                : running
-                  ? '生成中，暂不能录音'
-                  : parsing
-                    ? '文件解析中，暂不能录音'
-                    : voice.nativeStatus === 'on-device'
-                      ? '语音输入（端侧识别）'
-                      : voice.native
-                        ? '语音输入（系统识别）'
-                        : '语音输入（点击开始录音）'
-          }
-          // 原版的门禁是 `!isStreaming && !isParsing`（MessageInputView.ets:83）：
-          // 生成中与解析中都不该再起一段录音，否则转写结果会插到正在跑的轮次里
-          disabled={voice.state === 'transcribing' || running || parsing}
-          onClick={voice.toggle}
-        >
-          {voice.state === 'recording' ? <IconStop size={18} /> : <IconMic size={18} />}
-        </button>
-
-        <button
-          type="button"
-          className="composer__tool composer__camera"
-          title={mode === 'chat' ? '拍照或从相册选图发送' : '拍照或从相册选图加入工作区'}
-          disabled={running || parsing || voice.state !== 'idle'}
-          onClick={() => setPhotoSheet(true)}
-        >
-          <IconCamera size={18} />
-        </button>
+        {/* 右侧加号：拍照 / 相册 / 文件；语音按钮暂时隐藏 */}
+        {VOICE_BUTTON_VISIBLE ? (
+          <button
+            type="button"
+            className="composer__mic"
+            data-recording={voice.state === 'recording'}
+            title={
+              voice.state === 'recording'
+                ? '点击结束录音并转写'
+                : voice.state === 'transcribing'
+                  ? '正在转写…'
+                  : running
+                    ? '生成中，暂不能录音'
+                    : parsing
+                      ? '文件解析中，暂不能录音'
+                      : voice.nativeStatus === 'on-device'
+                        ? '语音输入（端侧识别）'
+                        : voice.native
+                          ? '语音输入（系统识别）'
+                          : '语音输入（点击开始录音）'
+            }
+            disabled={voice.state === 'transcribing' || running || parsing}
+            onClick={voice.toggle}
+          >
+            {voice.state === 'recording' ? <IconStop size={18} /> : <IconMic size={18} />}
+          </button>
+        ) : null}
 
         <div className="composer__field">
           <textarea
@@ -451,13 +444,13 @@ export function Composer({ running, mode, onSend, onSteer, onAbort }: Props) {
             parsing
               ? '文件解析中，请稍候'
               : mode === 'chat'
-                ? '添加图片或文档（发送给模型直接查看）'
-                : '上传文件到工作区'
+                ? '添加内容：拍照 / 相册 / 文件（发送给模型直接查看）'
+                : '添加内容：拍照 / 相册 / 文件（加入工作区）'
           }
           disabled={running || parsing || voice.state !== 'idle'}
-          onClick={() => void pickUpload('file')}
+          onClick={() => setPhotoSheet(true)}
         >
-          {parsing ? <IconRefresh size={18} className="icon-spin" /> : <IconPaperclip size={18} />}
+          {parsing ? <IconRefresh size={18} className="icon-spin" /> : <IconPlus size={18} />}
         </button>
 
         {running ? (

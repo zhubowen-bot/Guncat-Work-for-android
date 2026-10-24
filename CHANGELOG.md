@@ -76,6 +76,9 @@
 - **相机真正接上**：新增 `CameraProvider`（content://，无 AndroidX FileProvider 依赖），
   `onShowFileChooser` 检测 `isCaptureEnabled()` 后走 `ACTION_IMAGE_CAPTURE`，拍完把 Uri 回给
   WebView 的 `<input type=file>`；拍照按钮改为「拍照 / 从相册选择」底部选择条，相册入口保留。
+- **输入区入口合并**：去掉独立的拍照按钮，右侧文件按钮改成 **加号**，点开统一选择
+  「拍照 / 从相册选择 / 文件」；语音按钮暂时隐藏（`VOICE_BUTTON_VISIBLE=false`），
+  `useVoiceInput` 与原生 ASR 桥保留，方案定了直接打开。
 - **系统 Shell 兜底**：非 arm64 或解压失败时可切 `/system/bin/sh`，能力降级但工作区镜像照旧。
 - **设置页**「终端命令执行 (Shell)」：切换内置/系统后端、显示首次解压进度、重新安装。
 - **浏览器预览**仍回退到 `src/mobile/platform/shell.ts` 的 JS 子集（无 `window.GuncatShell` 时）。

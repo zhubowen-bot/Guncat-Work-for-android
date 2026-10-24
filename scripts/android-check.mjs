@@ -161,13 +161,13 @@ try {
     }
     return {
       input: rect('.composer textarea'),
-      mic: rect('.composer__mic'),
+      upload: rect('.composer__upload'),
       send: rect('.composer__send')
     }
   })
   check(
-    '输入框与发送/语音按钮同高',
-    composerHeights.input === composerHeights.mic && composerHeights.input === composerHeights.send,
+    '输入框与发送/加号按钮同高',
+    composerHeights.input === composerHeights.upload && composerHeights.input === composerHeights.send,
     JSON.stringify(composerHeights)
   )
   check(
@@ -180,18 +180,22 @@ try {
   await page.waitForTimeout(350)
   await page.screenshot({ path: path.join(SHOTS, 'picker.png') })
   await page.click('.picker__close')
-  await page.click('.composer__camera')
+  await page.click('.composer__upload')
   await page.waitForSelector('.picker__sheet', { timeout: 3000 })
   const photoChoices = await page.locator('.picker__sheet').innerText()
   check(
-    '拍照/相册两个入口都在',
-    photoChoices.includes('拍照') && photoChoices.includes('从相册选择'),
-    photoChoices.replace(/\s+/g, ' ').slice(0, 80)
+    '加号里拍照/相册/文件三个入口都在',
+    photoChoices.includes('拍照') && photoChoices.includes('从相册选择') && photoChoices.includes('文件'),
+    photoChoices.replace(/\s+/g, ' ').slice(0, 90)
   )
   await page.waitForTimeout(300)
   await page.screenshot({ path: path.join(SHOTS, 'photo-sheet.png') })
   await page.click('.picker__close')
-  check('上传/拍照按钮可见', (await page.locator('.composer__upload').isVisible()) && (await page.locator('.composer__camera').isVisible()))
+  check(
+    '加号按钮可见，独立拍照按钮已合并',
+    (await page.locator('.composer__upload').isVisible()) &&
+      (await page.locator('.composer__camera').count()) === 0
+  )
   await page.screenshot({ path: path.join(SHOTS, 'home.png') })
 
   await page.click('.mobile-menu-btn')
