@@ -53,6 +53,12 @@ export function registerIpcHandlers(session: SessionManager): void {
   ipcMain.handle(INVOKE.settingsSelectApiProfile, async (_e, profileId: string) => {
     await session.selectApiProfile(profileId)
   })
+  ipcMain.handle(
+    INVOKE.settingsSelectApiProfileModel,
+    async (_e, profileId: string, model: string) => {
+      await session.selectApiProfileModel(profileId, model)
+    }
+  )
   ipcMain.handle(INVOKE.settingsAddApiProfile, async () => session.addApiProfile())
   ipcMain.handle(INVOKE.settingsDeleteApiProfile, async (_e, profileId: string) => {
     await session.deleteApiProfile(profileId)

@@ -418,9 +418,33 @@ body.platform-android code {
 
   .field input,
   .field select,
-  .field textarea {
+  .field textarea,
+  .field .picker--field .picker__trigger {
     font-size: 16px;
+    height: 42px;
+    padding: 0 12px;
+  }
+
+  .field textarea {
+    height: auto;
+    min-height: 88px;
     padding: 10px 12px;
+  }
+
+  /* 窄屏下双列字段改为单列，避免两个输入框各剩一半、字被挤成两行 */
+  .field--row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .settings-actions .btn,
+  .settings-model-add .btn,
+  .settings-inline .btn {
+    height: 42px;
+  }
+
+  .settings-model__pick {
+    height: 40px;
   }
 
   /* 内容排版 */

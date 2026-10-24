@@ -7,6 +7,7 @@ import { MODE_HINT } from '../conversations'
 import { AttachmentBar } from './AttachmentBar'
 import { Picker } from './Picker'
 import { AttachmentSourceSheet } from './AttachmentSourceSheet'
+import { currentModelChoice, modelChoices, parseModelChoice } from '../modelChoices'
 import {
   detectMention,
   MentionPopup,
@@ -70,6 +71,15 @@ export function Composer({ running, mode, onSend, onSteer, onAbort }: Props) {
   const thinkingEnabled = useStore((s) => s.thinkingEnabled)
   const setThinking = useStore((s) => s.setThinking)
   const profiles = settings?.apiProfiles ?? []
+  const currentProfile = profiles.find((p) => p.id === settings?.currentApiProfileId)
+  const activeModel =
+    currentProfile?.config.model !== undefined && currentProfile.config.model !== ''
+      ? currentProfile.config.model
+      : (currentProfile?.config.models?.[0] ?? '')
+  const currentModelValue = currentModelChoice(
+    settings?.currentApiProfileId ?? '',
+    activeModel
+  )
 
   // 消息操作行的「编辑 / 重新编辑」把文本塞进这里，并聚焦回输入框
   useEffect(() => {
@@ -204,16 +214,23 @@ export function Composer({ running, mode, onSend, onSteer, onAbort }: Props) {
     await pickWorkspaceFiles(source)
   }
 
-  /** 顶栏模型胶囊的等价物：切换配置方案后重读设置 */
-  async function switchProfile(profileId: string): Promise<void> {
-    if (profileId === settings?.currentApiProfileId) {
+  /** 顶栏模型胶囊的等价物：切方案或同方案下的模型，然后重读设置 */
+  async function switchModel(value: string): Promise<void> {
+    const picked = parseModelChoice(value)
+    if (picked.profileId === '') {
+      return
+    }
+    if (
+      picked.profileId === settings?.currentApiProfileId &&
+      (picked.model === '' || picked.model === activeModel)
+    ) {
       return
     }
     try {
-      await window.guncat.settings.selectApiProfile(profileId)
+      await window.guncat.settings.selectApiProfileModel(picked.profileId, picked.model)
       await reloadSettings()
     } catch (e) {
-      pushNotice('error', `切换配置失败：${String(e)}`)
+      pushNotice('error', `切换模型失败：${String(e)}`)
     }
   }
 
@@ -329,15 +346,12 @@ export function Composer({ running, mode, onSend, onSteer, onAbort }: Props) {
           <Picker
             variant="chip"
             triggerClassName="composer-chip"
-            title="当前模型配置（切换即换模型与接入地址）"
+            title="当前模型（同一服务商可配多个模型，切换即换模型）"
             ariaLabel="选择模型"
-            value={settings?.currentApiProfileId ?? ''}
+            value={currentModelValue}
             disabled={running}
-            options={profiles.map((profile) => ({
-              value: profile.id,
-              label: profile.config.model !== '' ? profile.config.model : profile.name
-            }))}
-            onChange={(value) => void switchProfile(value)}
+            options={modelChoices(profiles)}
+            onChange={(value) => void switchModel(value)}
           />
         ) : null}
 

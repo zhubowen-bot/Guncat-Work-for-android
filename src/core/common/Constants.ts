@@ -9,6 +9,10 @@ export class Constants {
   static readonly LS_KEY_MULTIMODAL_CONFIG: string = 'guncat_mm_config';
   static readonly LS_KEY_API_PROFILES: string = 'guncat_api_profiles';
   static readonly LS_KEY_CURRENT_API_PROFILE_ID: string = 'guncat_current_api_profile';
+  // 预置配置方案是否已经播种过。只在第一次升级/首次安装时合并一次，
+  // 之后用户删掉预置方案也不会在下次启动时又冒出来。
+  static readonly LS_KEY_API_PROFILES_SEEDED: string = 'guncat_api_profiles_seeded';
+  static readonly API_PROFILES_SEED_VERSION: string = '1';
   static readonly LS_KEY_THINKING_ENABLED: string = 'guncat_thinking_enabled';
   // 本地内置联网搜索配置(JSON: 引擎选择 + 各引擎 API Key/BaseUrl), 与服务端联网搜索开关独立
   static readonly LS_KEY_LOCAL_SEARCH_CONFIG: string = 'guncat_local_search_config';
@@ -40,6 +44,8 @@ export class Constants {
   static readonly MESSAGES_PATH: string = '/messages';
   static readonly ANTHROPIC_V1_MESSAGES_PATH: string = '/v1/messages';
   static readonly ANTHROPIC_DEEPSEEK_MESSAGES_PATH: string = '/anthropic/v1/messages';
+  // OpenCode 网关（Go / 按量付费）的 Anthropic Messages 路径同样挂在 /anthropic 下
+  static readonly OPENCODE_ANTHROPIC_MESSAGES_PATH: string = '/anthropic/v1/messages';
 
   // 未在设置中填写 Max Tokens 时 Anthropic 协议默认下发的输出上限。
   // 取 128K 兼容输出上限较低的老模型(如 Qwen3.8-flash 等); 上限更大的模型

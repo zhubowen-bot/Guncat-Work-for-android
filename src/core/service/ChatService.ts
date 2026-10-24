@@ -1185,6 +1185,12 @@ export class ChatService {
         let headers: Record<string, string> = {
           'Content-Type': 'application/json'
         };
+        // 鉴权头 + 网关特殊头统一由 LLMProtocol 生成（OpenCode Go 的 x-opencode-session
+        // 在三种协议下都必须带；自动审查走同一份实现）。
+        let authHeaders: Record<string, string> = LLMProtocol.authHeaders(config, protocol);
+        for (let key in authHeaders) {
+          headers[key] = authHeaders[key];
+        }
         if (protocol === 'anthropic') {
           let needsAnthropicBeta: boolean = false;
           for (let hi: number = 0; hi < history.length; hi++) {
@@ -1199,14 +1205,10 @@ export class ChatService {
               break;
             }
           }
-          headers['x-api-key'] = config.apiKey;
-          headers['anthropic-version'] = '2023-06-01';
           headers['Accept'] = 'text/event-stream';
           if (needsAnthropicBeta) {
             headers['anthropic-beta'] = 'files-api-2025-04-14';
           }
-        } else {
-          headers['Authorization'] = 'Bearer ' + config.apiKey;
         }
         httpRequest.requestInStream(url, {
           method: http.RequestMethod.POST,

@@ -5,6 +5,7 @@
 import { http } from '@kit.NetworkKit';
 import { util } from '@kit.ArkTS';
 import { ApiConfig } from '../model/ApiConfig';
+import { LLMProtocol } from '../common/LLMProtocol';
 
 function sanitizeFileName(name: string): string {
   return name.replace(/["\r\n]/g, '_');
@@ -84,12 +85,13 @@ export class FileUploadService {
           let headers: Record<string, string> = {
             'Content-Type': 'multipart/form-data; boundary=' + multipart.boundary
           };
+          let protocol: string = isAnthropic ? LLMProtocol.ANTHROPIC : LLMProtocol.COMPLETIONS;
+          let authHeaders: Record<string, string> = LLMProtocol.authHeaders(config, protocol);
+          for (let key in authHeaders) {
+            headers[key] = authHeaders[key];
+          }
           if (isAnthropic) {
-            headers['x-api-key'] = config.apiKey;
-            headers['anthropic-version'] = '2023-06-01';
             headers['anthropic-beta'] = 'files-api-2025-04-14';
-          } else {
-            headers['Authorization'] = 'Bearer ' + config.apiKey;
           }
           httpRequest.request(url, {
             method: http.RequestMethod.POST,

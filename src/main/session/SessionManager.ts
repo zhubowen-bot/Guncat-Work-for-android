@@ -33,6 +33,8 @@ import { Message } from '@core/model/Message'
 import { Attachment } from '@core/model/Attachment'
 import { ApiConfig } from '@core/model/ApiConfig'
 import { ApiProfile } from '@core/model/ApiProfile'
+import { ApiProfileSeeder } from './ApiProfileSeeder'
+import { LLMProtocol } from '@core/common/LLMProtocol'
 import { MultimodalConfig } from '@core/model/MultimodalConfig'
 import { Agent } from '@core/model/Agent'
 import { ToolCallRecord } from '@core/model/ToolCallRecord'
@@ -284,14 +286,15 @@ export class SessionManager {
 
   async loadSettings(): Promise<AppSettingsDto> {
     const ctx: Context = this.ctx()
+    // 配置方案列表（首次运行会播种预置方案，老版本则把已有的 DeepSeek 方案合并进预置）。
+    // 必须先读方案：播种/合并可能会重写下面两个运行时键，之后再读才拿到最终值。
+    const { profiles, currentId } = await this.readApiProfiles(ctx)
     const apiConfig: ApiConfig | null = await StorageManager.loadApiConfig(ctx).catch(
       (): ApiConfig | null => null
     )
     const multimodalConfig: MultimodalConfig = await StorageManager.loadMultimodalConfig(ctx).catch(
       (): MultimodalConfig => MultimodalConfig.default()
     )
-    // 配置方案列表（首次运行会把已有的单份配置迁移成「默认配置」，对齐原版 ChatViewModel.init）
-    const { profiles, currentId } = await this.readApiProfiles(ctx)
     // 本地联网搜索：把持久化的配置**绑定**给工具层。
     // LocalWebSearch.settings 是进程级单例，不 bind 的话永远停在默认值（Bing / 默认条数），
     // 用户配的引擎与 Key 一律不生效 —— 原版在 ChatViewModel.init 里做了这一步，桌面端漏了。
@@ -312,9 +315,12 @@ export class SessionManager {
   /**
    * 读配置方案列表与当前选中项。
    *
-   * 首次运行（或从只有「单份配置」的旧版本升级）时，把已有的 apiConfig / multimodalConfig
-   * 迁移成一份名为「默认配置」的方案并落盘 —— 与原版 ChatViewModel.init 的处理一致，
-   * 这样老用户的 Key 不会因为引入了方案机制而消失。
+   * 两层迁移：
+   *   1. 首次运行（或从只有「单份配置」的旧版本升级）时，把已有的 apiConfig / multimodalConfig
+   *      迁移成一份方案 —— 老用户的 Key 不会因为引入了方案机制而消失；
+   *   2. 预置方案只播种一次（Constants.LS_KEY_API_PROFILES_SEEDED 标记）：把旧配置里
+   *      指向 api.deepseek.com 的方案合并进预置 Deepseek，并补上 Opencode Go。
+   *      用户之后删掉预置方案，下次启动不会再冒出来。
    */
   private async readApiProfiles(ctx: Context): Promise<{ profiles: ApiProfile[]; currentId: string }> {
     let profiles: ApiProfile[] = await StorageManager.loadApiProfiles(ctx).catch(
@@ -337,7 +343,36 @@ export class SessionManager {
       Constants.LS_KEY_CURRENT_API_PROFILE_ID,
       ''
     ).catch((): string => '')
-    const currentId: string = profiles.some((p) => p.id === saved) ? saved : profiles[0].id
+    let currentId: string = profiles.some((p) => p.id === saved) ? saved : profiles[0].id
+
+    const seeded: string = await StorageManager.loadString(
+      ctx,
+      Constants.LS_KEY_API_PROFILES_SEEDED,
+      ''
+    ).catch((): string => '')
+    if (seeded !== Constants.API_PROFILES_SEED_VERSION) {
+      const result = ApiProfileSeeder.seed(profiles, currentId)
+      profiles = result.profiles
+      currentId = result.currentId
+      await StorageManager.saveApiProfiles(ctx, profiles)
+      // 播种可能把当前方案合并成了预置 Deepseek：运行时键必须跟着换，
+      // 否则界面上选中了 Deepseek，发请求却还在用旧的协议/地址。
+      const selected: ApiProfile | undefined = profiles.find((p) => p.id === currentId)
+      if (selected !== undefined) {
+        await StorageManager.saveApiConfig(ctx, selected.apiConfig)
+        await StorageManager.saveMultimodalConfig(ctx, selected.multimodalConfig)
+      }
+      await StorageManager.saveString(
+        ctx,
+        Constants.LS_KEY_CURRENT_API_PROFILE_ID,
+        currentId
+      )
+      await StorageManager.saveString(
+        ctx,
+        Constants.LS_KEY_API_PROFILES_SEEDED,
+        Constants.API_PROFILES_SEED_VERSION
+      )
+    }
     return { profiles, currentId }
   }
 
@@ -392,6 +427,27 @@ export class SessionManager {
   }
 
   /**
+   * 在某个配置方案里切换当前模型（一个服务商多个模型）。
+   * 模型不在清单里时顺手补进去：用户从顶栏选中的模型不应该只存在于运行时键里，
+   * 下次切走再切回来就找不到了。
+   */
+  async selectApiProfileModel(profileId: string, model: string): Promise<void> {
+    const ctx: Context = this.ctx()
+    const { profiles } = await this.readApiProfiles(ctx)
+    const profile: ApiProfile | undefined = profiles.find((p) => p.id === profileId)
+    if (profile === undefined) {
+      return
+    }
+    const wanted: string = model.trim()
+    if (wanted !== '') {
+      profile.apiConfig.model = wanted
+      profile.apiConfig.models = ApiConfig.normalizeModels(profile.apiConfig.models, wanted)
+      await StorageManager.saveApiProfiles(ctx, profiles)
+    }
+    await this.applyProfile(ctx, profile)
+  }
+
+  /**
    * 新建一个配置方案。
    *
    * 与原版的一点差异（有意为之）：原版新建的是**空白配置**并立刻应用，
@@ -438,6 +494,9 @@ export class SessionManager {
     mmDto: MultimodalConfigDto
   ): Promise<void> {
     const ctx: Context = this.ctx()
+    // 先跑一次读取：首次保存时预置方案的播种/合并会重写运行时键，
+    // 排在保存之后就会把用户刚填的值盖回预置模板。
+    await this.readApiProfiles(ctx)
     await StorageManager.saveApiConfig(ctx, SessionManager.fromApiConfigDto(apiDto))
     await StorageManager.saveMultimodalConfig(ctx, SessionManager.fromMultimodalDto(mmDto))
     await this.writeBackToProfile(ctx, apiDto, mmDto, name)
@@ -445,6 +504,7 @@ export class SessionManager {
 
   async saveApiConfig(dto: ApiConfigDto): Promise<void> {
     const ctx: Context = this.ctx()
+    await this.readApiProfiles(ctx)
     await StorageManager.saveApiConfig(ctx, SessionManager.fromApiConfigDto(dto))
     // 同步回当前方案：不同步的话「保存」只改了运行时键，
     // 下次切走再切回来（或重启后按方案应用）就会退回到旧值
@@ -468,6 +528,7 @@ export class SessionManager {
 
   async saveMultimodalConfig(dto: MultimodalConfigDto): Promise<void> {
     const ctx: Context = this.ctx()
+    await this.readApiProfiles(ctx)
     await StorageManager.saveMultimodalConfig(ctx, SessionManager.fromMultimodalDto(dto))
     const api: ApiConfig | null = await StorageManager.loadApiConfig(ctx).catch(
       (): ApiConfig | null => null
@@ -934,6 +995,8 @@ export class SessionManager {
       this.emit({ type: 'notice', level: 'error', text: '请先在设置里配置 API Key 与模型' })
       return
     }
+    // OpenCode Go 要求按对话稳定的 x-opencode-session；同一会话的所有请求（含自动审查）共用它
+    config.sessionId = LLMProtocol.conversationSessionId(conv.id)
 
     const attachments: Attachment[] = await this.makeAttachments(request.attachmentPaths ?? [])
     const userMsg: Message = Message.ofUser(
@@ -984,6 +1047,7 @@ export class SessionManager {
       this.emit({ type: 'notice', level: 'error', text: '请先在设置里配置 API Key 与模型' })
       return
     }
+    config.sessionId = LLMProtocol.conversationSessionId(conv.id)
 
     let lastUserIndex: number = -1
     for (let i: number = conv.messages.length - 1; i >= 0; i--) {
@@ -1347,6 +1411,7 @@ export class SessionManager {
       this.emit({ type: 'notice', level: 'error', text: '请先在设置里配置 API Key 与模型' })
       return
     }
+    config.sessionId = LLMProtocol.conversationSessionId(conv.id)
 
     const ctx: Context = this.ctx()
     WorkFileService.ensureWorkspace(ctx, conv.id)
@@ -2754,12 +2819,14 @@ export class SessionManager {
     const wanted: string = model.trim()
     if (wanted !== '') {
       const { profiles } = await this.readApiProfiles(ctx)
-      const matched = profiles.find((p) => p.apiConfig.model === wanted)
+      const matched = profiles.find(
+        (p) => p.apiConfig.model === wanted || p.apiConfig.models.indexOf(wanted) >= 0
+      )
       if (matched !== undefined && matched.apiConfig.apiKey !== '') {
         const fromProfile: MultimodalConfig = MultimodalConfig.default()
         fromProfile.baseUrl = matched.apiConfig.baseUrl
         fromProfile.apiKey = matched.apiConfig.apiKey
-        fromProfile.model = matched.apiConfig.model
+        fromProfile.model = wanted
         return fromProfile
       }
     }
@@ -2847,6 +2914,7 @@ export class SessionManager {
       baseUrl: config.baseUrl,
       apiKey: config.apiKey,
       model: config.model,
+      models: ApiConfig.normalizeModels(config.models, config.model),
       temperature: config.temperature ?? 0,
       topP: config.topP ?? 0,
       maxTokens: config.maxTokens ?? 0,
@@ -2870,6 +2938,7 @@ export class SessionManager {
     config.baseUrl = dto.baseUrl
     config.apiKey = dto.apiKey
     config.model = dto.model
+    config.models = ApiConfig.normalizeModels(dto.models, dto.model)
     config.temperature = dto.temperature > 0 ? dto.temperature : null
     config.topP = dto.topP > 0 ? dto.topP : null
     config.maxTokens = dto.maxTokens > 0 ? dto.maxTokens : null

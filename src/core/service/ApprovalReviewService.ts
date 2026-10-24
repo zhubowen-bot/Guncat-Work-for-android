@@ -215,6 +215,9 @@ export class ApprovalReviewService {
     probe.baseUrl = config.baseUrl;
     probe.apiKey = config.apiKey;
     probe.model = config.model;
+    // 自动审查也必须带 OpenCode Go 的会话头：它就是同一对话里的一次模型请求，
+    // 少了 x-opencode-session 会被网关判成缺会话。cloneConfig 不复制就等于丢。
+    probe.sessionId = config.sessionId;
     probe.extraBody = config.extraBody;
     probe.autoSuffix = config.autoSuffix;
     probe.temperature = 0;

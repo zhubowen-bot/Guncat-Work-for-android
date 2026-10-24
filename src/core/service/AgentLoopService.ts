@@ -411,12 +411,14 @@ export class AgentLoopService {
         let headers: Record<string, string> = {
           'Content-Type': 'application/json'
         };
+        // 鉴权头与网关特殊头统一由 LLMProtocol 生成：
+        // OpenCode Go 的 x-opencode-session 因此也覆盖工作循环与自动审批审阅器。
+        let authHeaders: Record<string, string> = LLMProtocol.authHeaders(config, protocol);
+        for (let key in authHeaders) {
+          headers[key] = authHeaders[key];
+        }
         if (protocol === 'anthropic') {
-          headers['x-api-key'] = config.apiKey;
-          headers['anthropic-version'] = '2023-06-01';
           headers['Accept'] = 'text/event-stream';
-        } else {
-          headers['Authorization'] = 'Bearer ' + config.apiKey;
         }
         let retryAfterHeader: string = '';
         try {

@@ -1272,14 +1272,20 @@ check(
   settingsHtml.includes('dialog__body') && settingsText.includes('设置')
 )
 check(
-  '三个可折叠小节都在：高级模型参数 / 本地联网搜索 / 多模态解析 API',
+  '设置页所有配置块都是可折叠小节（高级参数 / 搜索 / 多模态 / 自动朗读 / 语音输入）',
   settingsText.includes('高级模型参数') &&
     settingsText.includes('本地联网搜索') &&
-    settingsText.includes('多模态解析 API (可选)')
+    settingsText.includes('多模态解析 API (可选)') &&
+    settingsText.includes('自动朗读回答') &&
+    settingsText.includes('语音输入（录音转文字）')
 )
 check(
-  '小节缺省全部收起（高级参数与多模态字段首帧不出现）',
-  !settingsText.includes('数值越低回答越确定') && !settingsText.includes('先行解析附件'),
+  '小节缺省全部收起（高级参数、自动朗读、语音输入的首帧内容都不出现）',
+  !settingsText.includes('数值越低回答越确定') &&
+    !settingsText.includes('先行解析附件') &&
+    !settingsText.includes('开启后每轮回答生成完会自动念一遍') &&
+    !settingsText.includes('转写 Base URL') &&
+    !settingsHtml.includes('settings-section__body'),
   '开合状态由 data-open 与条件渲染共同决定'
 )
 check(
@@ -1291,7 +1297,7 @@ check(
 check(
   'Base URL 占位符按当前接入方式给出',
   settingsHtml.includes('https://api.openai.com/v1 或 https://api.deepseek.com')
-)
+) 
 check(
   '底部接入方式提示就是原版 completions 那一段',
   settingsText.includes('通用API接入方式') &&
@@ -1314,9 +1320,11 @@ check(
   `${copyR.baseUrl} | ${copyR.model}`
 )
 check(
-  'anthropic：Base URL / 模型占位符逐字对齐原版',
-  copyA.baseUrl === 'https://api.anthropic.com/v1 或 https://api.deepseek.com' &&
-    copyA.model === 'deepseek-v4-pro / deepseek-v4-flash / claude-...',
+  'anthropic：Base URL / 模型占位符覆盖 Anthropic、DeepSeek 与 OpenCode Go',
+  copyA.baseUrl.includes('https://api.anthropic.com/v1') &&
+    copyA.baseUrl.includes('https://api.deepseek.com/anthropic') &&
+    copyA.baseUrl.includes('https://opencode.ai/inference/go') &&
+    copyA.model === 'deepseek-flash / deepseek-v4-pro / claude-...',
   `${copyA.baseUrl} | ${copyA.model}`
 )
 check(
@@ -1369,6 +1377,7 @@ const apiNorm = mod.normalizeApiConfig({
   baseUrl: '  https://api.deepseek.com  ',
   apiKey: ' sk-x ',
   model: ' deepseek-chat ',
+  models: [' deepseek-chat ', 'deepseek-v4-pro', 'deepseek-chat'],
   temperature: 0.7,
   topP: 0,
   maxTokens: 0,
@@ -1383,6 +1392,12 @@ check(
     apiNorm.model === 'deepseek-chat' &&
     apiNorm.extraParams === '{"a": 1}' &&
     apiNorm.temperature === 0.7
+)
+check(
+  '模型清单去空白、去重，当前模型一定在清单里',
+  apiNorm.models.length === 2 &&
+    apiNorm.models[0] === 'deepseek-chat' &&
+    apiNorm.models[1] === 'deepseek-v4-pro'
 )
 
 // --- 提问卡片（ask_user_question）：工具会真的挂起，这张卡是「工具能不能用」的一半 ---

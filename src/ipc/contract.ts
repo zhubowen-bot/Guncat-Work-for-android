@@ -45,6 +45,8 @@ export const INVOKE = {
    * 只有渲染层从来没有调用点 —— 用户无法保存/切换第二套配置。
    */
   settingsSelectApiProfile: 'settings:selectApiProfile',
+  /** 在某个配置方案里切换当前模型（一个服务商多个模型） */
+  settingsSelectApiProfileModel: 'settings:selectApiProfileModel',
   settingsAddApiProfile: 'settings:addApiProfile',
   settingsDeleteApiProfile: 'settings:deleteApiProfile',
   settingsSaveCurrentApiProfile: 'settings:saveCurrentApiProfile',
@@ -153,7 +155,14 @@ export interface ApiConfigDto {
   provider: string
   baseUrl: string
   apiKey: string
+  /** 当前生效的模型 */
   model: string
+  /**
+   * 同一套接入方式下可切换的模型清单。
+   * 一个服务商只需要配一次 Base URL / Key，就能在多个模型之间切换；
+   * `model` 必须包含在这份清单里（主进程规整时会补进去）。
+   */
+  models: string[]
   temperature: number
   topP: number
   maxTokens: number

@@ -17,6 +17,7 @@ import { ImageLightbox } from './components/ImageLightbox'
 import { WorkspacePreviewOverlay } from './components/WorkspacePreview'
 import { TransferSheet } from './components/TransferSheet'
 import { useSpeech, speechTextOf } from './speech/speechStore'
+import { currentModelChoice, modelChoices, parseModelChoice } from './modelChoices'
 import { IconBrain, IconFolder, IconGlobe, IconSidebar, IconTable } from './icons'
 
 /**
@@ -81,22 +82,38 @@ export default function App() {
   const settings = useStore((s) => s.settings)
   const reloadSettings = useStore((s) => s.reloadSettings)
   const profiles = settings?.apiProfiles ?? []
+  const currentProfile = profiles.find((p) => p.id === settings?.currentApiProfileId)
+  const activeModel =
+    currentProfile?.config.model !== undefined && currentProfile.config.model !== ''
+      ? currentProfile.config.model
+      : (currentProfile?.config.models?.[0] ?? '')
+  const currentModelValue = currentModelChoice(
+    settings?.currentApiProfileId ?? '',
+    activeModel
+  )
   const pushNotice = useStore((s) => s.pushNotice)
   const sidebarOpen = useStore((s) => s.sidebarOpen)
   const openSidebar = useStore((s) => s.openSidebar)
   const closeSidebar = useStore((s) => s.closeSidebar)
   const toggleWorkspace = useStore((s) => s.toggleWorkspace)
 
-  /** 顶栏模型胶囊：切配置方案（主进程会把该方案写回运行时生效的配置） */
-  async function switchProfile(profileId: string): Promise<void> {
-    if (profileId === settings?.currentApiProfileId) {
+  /** 顶栏模型胶囊：切换配置方案或同一方案下的模型（主进程会把结果写回运行时配置） */
+  async function switchModel(value: string): Promise<void> {
+    const picked = parseModelChoice(value)
+    if (picked.profileId === '') {
+      return
+    }
+    if (
+      picked.profileId === settings?.currentApiProfileId &&
+      (picked.model === '' || picked.model === activeModel)
+    ) {
       return
     }
     try {
-      await window.guncat.settings.selectApiProfile(profileId)
+      await window.guncat.settings.selectApiProfileModel(picked.profileId, picked.model)
       await reloadSettings()
     } catch (e) {
-      pushNotice('error', `切换配置失败：${String(e)}`)
+      pushNotice('error', `切换模型失败：${String(e)}`)
     }
   }
   // 文件预览：侧栏工作区面板与对话流末尾的产物汇总卡都走这一个入口（弹层在根部渲染一份）
@@ -334,15 +351,12 @@ export default function App() {
             <Picker
               variant="plain"
               triggerClassName="topbar__model"
-              title="当前配置方案（切换即换模型与接入地址）"
-              ariaLabel="选择模型配置"
-              value={settings?.currentApiProfileId ?? ''}
+              title="当前模型（同一服务商可配多个模型，切换即换模型）"
+              ariaLabel="选择模型"
+              value={currentModelValue}
               disabled={running}
-              options={profiles.map((p) => ({
-                value: p.id,
-                label: p.config.model !== '' ? `${p.config.model} · ${p.name}` : p.name
-              }))}
-              onChange={(value) => void switchProfile(value)}
+              options={modelChoices(profiles)}
+              onChange={(value) => void switchModel(value)}
             />
           ) : null}
           {/* 表格提取：原版唯一不依赖对话的独立工具页，入口在顶栏（桌面端没有 pages/ 概念） */}

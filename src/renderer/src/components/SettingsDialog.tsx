@@ -12,7 +12,7 @@ import type {
 import { Constants } from '@core/common/Constants'
 import { useStore } from '../store'
 import { useSpeech } from '../speech/speechStore'
-import { IconChevronDown, IconClose } from '../icons'
+import { IconCheck, IconChevronDown, IconClose, IconTrash } from '../icons'
 import { Picker } from './Picker'
 import {
   reinstallBundled,
@@ -62,8 +62,9 @@ const PROVIDERS: ProviderCopy[] = [
   {
     id: 'anthropic-messages',
     label: 'Anthropic Messages（/messages）',
-    baseUrlPlaceholder: 'https://api.anthropic.com/v1 或 https://api.deepseek.com',
-    modelPlaceholder: 'deepseek-v4-pro / deepseek-v4-flash / claude-...',
+    baseUrlPlaceholder:
+      'https://api.anthropic.com/v1、https://api.deepseek.com/anthropic 或 https://opencode.ai/inference/go',
+    modelPlaceholder: 'deepseek-flash / deepseek-v4-pro / claude-...',
     hint:
       '当前接入方式：Anthropic Messages，建议支持 Anthropic API 的模型优先选择此选项，' +
       '以获得原生图片直传、联网搜索等能力',
@@ -194,6 +195,7 @@ const EMPTY: ApiConfigDto = {
   baseUrl: '',
   apiKey: '',
   model: '',
+  models: [],
   temperature: 0,
   topP: 0,
   maxTokens: 0,
@@ -202,17 +204,39 @@ const EMPTY: ApiConfigDto = {
 }
 
 /**
+ * 模型清单规整：去空白、去重，并把当前模型补进清单。
+ * 与 core 的 ApiConfig.normalizeModels 同一口径；渲染层不 import core 的模型类
+ * （那里带着落盘/迁移语义），但两条规则必须一致，否则保存一次就会丢模型。
+ */
+export function normalizeModelList(models: string[] | undefined, active: string): string[] {
+  const result: string[] = []
+  for (const raw of models ?? []) {
+    const name = String(raw).trim()
+    if (name !== '' && !result.includes(name)) {
+      result.push(name)
+    }
+  }
+  const current = active.trim()
+  if (current !== '' && !result.includes(current)) {
+    result.push(current)
+  }
+  return result
+}
+
+/**
  * 保存前的规整（对齐原版 buildConfig() 854-866）：所有字符串 trim 后再落盘。
  * 用户从别处复制粘贴地址/密钥时经常带上首尾空格与换行，直接存下去会让请求
  * 以「看似填了其实无效」的方式失败（URL 带空格、Authorization 头带换行）。
  */
 export function normalizeApiConfig(draft: ApiConfigDto): ApiConfigDto {
+  const model = draft.model.trim()
   return {
     ...draft,
     provider: draft.provider.trim(),
     baseUrl: draft.baseUrl.trim(),
     apiKey: draft.apiKey.trim(),
-    model: draft.model.trim(),
+    model,
+    models: normalizeModelList(draft.models, model),
     extraParams: draft.extraParams.trim()
   }
 }
@@ -321,12 +345,16 @@ export function SettingsDialog({ open: openOverride }: SettingsDialogProps = {})
   const [engines, setEngines] = useState<SearchEngineDto[]>([])
   const [profileName, setProfileName] = useState('')
   const [saving, setSaving] = useState(false)
-  // 三个可折叠小节的开合。缺省全部收起（对齐原版 advancedOpen / multimodalOpen /
-  // searchOpen 的初值 false）：设置面板一打开就是「常用项 + 三个标题」，
-  // 高级参数、搜索、多模态三块不抢视线。
+  // 模型管理器的新模型输入框（不直接进 draft：未点「添加」前不算配置的一部分）
+  const [newModel, setNewModel] = useState('')
+  // 可折叠小节的开合。缺省**全部收起**（含高级参数、搜索、多模态、终端，
+  // 以及本轮新增的自动朗读与语音输入）：设置面板一打开就是一排标题，
+  // 不会因为某个孤零零的勾选项把面板撑得很长。
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [multimodalOpen, setMultimodalOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
+  const [autoReadOpen, setAutoReadOpen] = useState(false)
+  const [voiceOpen, setVoiceOpen] = useState(false)
   // 终端后端只在 Android 上有得选（window.GuncatShell 存在时）；桌面端整块不渲染
   const [shellOpen, setShellOpen] = useState(false)
   const [shellBack, setShellBack] = useState<ShellBackend>('bundled')
@@ -336,7 +364,13 @@ export function SettingsDialog({ open: openOverride }: SettingsDialogProps = {})
     if (!open) {
       return
     }
-    setDraft(settings?.apiConfig ?? EMPTY)
+    const loaded = settings?.apiConfig
+    setDraft(
+      loaded === null || loaded === undefined
+        ? { ...EMPTY }
+        : { ...loaded, models: normalizeModelList(loaded.models, loaded.model) }
+    )
+    setNewModel('')
     setMmBaseUrl(settings?.multimodalConfig.baseUrl ?? '')
     setMmApiKey(settings?.multimodalConfig.apiKey ?? '')
     setMmModel(settings?.multimodalConfig.model ?? '')
@@ -354,6 +388,8 @@ export function SettingsDialog({ open: openOverride }: SettingsDialogProps = {})
     setAdvancedOpen(false)
     setMultimodalOpen(false)
     setSearchOpen(false)
+    setAutoReadOpen(false)
+    setVoiceOpen(false)
     setShellOpen(false)
     setShellBack(shellBackend())
     setShell(shellInfo())
@@ -423,6 +459,32 @@ export function SettingsDialog({ open: openOverride }: SettingsDialogProps = {})
     setDraft((d) => ({ ...d, [key]: value }))
   }
 
+  /** 添加模型并立刻设为当前模型（用户的下一步通常就是用它） */
+  function addModel(): void {
+    const name = newModel.trim()
+    if (name === '') {
+      return
+    }
+    setDraft((d) => ({
+      ...d,
+      models: normalizeModelList([...d.models, name], name),
+      model: name
+    }))
+    setNewModel('')
+  }
+
+  /** 删除模型；删掉的正好是当前模型时退到清单里的第一个，没有就留空 */
+  function removeModel(name: string): void {
+    setDraft((d) => {
+      const models = d.models.filter((item) => item !== name)
+      return {
+        ...d,
+        models,
+        model: d.model === name ? (models[0] ?? '') : d.model
+      }
+    })
+  }
+
   /** 切换终端后端：立刻写同步存储（下一条命令就生效），同时落进设置偏好 */
   function chooseShellBackend(choice: ShellBackend): void {
     setShellBack(choice)
@@ -472,12 +534,23 @@ export function SettingsDialog({ open: openOverride }: SettingsDialogProps = {})
   async function save(): Promise<void> {
     setSaving(true)
     try {
+      // 输入框里还剩一个没点「添加模型」的名字时也要保存：否则用户填完直接点保存，
+      // 这个模型会静默消失，界面上看起来像是保存成功但列表没变。
+      const pendingModel = newModel.trim()
+      const configDraft =
+        pendingModel === ''
+          ? draft
+          : {
+              ...draft,
+              models: normalizeModelList([...draft.models, pendingModel], pendingModel),
+              model: pendingModel
+            }
       // 一次性保存当前配置方案（名称 + API 配置 + 多模态配置）。
       // 走这条而不是分开调 saveApiConfig / saveMultimodalConfig：
       // 方案才是这几项配置的归属，分开调会让「名称改了但没落到方案上」这类半更新出现。
       await window.guncat.settings.saveCurrentApiProfile(
         profileName.trim(),
-        normalizeApiConfig(draft),
+        normalizeApiConfig(configDraft),
         normalizeMultimodal({
           baseUrl: mmBaseUrl,
           apiKey: mmApiKey,
@@ -505,6 +578,9 @@ export function SettingsDialog({ open: openOverride }: SettingsDialogProps = {})
   const provider = providerCopy(draft.provider)
   const keyField = searchKeyField(search.engine)
   const baseUrlField = searchBaseUrlField(search.engine)
+  // OpenCode 网关（含 Go 套餐）要求 x-opencode-session；这里只负责把规则说清楚，
+  // 真正补头由主进程的 LLMProtocol 统一做（聊天 / 工作流 / 自动审查 / 附件上传都走它）。
+  const isOpencode = /^https?:\/\/opencode\.ai\/inference(?:\/|$)/i.test(draft.baseUrl.trim())
 
   return (
     <div className="overlay" onClick={() => openSettings(false)}>
@@ -516,7 +592,7 @@ export function SettingsDialog({ open: openOverride }: SettingsDialogProps = {})
           </button>
         </div>
 
-        <div className="dialog__body">
+        <div className="dialog__body settings-form">
           {/* 配置方案（对齐原版 SettingsPanel 顶部的「配置方案 / 配置名称」）：
               可以并存多套 API 配置并在其间一键切换，出错时也能两套轮流试。 */}
           <div className="field field--row">
@@ -539,7 +615,7 @@ export function SettingsDialog({ open: openOverride }: SettingsDialogProps = {})
               />
             </div>
           </div>
-          <div className="field field--row">
+          <div className="settings-actions">
             <button className="btn" onClick={() => void addProfile()}>
               新建配置
             </button>
@@ -571,6 +647,16 @@ export function SettingsDialog({ open: openOverride }: SettingsDialogProps = {})
               placeholder={provider.baseUrlPlaceholder}
               onChange={(e) => update('baseUrl', e.target.value)}
             />
+            {isOpencode ? (
+              <div className="field__hint">
+                OpenCode 网关要求每个请求携带会话头 <code>x-opencode-session</code>；
+                本应用会按对话自动附带，不需要手动填写。Go 套餐的 Base URL 是
+                <code>https://opencode.ai/inference/go</code>。
+                注意：同一个方案只能用一种协议 —— 当前是 Anthropic Messages
+                （Claude / Qwen / MiniMax M3 等）；GPT、Grok、GLM、Kimi 走 OpenAI 协议，
+                请另建 Chat Completions 或 Responses 方案。
+              </div>
+            ) : null}
           </div>
 
           {/* 协议路径后缀补全开关（对齐原版 SettingsPanel）：自建网关/代理常需要关掉它 */}
@@ -601,13 +687,66 @@ export function SettingsDialog({ open: openOverride }: SettingsDialogProps = {})
             <div className="field__hint">{credentialHint(settings?.credentialState)}</div>
           </div>
 
+          {/* 一个服务商多个模型：Base URL / Key 只配一次，模型之间点一下就切换 */}
           <div className="field">
-            <label>模型</label>
-            <input
-              value={draft.model}
-              placeholder={provider.modelPlaceholder}
-              onChange={(e) => update('model', e.target.value)}
-            />
+            <label>模型（可添加多个）</label>
+            <div className="settings-models" role="radiogroup" aria-label="模型列表">
+              {draft.models.length === 0 ? (
+                <div className="settings-models__empty">还没有模型，先在下面添加一个</div>
+              ) : (
+                draft.models.map((name) => {
+                  const active = name === draft.model
+                  return (
+                    <div className="settings-model" data-active={active} key={name}>
+                      <button
+                        type="button"
+                        className="settings-model__pick"
+                        role="radio"
+                        aria-checked={active}
+                        title={active ? '当前模型' : `切换到 ${name}`}
+                        onClick={() => update('model', name)}
+                      >
+                        <span className="settings-model__name">{name}</span>
+                        {active ? (
+                          <span className="settings-model__badge">
+                            <IconCheck size={11} />
+                            当前
+                          </span>
+                        ) : null}
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-btn settings-model__remove"
+                        title={`删除模型 ${name}`}
+                        onClick={() => removeModel(name)}
+                      >
+                        <IconTrash size={14} />
+                      </button>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+            <div className="settings-model-add">
+              <input
+                value={newModel}
+                placeholder={provider.modelPlaceholder}
+                aria-label="要添加的模型名称"
+                onChange={(e) => setNewModel(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    addModel()
+                  }
+                }}
+              />
+              <button className="btn" onClick={addModel} disabled={newModel.trim() === ''}>
+                添加模型
+              </button>
+            </div>
+            <div className="field__hint">
+              同一个服务商的多个模型共用上面的地址与 Key；点模型行把它设为当前模型，发送时用当前模型。
+            </div>
           </div>
 
           {/* 高级模型参数（对齐原版 buildAdvancedSection 379-475）：缺省收起 */}
@@ -675,7 +814,7 @@ export function SettingsDialog({ open: openOverride }: SettingsDialogProps = {})
           >
             <div className="field__hint">{SEARCH_INTRO}</div>
 
-            <div className="field field--row" style={{ marginTop: 10 }}>
+            <div className="field field--row settings-gap-top">
               <div>
                 <label>搜索引擎</label>
                 <Picker
@@ -750,7 +889,7 @@ export function SettingsDialog({ open: openOverride }: SettingsDialogProps = {})
               </span>
             </label>
 
-            <div className="field__hint" style={{ marginBottom: 10 }}>
+            <div className="field__hint settings-gap-bottom">
               默认使用 GLM-4.6V-Flash（免费API调用，请在智谱官网获取API Key），推荐使用
               Doubao-Seed-2.0-mini 等轻量多模态模型。
             </div>
@@ -796,13 +935,13 @@ export function SettingsDialog({ open: openOverride }: SettingsDialogProps = {})
               open={shellOpen}
               onToggle={() => setShellOpen((v) => !v)}
             >
-              <div className="field__hint" style={{ marginBottom: 10 }}>
+              <div className="field__hint settings-gap-bottom">
                 工作模式里的 <code>run_command</code> 默认走<b>随包内置的 Termux 用户态</b>：
                 真正的 bash、coreutils、grep/sed/awk/tar，不需要另外安装 Termux。
                 命令在你的会话工作区真实目录里执行，执行前的文件会先落地、执行后再同步回工作区。
               </div>
 
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '4px 0 10px' }}>
+              <div className="settings-inline">
                 <button
                   className={'btn' + (shellBack === 'bundled' ? ' btn--primary' : '')}
                   onClick={() => chooseShellBackend('bundled')}
@@ -817,7 +956,7 @@ export function SettingsDialog({ open: openOverride }: SettingsDialogProps = {})
                 </button>
               </div>
 
-              <div className="field__hint" style={{ marginBottom: 6 }}>
+              <div className="field__hint settings-gap-bottom-sm">
                 内置终端：
                 {!shell?.bundledSupported
                   ? '当前设备 ABI 不在内置范围（仅 arm64），请改用系统 Shell'
@@ -833,7 +972,7 @@ export function SettingsDialog({ open: openOverride }: SettingsDialogProps = {})
                 {shell?.error ? ` · ${shell.error}` : ''}
               </div>
 
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '8px 0' }}>
+              <div className="settings-inline">
                 <button
                   className="btn"
                   onClick={() => {
@@ -859,63 +998,65 @@ export function SettingsDialog({ open: openOverride }: SettingsDialogProps = {})
           ) : null}
 
           {/* 自动朗读开关：对应原版 ChatPage 顶栏的 autoReadEnabled。
-              放在「语音输入」分隔线之前 —— 它属于朗读，不属于转写。 */}
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={autoRead}
-              onChange={(e) => setAutoRead(e.target.checked)}
-            />
-            <span>
-              自动朗读回答
-              <em>
-                开启后每轮回答生成完会自动念一遍（音色与语速在朗读控制条里调）；
-                关掉时正在念的会立刻停下
-              </em>
-            </span>
-          </label>
-
-          <div
-            style={{
-              borderTop: '1px solid var(--border)',
-              margin: '18px 0 14px',
-              paddingTop: 14,
-              fontSize: 12,
-              color: 'var(--text-muted)'
-            }}
+              只有一项也做成折叠栏 —— 设置页所有「配置块」保持同一种视觉与开合规则。 */}
+          <SettingsSection
+            title="自动朗读回答"
+            open={autoReadOpen}
+            onToggle={() => setAutoReadOpen((v) => !v)}
           >
-            语音输入（录音转文字）
-          </div>
-          <div className="field__hint" style={{ marginBottom: 10, marginTop: -6 }}>
-            桌面端没有端侧识别可用，走 OpenAI 兼容的 /audio/transcriptions 接口。
-            留空则复用上面的「多模态解析」地址与 Key。
-          </div>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={autoRead}
+                onChange={(e) => setAutoRead(e.target.checked)}
+              />
+              <span>
+                开启自动朗读
+                <em>
+                  开启后每轮回答生成完会自动念一遍（音色与语速在朗读控制条里调）；
+                  关掉时正在念的会立刻停下
+                </em>
+              </span>
+            </label>
+          </SettingsSection>
 
-          <div className="field">
-            <label>转写 Base URL（可选）</label>
-            <input
-              value={asrBaseUrl}
-              placeholder={mmBaseUrl !== '' ? `默认复用：${mmBaseUrl}` : 'https://api.openai.com/v1'}
-              onChange={(e) => setAsrBaseUrl(e.target.value)}
-            />
-          </div>
-          <div className="field">
-            <label>转写 API Key（可选）</label>
-            <input
-              type="password"
-              value={asrApiKey}
-              placeholder={mmApiKey !== '' ? '默认复用多模态解析的 Key' : 'sk-…'}
-              onChange={(e) => setAsrApiKey(e.target.value)}
-            />
-          </div>
-          <div className="field">
-            <label>转写模型</label>
-            <input
-              value={asrModel}
-              placeholder="whisper-1"
-              onChange={(e) => setAsrModel(e.target.value)}
-            />
-          </div>
+          {/* 语音输入（录音转文字）：与上面的块一样可折叠，缺省收起 */}
+          <SettingsSection
+            title="语音输入（录音转文字）"
+            open={voiceOpen}
+            onToggle={() => setVoiceOpen((v) => !v)}
+          >
+            <div className="field__hint settings-hint--lead">
+              桌面端没有端侧识别可用，走 OpenAI 兼容的 /audio/transcriptions 接口。
+              留空则复用上面的「多模态解析」地址与 Key。
+            </div>
+
+            <div className="field">
+              <label>转写 Base URL（可选）</label>
+              <input
+                value={asrBaseUrl}
+                placeholder={mmBaseUrl !== '' ? `默认复用：${mmBaseUrl}` : 'https://api.openai.com/v1'}
+                onChange={(e) => setAsrBaseUrl(e.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label>转写 API Key（可选）</label>
+              <input
+                type="password"
+                value={asrApiKey}
+                placeholder={mmApiKey !== '' ? '默认复用多模态解析的 Key' : 'sk-…'}
+                onChange={(e) => setAsrApiKey(e.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label>转写模型</label>
+              <input
+                value={asrModel}
+                placeholder="whisper-1"
+                onChange={(e) => setAsrModel(e.target.value)}
+              />
+            </div>
+          </SettingsSection>
 
           {/* 接入方式说明（原版 getHint() 828-839 的三段文案，随接入方式变化）。
               原版把它放在表单最底部、保存按钮之前，这里保持同一位置。 */}

@@ -226,6 +226,8 @@ export function createMobileHost(): MobileHost {
       saveApiConfig: (dto: ApiConfigDto): Promise<void> => session.saveApiConfig(dto),
       saveApiProfiles: (profiles: ApiProfileDto[]): Promise<void> => session.saveApiProfiles(profiles),
       selectApiProfile: (profileId: string): Promise<void> => session.selectApiProfile(profileId),
+      selectApiProfileModel: (profileId: string, model: string): Promise<void> =>
+        session.selectApiProfileModel(profileId, model),
       addApiProfile: (): Promise<ApiProfileDto> => session.addApiProfile(),
       deleteApiProfile: (profileId: string): Promise<void> => session.deleteApiProfile(profileId),
       saveCurrentApiProfile: (

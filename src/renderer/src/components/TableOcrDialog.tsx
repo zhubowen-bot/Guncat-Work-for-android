@@ -128,16 +128,23 @@ export function TableOcrPanel({
   )
 }
 
-/** 可选模型：来自「配置方案」里的模型 + 多模态解析的模型（原版 TableOcrPage 就是这么列的） */
+/** 可选模型：来自「配置方案」里的全部模型 + 多模态解析的模型（原版 TableOcrPage 就是这么列的） */
 export function tableOcrModelOptions(
-  profiles: Array<{ name: string; config: { model: string } }> | undefined,
+  profiles: Array<{ name: string; config: { model: string; models?: string[] } }> | undefined,
   multimodalModel: string
 ): TableOcrModelOption[] {
   const options: TableOcrModelOption[] = []
   for (const profile of profiles ?? []) {
-    const name = profile.config.model
-    if (name !== '' && !options.some((o) => o.id === name)) {
-      options.push({ id: name, label: `${name}（${profile.name}）` })
+    const names =
+      profile.config.models !== undefined && profile.config.models.length > 0
+        ? profile.config.models
+        : profile.config.model !== ''
+          ? [profile.config.model]
+          : []
+    for (const name of names) {
+      if (!options.some((o) => o.id === name)) {
+        options.push({ id: name, label: `${name}（${profile.name}）` })
+      }
     }
   }
   if (multimodalModel !== '' && !options.some((o) => o.id === multimodalModel)) {

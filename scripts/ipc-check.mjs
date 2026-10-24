@@ -52,6 +52,13 @@ export { preferences as kitPreferences, secretStorageState, bindSafeStorage, __s
 export { SubagentService } from '@core/service/SubagentService'
 // 界面消息切分：裸围栏算不算界面是纯逻辑，直接对生产实现下断言
 export { GuncatUiParts } from '@core/common/GuncatUiParts'
+// 预置配置方案与一次性合并：播种规则是纯函数，直接对生产实现下断言，
+// 避免测试里另抄一份「哪些地址算 DeepSeek」的判断。
+export { ApiPresets } from '@core/model/ApiPresets'
+export { ApiProfileSeeder } from '@main/session/ApiProfileSeeder'
+export { ApiProfile } from '@core/model/ApiProfile'
+export { ApiConfig } from '@core/model/ApiConfig'
+export { LLMProtocol } from '@core/common/LLMProtocol'
 `
 )
 
@@ -224,6 +231,15 @@ const settings = await inv('settings:load')
 check('settings:saveApiConfig → load 往返一致', settings.apiConfig?.apiKey === cfg.apiKey && settings.apiConfig?.model === cfg.model)
 check('provider 类型保留', settings.apiConfig?.provider === 'openai-responses')
 check('温度等数值保留', settings.apiConfig?.temperature === 0.7)
+check(
+  '首次加载会播种两套预置方案（Deepseek / Opencode Go）',
+  Array.isArray(settings.apiProfiles) &&
+    settings.apiProfiles.some((p) => p.name === 'Deepseek') &&
+    settings.apiProfiles.some((p) => p.name === 'Opencode Go') &&
+    settings.currentApiProfileId ===
+      settings.apiProfiles.find((p) => p.name === 'Deepseek')?.id,
+  (settings.apiProfiles ?? []).map((p) => p.name).join(', ')
+)
 
 await inv('settings:saveMultimodalConfig', {
   baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
@@ -239,6 +255,47 @@ await inv('settings:saveApiProfiles', [
 ])
 const settings3 = await inv('settings:load')
 check('多套 API 配置可保存', settings3.apiProfiles.length === 1 && settings3.apiProfiles[0].name === '生产')
+
+// --- 一个服务商多个模型：清单落盘 + 在方案内切换当前模型 ---
+const multiCfg = {
+  ...cfg,
+  models: ['deepseek-chat', 'deepseek-v4-pro'],
+  model: 'deepseek-chat'
+}
+await inv('settings:saveApiProfiles', [
+  { id: 'p-multi', name: '多模型', config: multiCfg, multimodalConfig: settings2.multimodalConfig }
+])
+const multiBefore = await inv('settings:load')
+check(
+  '模型清单往返一致（同一方案可存多个模型）',
+  multiBefore.apiProfiles[0].config.models.length === 2 &&
+    multiBefore.apiProfiles[0].config.model === 'deepseek-chat',
+  (multiBefore.apiProfiles[0].config.models ?? []).join(', ')
+)
+
+await inv('settings:selectApiProfileModel', 'p-multi', 'deepseek-v4-pro')
+const multiSwitched = await inv('settings:load')
+check(
+  '切换方案内模型：运行时配置跟着换',
+  multiSwitched.apiConfig?.model === 'deepseek-v4-pro',
+  String(multiSwitched.apiConfig?.model)
+)
+check(
+  '切换方案内模型：选中值也写回方案，切走再切回不丢',
+  multiSwitched.apiProfiles[0].config.model === 'deepseek-v4-pro'
+)
+
+await inv('settings:selectApiProfileModel', 'p-multi', 'deepseek-flash')
+const multiAdded = await inv('settings:load')
+check(
+  '切换到一个清单外的模型时会自动补进清单',
+  multiAdded.apiProfiles[0].config.models.includes('deepseek-flash') &&
+    multiAdded.apiConfig?.model === 'deepseek-flash'
+)
+
+await inv('settings:saveApiProfiles', [
+  { id: 'p1', name: '生产', config: cfg, multimodalConfig: settings2.multimodalConfig }
+])
 
 await inv('settings:saveFlag', 'thinking', true)
 check('开关类配置可保存', true)
@@ -493,10 +550,112 @@ check(
   mod.LocalWebSearch.currentSettings().engine
 )
 
+// --- 预置配置方案与 DeepSeek 兼容合并（纯函数，直接打在播种实现上） ---
+const oldDeepSeek = mod.ApiProfile.create('我的 DeepSeek')
+oldDeepSeek.id = 'old-ds'
+oldDeepSeek.apiConfig.baseUrl = 'https://api.deepseek.com'
+oldDeepSeek.apiConfig.provider = 'openai-completions'
+oldDeepSeek.apiConfig.apiKey = 'sk-deepseek-old'
+oldDeepSeek.apiConfig.model = 'deepseek-chat'
+oldDeepSeek.apiConfig.models = ['deepseek-chat']
+oldDeepSeek.apiConfig.temperature = 0.6
+oldDeepSeek.apiConfig.autoSuffix = false
+
+const oldOther = mod.ApiProfile.create('本地网关')
+oldOther.id = 'old-other'
+oldOther.apiConfig.baseUrl = 'https://gateway.example.com/v1'
+oldOther.apiConfig.apiKey = 'sk-local'
+oldOther.apiConfig.model = 'local-model'
+oldOther.apiConfig.models = ['local-model']
+
+const seededProfiles = mod.ApiProfileSeeder.seed([oldOther, oldDeepSeek], 'old-ds')
+const seededDeepseek = seededProfiles.profiles[0]
+const seededOpencode = seededProfiles.profiles[1]
+check(
+  '预置方案第一个是 Deepseek，接入方式为 Anthropic Messages',
+  seededDeepseek.id === 'preset-deepseek' &&
+    seededDeepseek.name === 'Deepseek' &&
+    seededDeepseek.apiConfig.provider === 'anthropic-messages' &&
+    seededDeepseek.apiConfig.baseUrl === 'https://api.deepseek.com/anthropic',
+  `${seededDeepseek.name} / ${seededDeepseek.apiConfig.provider} / ${seededDeepseek.apiConfig.baseUrl}`
+)
+check(
+  '旧的 api.deepseek.com 方案合并进 Deepseek（Key / 模型 / 参数都保留）',
+  seededProfiles.merged === 1 &&
+    seededDeepseek.apiConfig.apiKey === 'sk-deepseek-old' &&
+    seededDeepseek.apiConfig.model === 'deepseek-chat' &&
+    seededDeepseek.apiConfig.models.includes('deepseek-chat') &&
+    seededDeepseek.apiConfig.models.includes('deepseek-flash') &&
+    seededDeepseek.apiConfig.temperature === 0.6 &&
+    seededDeepseek.apiConfig.autoSuffix === true &&
+    seededProfiles.currentId === 'preset-deepseek',
+  `merged=${seededProfiles.merged} key=${seededDeepseek.apiConfig.apiKey} models=${seededDeepseek.apiConfig.models.join(',')}`
+)
+check(
+  '预置方案第二个是 Opencode Go（Go 套餐 Base URL + Anthropic 模型）',
+  seededOpencode.id === 'preset-opencode-go' &&
+    seededOpencode.name === 'Opencode Go' &&
+    seededOpencode.apiConfig.baseUrl === 'https://opencode.ai/inference/go' &&
+    seededOpencode.apiConfig.models.includes('qwen3.8-max') &&
+    seededOpencode.apiConfig.models.includes('claude-haiku-5-5'),
+  `${seededOpencode.name} / ${seededOpencode.apiConfig.baseUrl}`
+)
+check(
+  '非 DeepSeek 的旧方案保留在预置方案之后',
+  seededProfiles.profiles.some((p) => p.id === 'old-other' && p.apiConfig.apiKey === 'sk-local')
+)
+check(
+  'DeepSeek 域名判定有边界（api.deepseek.com.evil 不算）',
+  mod.ApiPresets.isDeepSeekBaseUrl('https://api.deepseek.com/v1') &&
+    mod.ApiPresets.isDeepSeekBaseUrl('http://api.deepseek.com') &&
+    !mod.ApiPresets.isDeepSeekBaseUrl('https://api.deepseek.com.evil.example/v1')
+)
+
+// --- OpenCode 网关的端点与特殊请求头 ---
+const proto = mod.LLMProtocol
+check(
+  'DeepSeek Anthropic 端点：/anthropic 与主域名都不会重复拼路径',
+  proto.resolveEndpoint('https://api.deepseek.com/anthropic', proto.ANTHROPIC, true) ===
+    'https://api.deepseek.com/anthropic/v1/messages' &&
+    proto.resolveEndpoint('https://api.deepseek.com', proto.ANTHROPIC, true) ===
+      'https://api.deepseek.com/anthropic/v1/messages',
+  proto.resolveEndpoint('https://api.deepseek.com/anthropic', proto.ANTHROPIC, true)
+)
+check(
+  'OpenCode Go 三种协议端点都落在 /openai 或 /anthropic 下',
+  proto.resolveEndpoint('https://opencode.ai/inference/go', proto.ANTHROPIC, true) ===
+    'https://opencode.ai/inference/go/anthropic/v1/messages' &&
+    proto.resolveEndpoint('https://opencode.ai/inference/go', proto.COMPLETIONS, true) ===
+      'https://opencode.ai/inference/go/openai/v1/chat/completions' &&
+    proto.resolveEndpoint('https://opencode.ai/inference/go', proto.RESPONSES, true) ===
+      'https://opencode.ai/inference/go/openai/v1/responses',
+  proto.resolveEndpoint('https://opencode.ai/inference/go', proto.ANTHROPIC, true)
+)
+const opencodeCfg = new mod.ApiConfig()
+opencodeCfg.baseUrl = 'https://opencode.ai/inference/go'
+opencodeCfg.apiKey = 'oc_sk_test'
+opencodeCfg.provider = 'anthropic-messages'
+opencodeCfg.sessionId = 'ses_conv_test'
+const opencodeHeaders = proto.authHeaders(opencodeCfg, proto.ANTHROPIC)
+check(
+  'OpenCode Go 请求带 x-opencode-session（自动审查复用同一实现）',
+  opencodeHeaders['x-opencode-session'] === 'ses_conv_test' &&
+    opencodeHeaders['x-api-key'] === 'oc_sk_test' &&
+    opencodeHeaders['Authorization'] === 'Bearer oc_sk_test',
+  opencodeHeaders['x-opencode-session']
+)
+const normalCfg = new mod.ApiConfig()
+normalCfg.baseUrl = 'https://api.deepseek.com/anthropic'
+normalCfg.apiKey = 'sk-test'
+check(
+  '非 OpenCode 请求不会被塞上 x-opencode-session',
+  proto.authHeaders(normalCfg, proto.ANTHROPIC)['x-opencode-session'] === undefined
+)
+
 // --- 配置方案（多套 API 配置）：原版「配置方案 / 配置名称」，桌面端此前渲染层零调用点 ---
 const settingsProfiles = await inv('settings:load')
 check(
-  '首次加载会把已有的单份配置迁移成一份「默认配置」方案（老用户的 Key 不会丢）',
+  '已保存的方案原样读回（播种只做一次，不会覆盖用户后来的方案列表）',
   Array.isArray(settingsProfiles.apiProfiles) &&
     settingsProfiles.apiProfiles.length >= 1 &&
     settingsProfiles.apiProfiles[0].name.length > 0 &&
