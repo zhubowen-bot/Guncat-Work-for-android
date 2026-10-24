@@ -72,8 +72,6 @@ export class Constants {
   // 会话持久化安全阈值(UTF-16 码元): Preferences 单值上限 16MB 字节,
   // 附件图片 base64 字节量超过该值即剥离, 防止序列化大字符串引发 OOM
   static readonly LS_CONVERSATIONS_SAFE_BYTES: number = 4 * 1024 * 1024;
-  // 持久化时单条消息思考文本保留的末尾字符数(reasoning 是过程性内容, 无需全量落盘)
-  static readonly REASONING_SAVE_MAX_CHARS: number = 20000;
 
   // ===== 工作模式 (Agent Loop + 沙箱工作区) =====
   // 工作模式虚拟智能体 id(与 agents.json 智能体平行, 注入在列表顶部)

@@ -20,7 +20,7 @@
 
 import { Constants } from './Constants';
 
-// 参与预算的最小消息形状: 只看 role/content/toolCalls(正文 + 工具参数 + 工具结果)。
+// 参与预算的最小消息形状: 只看 role/content/reasoning/toolCalls(正文 + 思考 + 工具参数与结果)。
 // 刻意不 import core/service 的 LoopMessage —— core/common 不反向依赖 core/service(现有分层),
 // 结构化类型让 LoopMessage 实例可以直接传进来。
 export interface BudgetToolCall {
@@ -31,6 +31,8 @@ export interface BudgetToolCall {
 export interface BudgetMessage {
   role: string;
   content: string;
+  /** 历史思考文本: 带 tools 的请求会把它拼回上下文, 必须计入预算(旧调用方可不传) */
+  reasoning?: string;
   toolCalls: BudgetToolCall[];
 }
 
@@ -80,9 +82,9 @@ export class ContextBudget {
     return Constants.WORK_CONTEXT_WINDOW_TOKENS * Constants.WORK_COMPACT_TOKEN_RATIO;
   }
 
-  // 单条消息字符量: 正文 + 工具调用参数与结果(对齐原版 msgChars)
+  // 单条消息字符量: 正文 + 思考 + 工具调用参数与结果(对齐原版 msgChars)
   static messageChars(m: BudgetMessage): number {
-    let n: number = m.content.length;
+    let n: number = m.content.length + (m.reasoning === undefined ? 0 : m.reasoning.length);
     for (let c: number = 0; c < m.toolCalls.length; c++) {
       n += m.toolCalls[c].argsJson.length + m.toolCalls[c].result.length;
     }

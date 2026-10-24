@@ -20,7 +20,8 @@ import { PluginHotLoader } from '../src/core/service/PluginHotLoader'
 import type { PluginManifestResult } from '../src/core/common/PluginManifestLoader'
 import { filesDir, cacheDir, tempDir } from '../src/core/platform/appPaths'
 import { StorageManager } from '../src/core/data/StorageManager'
-import { ChatService, resolveEndpointUrl } from '../src/core/service/ChatService'
+import { ChatService, resolveEndpointUrl, buildChatCompletionsBody,
+  buildAnthropicBody } from '../src/core/service/ChatService'
 import { AgentLoopService, LoopMessage, ToolImageAttachment } from '../src/core/service/AgentLoopService'
 import { ApiConfig } from '../src/core/model/ApiConfig'
 import { Conversation } from '../src/core/model/Conversation'
@@ -977,6 +978,124 @@ async function main(): Promise<void> {
   )
   check('掐断时仍然派发 dataEnd，端口代码不会停在半途', endedB)
   stopServer(stalled.server)
+
+  // ===== 20. 跨轮思考重放（带 tools 时历史 reasoning 必须回传）=====
+  section('20. 跨轮思考重放')
+  // 场景：第一轮回答带思考与签名；第二轮重建历史时如果只搬正文，模型就丢了判断依据。
+  // DeepSeek 的规则：请求携带 tools 时，历史轮次的 reasoning_content 都要回传。
+  const replayHistory: Message[] = []
+  replayHistory.push(Message.ofUser('u1', '第一问', '第一问', []))
+  const a1: Message = Message.ofAssistant('a1', '第一轮结论')
+  a1.reasoning = '第一轮思考'
+  a1.thinkingSignature = 'sig-1'
+  replayHistory.push(a1)
+  const a2: Message = Message.ofAssistant('a2', '')
+  a2.reasoning = '只有思考的一步'
+  replayHistory.push(a2)
+  replayHistory.push(Message.ofUser('u2', '第二问', '第二问', []))
+
+  const replayLoop: LoopMessage[] = AgentLoopService.historyMessages(replayHistory)
+  check(
+    '历史重建保留 assistant 思考',
+    replayLoop.some((m) => m.role === 'assistant' && m.reasoning.includes('第一轮思考'))
+  )
+  check(
+    '历史重建保留思考签名',
+    replayLoop.some((m) => m.role === 'assistant' && m.thinkingSignature === 'sig-1')
+  )
+  check(
+    '只有思考、没有正文的步骤不被丢掉',
+    replayLoop.some((m) => m.role === 'assistant' && m.reasoning.includes('只有思考的一步'))
+  )
+  check(
+    '相邻 assistant 步骤合并为一条（thinking 才能保持在内容首位）',
+    replayLoop.filter((m) => m.role === 'assistant').length === 1
+  )
+
+  const replayCfg: ApiConfig = new ApiConfig()
+  replayCfg.provider = 'openai-completions'
+  replayCfg.model = 'deepseek-flash'
+  const replayTools: Record<string, Object>[] = [
+    { name: 'demo', description: 'demo', parameters: { type: 'object', properties: {} } }
+  ]
+  const loopAny = AgentLoopService as unknown as {
+    buildCompletionsBody: (config: ApiConfig, messages: LoopMessage[], tools: Record<string, Object>[],
+      thinkingEnabled: boolean, reasoningEffort: string, webSearchEnabled: boolean,
+      jsonMode?: boolean) => Record<string, Object>
+    buildAnthropicBody: (config: ApiConfig, messages: LoopMessage[], tools: Record<string, Object>[],
+      thinkingEnabled: boolean, reasoningEffort: string,
+      webSearchEnabled: boolean) => Record<string, Object>
+  }
+
+  const withToolsMsgs = loopAny.buildCompletionsBody(
+    replayCfg, replayLoop, replayTools, true, 'high', false)['messages'] as Record<string, Object>[]
+  check(
+    'completions：带 tools 时回传 reasoning_content',
+    withToolsMsgs.some((m) => m['role'] === 'assistant' &&
+      typeof m['reasoning_content'] === 'string' &&
+      (m['reasoning_content'] as string).includes('第一轮思考'))
+  )
+  check(
+    'completions：只有思考的步骤也有 reasoning_content',
+    withToolsMsgs.some((m) => m['role'] === 'assistant' &&
+      typeof m['reasoning_content'] === 'string' &&
+      (m['reasoning_content'] as string).includes('只有思考的一步'))
+  )
+  const noToolsMsgs = loopAny.buildCompletionsBody(
+    replayCfg, replayLoop, [], true, 'high', false)['messages'] as Record<string, Object>[]
+  check(
+    'completions：不带 tools 时不拼 reasoning_content',
+    noToolsMsgs.every((m) => m['reasoning_content'] === undefined)
+  )
+
+  const hasThinkingBlock = (msgs: Record<string, Object>[], text: string): boolean =>
+    msgs.some((m) => {
+      if (m['role'] !== 'assistant') {
+        return false
+      }
+      const content: Object = m['content']
+      if (!(content instanceof Array)) {
+        return false
+      }
+      return (content as Record<string, Object>[]).some(
+        (b) => b['type'] === 'thinking' && typeof b['thinking'] === 'string' &&
+          (b['thinking'] as string).includes(text))
+    })
+  const hasSignature = (msgs: Record<string, Object>[], signature: string): boolean =>
+    msgs.some((m) => {
+      const content: Object = m['content']
+      if (!(content instanceof Array)) {
+        return false
+      }
+      return (content as Record<string, Object>[]).some(
+        (b) => b['type'] === 'thinking' && b['signature'] === signature)
+    })
+
+  const loopAnthropicMsgs = loopAny.buildAnthropicBody(
+    replayCfg, replayLoop, replayTools, true, 'high', false)['messages'] as Record<string, Object>[]
+  check('anthropic：历史思考以 thinking 块回传',
+    hasThinkingBlock(loopAnthropicMsgs, '第一轮思考'))
+  check('anthropic：签名随 thinking 块携带', hasSignature(loopAnthropicMsgs, 'sig-1'))
+  check('anthropic：只有思考的步骤也回传 thinking',
+    hasThinkingBlock(loopAnthropicMsgs, '只有思考的一步'))
+  const loopAnthropicNoThinkMsgs = loopAny.buildAnthropicBody(
+    replayCfg, replayLoop, replayTools, false, 'high', false)['messages'] as Record<string, Object>[]
+  check('anthropic：思考关闭时不塞 thinking 块',
+    !hasThinkingBlock(loopAnthropicNoThinkMsgs, '第一轮思考'))
+
+  // 聊天模式走另一套构建器：历史 Message 直接进请求，同样不能只带正文。
+  const chatAnthropicMsgs = buildAnthropicBody(
+    replayCfg, null, replayHistory, '', true, false)['messages'] as Record<string, Object>[]
+  check('聊天 anthropic：历史正文回答的思考回传',
+    hasThinkingBlock(chatAnthropicMsgs, '第一轮思考'))
+  check('聊天 anthropic：空正文的思考也不丢',
+    hasThinkingBlock(chatAnthropicMsgs, '只有思考的一步'))
+  const chatCompletionMsgs = buildChatCompletionsBody(
+    replayCfg, null, replayHistory, '', true, false)['messages'] as Record<string, Object>[]
+  check(
+    '聊天 completions：正文回答回传 reasoning_content',
+    chatCompletionMsgs.some((m) => m['role'] === 'assistant' && m['reasoning_content'] === '第一轮思考')
+  )
 
   // ===== 结果 =====
   console.log(`\n${'─'.repeat(58)}`)

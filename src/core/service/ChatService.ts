@@ -127,7 +127,9 @@ export function resolveEndpointUrl(config: ApiConfig, protocol: string): string 
   return LLMProtocol.resolveEndpoint(config.baseUrl, protocol, config.autoSuffix);
 }
 
-function buildChatCompletionsBody(config: ApiConfig, agent: Agent | null,
+// 导出两个请求体构建器：跨轮思考重放的回归检查要直接对生产实现下断言，
+// 不要在测试里另抄一份「reasoning_content/thinking 放在哪」的规则。
+export function buildChatCompletionsBody(config: ApiConfig, agent: Agent | null,
   history: Message[], userText: string,
   thinkingEnabled: boolean, webSearchEnabled: boolean): Record<string, Object> {
   let messages: Record<string, Object>[] = [];
@@ -136,8 +138,9 @@ function buildChatCompletionsBody(config: ApiConfig, agent: Agent | null,
   }
   for (let i: number = 0; i < history.length; i++) {
     let m: Message = history[i];
-    // 只带工具调用的 assistant 消息(content 为空)不能跳过, 工具结果回灌依赖它
-    if (m.content === '' && m.toolCalls.length === 0) {
+    // 只带工具调用的 assistant 消息(content 为空)不能跳过, 工具结果回灌依赖它;
+    // 正文为空但带思考的历史 assistant 同样不能跳（reasoning_content 本身就是有效内容）。
+    if (m.content === '' && m.toolCalls.length === 0 && m.reasoning === '') {
       continue;
     }
     if (m.role !== 'user' && m.role !== 'assistant') {
@@ -186,7 +189,9 @@ function buildChatCompletionsBody(config: ApiConfig, agent: Agent | null,
       }
     }
     if (m.role === 'assistant' && m.toolCalls.length > 0) {
-      // 本地工具循环: assistant(tool_calls) + role:'tool' 结果回传
+      // 本地工具循环: assistant(tool_calls) + role:'tool' 结果回传。
+      // 带 tool_calls 的 assistant 同样要回传 reasoning_content —— DeepSeek 的规则是
+      // 「带 tools 的请求，后续每次请求都要完整回传历史 reasoning」，漏掉这一条会 400。
       let callArr: Record<string, Object>[] = [];
       for (let c: number = 0; c < m.toolCalls.length; c++) {
         let call: ToolCallRecord = m.toolCalls[c];
@@ -196,11 +201,15 @@ function buildChatCompletionsBody(config: ApiConfig, agent: Agent | null,
           function: { name: call.name, arguments: call.argsJson === '' ? '{}' : call.argsJson }
         });
       }
-      messages.push({
+      let assistantMsg: Record<string, Object> = {
         role: 'assistant',
         content: m.content === '' ? null : m.content,
         tool_calls: callArr
-      });
+      };
+      if (m.reasoning !== '') {
+        assistantMsg['reasoning_content'] = m.reasoning;
+      }
+      messages.push(assistantMsg);
       for (let c: number = 0; c < m.toolCalls.length; c++) {
         let call: ToolCallRecord = m.toolCalls[c];
         messages.push({
@@ -212,8 +221,9 @@ function buildChatCompletionsBody(config: ApiConfig, agent: Agent | null,
       continue;
     }
     let chatMsg: Record<string, Object> = { role: m.role, content: m.content };
-    // 请求携带 tools（联网搜索）时，DeepSeek 要求回传中间 assistant 的 reasoning_content，否则多轮可能 400。
-    if (m.role === 'assistant' && webSearchEnabled && m.reasoning !== '') {
+    // 请求恒带 tools（本地 search_web / web_fetch），因此历史 assistant 的 reasoning_content
+    // 必须回传：它是「带 tools 时会被拼进上下文」的内容，只回正文会让第二轮起丢掉前面的思考。
+    if (m.role === 'assistant' && m.reasoning !== '') {
       chatMsg['reasoning_content'] = m.reasoning;
     }
     messages.push(chatMsg);
@@ -443,14 +453,15 @@ function appendAnthropicMessage(messages: Record<string, Object>[], role: string
   messages.push({ role: role, content: content });
 }
 
-function buildAnthropicBody(config: ApiConfig, agent: Agent | null,
+export function buildAnthropicBody(config: ApiConfig, agent: Agent | null,
   history: Message[], userText: string,
   thinkingEnabled: boolean, webSearchEnabled: boolean): Record<string, Object> {
   let messages: Record<string, Object>[] = [];
   for (let i: number = 0; i < history.length; i++) {
     let m: Message = history[i];
-    // 只带工具调用的 assistant 消息(content 为空)不能跳过, 工具结果回灌依赖它
-    if (m.content === '' && m.toolCalls.length === 0) {
+    // 只带工具调用的 assistant 消息(content 为空)不能跳过, 工具结果回灌依赖它;
+    // 正文为空但带思考的历史 assistant 同样不能跳（thinking 块本身就是有效内容）。
+    if (m.content === '' && m.toolCalls.length === 0 && m.reasoning === '') {
       continue;
     }
     if (m.role !== 'user' && m.role !== 'assistant') {
@@ -555,6 +566,23 @@ function buildAnthropicBody(config: ApiConfig, agent: Agent | null,
         });
       }
       appendAnthropicMessage(messages, 'user', results);
+    } else if (m.role === 'assistant') {
+      // 历史 assistant 的思考也要回传（不只是带 tool_use 的那一轮）：
+      // 带 tools 的请求里，思考是会被拼回上下文的正式内容，丢了就只剩正文总结。
+      if (thinkingEnabled && m.reasoning !== '') {
+        let thinkingBlock: Record<string, Object> = { type: 'thinking', thinking: m.reasoning };
+        if (m.thinkingSignature !== '') {
+          thinkingBlock['signature'] = m.thinkingSignature;
+        }
+        let blocks: Object[] = [thinkingBlock];
+        if (m.content !== '') {
+          blocks.push({ type: 'text', text: m.content });
+        }
+        appendAnthropicMessage(messages, 'assistant', blocks);
+      } else if (m.content !== '') {
+        appendAnthropicMessage(messages, 'assistant', m.content);
+      }
+      // 正文与思考都为空（或思考关闭且没有正文）的 assistant 不落进请求
     } else {
       appendAnthropicMessage(messages, m.role, m.content);
     }

@@ -14,7 +14,8 @@ import { pickFilesFromDevice } from './native/picker'
 import { createMobileHost } from './host'
 import { runShell } from './platform/shell'
 import { shellStatus } from './platform/shellExec'
-import { mirrorRootFor, installMirrorFsEvents, WorkspaceMirror } from './platform/mirror'
+import { mirrorRootFor, installMirrorFsEvents, WorkspaceMirror,
+  MIRROR_MAX_FILE_BYTES, MIRROR_MAX_TOTAL_BYTES } from './platform/mirror'
 import { runJs } from './platform/libguncatjs'
 import { pdfService } from '@kit.PDFKit'
 import { installPdfJsBackend, preloadPdfJs } from './platform/pdfBackend'
@@ -99,6 +100,8 @@ export async function bootMobile(): Promise<void> {
     mirrorRootFor,
     // 冒烟用：直接驱动镜像的同步逻辑（浏览器里没有原生 Shell，但有假桥也能测目录收敛）
     WorkspaceMirror,
+    // 镜像边界：真机命令只能看到落进设备副本的文件，上限漂移会静默改变行为
+    mirrorLimits: { maxFileBytes: MIRROR_MAX_FILE_BYTES, maxTotalBytes: MIRROR_MAX_TOTAL_BYTES },
     // 浏览器冒烟专用：造测试素材 + 直接驱动 PDF 三件套（与工具执行走同一套内核）
     writeFileBase64,
     pdf: {

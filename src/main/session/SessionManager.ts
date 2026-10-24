@@ -1585,6 +1585,9 @@ export class SessionManager {
           }
 
           targetMsg.reasoning = turn.reasoning
+          // Anthropic 的签名只在本次运行的内存里跟着消息走：下一轮把历史思考块
+          // 原样回传时随块携带（DeepSeek 的 /anthropic 端点不签名，留空即可）。
+          targetMsg.thinkingSignature = turn.thinkingSignature
           targetMsg.tokenSpeed = turn.tokenSpeed
           targetMsg.cacheHitRate = turn.cacheHitRate
           finishReason = turn.finishReason ?? ''

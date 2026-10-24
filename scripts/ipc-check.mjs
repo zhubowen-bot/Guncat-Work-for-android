@@ -5953,6 +5953,9 @@ const ctxServer = http.createServer((req, res) => {
       done()
       return
     }
+    // 每轮都先吐一段思考：第二轮请求必须把第一轮的 reasoning_content 带回，
+    // 否则带 tools 的 DeepSeek 请求会 400 / 上下文里只剩正文总结。
+    send({ choices: [{ delta: { reasoning_content: '第一轮思考：先记住暗号' } }] })
     send({ choices: [{ delta: { content: CTX_ANSWER } }] })
     done()
   })
@@ -6021,6 +6024,12 @@ check(
   ctxAnswerIdx > 0 &&
     (ctxSecondMsgs[ctxAnswerIdx].tool_calls === undefined ||
       ctxSecondMsgs[ctxAnswerIdx].tool_calls.length === 0)
+)
+check(
+  '重放的历史 assistant 带回 reasoning_content（带 tools 时是协议硬要求，只回正文会失忆）',
+  ctxSecondMsgs.some(
+    (m) => m.role === 'assistant' && String(m.reasoning_content ?? '').includes('第一轮思考')
+  )
 )
 
 // 交互模式走的是同一条 runWork，也必须记得上一轮（用户报障覆盖两种模式）

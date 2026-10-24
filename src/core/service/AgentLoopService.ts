@@ -145,23 +145,48 @@ export class AgentLoopService {
    * 为什么单独抽出来：工作/交互模式每开一个任务都要重建 messages，不先把旧轮次接上的话，
    * 模型从第二轮起就是「失忆」的 —— 用户问「我上面说了什么」，它如实回答「没有历史」。
    *
-   * 只搬正文，**刻意不搬 toolCalls**：上一轮的工具结果动辄几十 KB，重放既撑爆预算，
+   * 只搬正文与思考，**刻意不搬 toolCalls**：上一轮的工具结果动辄几十 KB，重放既撑爆预算，
    * 又会在协议里造出「assistant 的 tool_calls 找不到配对的 result」的断链
-   * （历史被裁剪时必然发生，那是 400 的直接来源）。模型要记住的是「谁说了什么」，正文够。
-   * 正文为空的跳过：工作模式里存在只调工具、一个字没写的 assistant 消息，
-   * 而 content 为空的消息在部分协议上会被直接拒绝。
+   * （历史被裁剪时必然发生，那是 400 的直接来源）。模型要记住的是「谁说了什么、当时怎么想」。
+   *
+   * 思考文本必须一起搬（而不只是正文）：请求带 tools 时（工作模式恒带），DeepSeek 要求
+   * 历史 assistant 的 reasoning_content 原样回传、并会拼进上下文；只回正文等于把长任务里
+   * 最关键的判断依据全部丢掉，第二轮起就会「失忆」。Anthropic 侧对应 thinking 块，
+   * 签名在本次运行内捕获到的随块携带（see Message.thinkingSignature）。
+   *
+   * 正文为空但思考不为空的消息要保留：工作模式里「只调工具、没写正文」的一步，思考
+   * 往往正是它为什么调这个工具的依据。两者都空才跳过（content 全空的消息部分协议会拒绝）。
    */
   static historyMessages(history: Message[]): LoopMessage[] {
     let out: LoopMessage[] = [];
+    const appendText = (prev: string, next: string): string =>
+      prev === '' ? next : (next === '' ? prev : prev + '\n\n' + next);
     for (let i: number = 0; i < history.length; i++) {
       let msg: Message = history[i];
-      if (msg.content.trim() === '') {
+      let hasText: boolean = msg.content.trim() !== '';
+      let hasReasoning: boolean = msg.reasoning.trim() !== '';
+      if (!hasText && !hasReasoning) {
         continue;
       }
       if (msg.role === 'user') {
         out.push(LoopMessage.user(msg.content));
       } else if (msg.role === 'assistant') {
-        out.push(LoopMessage.assistant(msg.content, []));
+        // 相邻 assistant 步骤合并成一条：Anthropic 要求 user/assistant 交替，而它的
+        // thinking 块必须位于内容首位 —— 逐条 append 再合并会把后一步的 thinking 挤到
+        // 前一步正文之后。合并后思考与正文各自用空行连接，语义仍是「连续几轮的说法」。
+        let last: LoopMessage | null = out.length > 0 ? out[out.length - 1] : null;
+        if (last !== null && last.role === 'assistant') {
+          last.content = appendText(last.content, msg.content);
+          last.reasoning = appendText(last.reasoning, msg.reasoning);
+          if (msg.thinkingSignature !== '') {
+            last.thinkingSignature = msg.thinkingSignature;
+          }
+          continue;
+        }
+        let loopMsg: LoopMessage = LoopMessage.assistant(msg.content, []);
+        loopMsg.reasoning = msg.reasoning;
+        loopMsg.thinkingSignature = msg.thinkingSignature;
+        out.push(loopMsg);
       }
     }
     return out;
@@ -908,6 +933,9 @@ export class AgentLoopService {
     tools: Record<string, Object>[], thinkingEnabled: boolean, reasoningEffort: string,
     webSearchEnabled: boolean, jsonMode: boolean = false): Record<string, Object> {
     let msgs: Record<string, Object>[] = [];
+    // 带 tools 的请求必须回传历史 reasoning_content（DeepSeek 的硬要求，缺了会 400；
+    // 不带 tools 时该字段会被服务端忽略，所以只在有工具时拼，避免无意义地放大请求体）。
+    let replayReasoning: boolean = tools.length > 0;
     let systemText: string = messages.length > 0 ? messages[0].content : '';
     if (messages.length > 0 && messages[0].role === 'system' && systemText !== '') {
       msgs.push({ role: 'system', content: systemText });
@@ -937,17 +965,25 @@ export class AgentLoopService {
               function: { name: call.name, arguments: call.argsJson === '' ? '{}' : call.argsJson }
             });
           }
-          msgs.push({
+          let assistantMsg: Record<string, Object> = {
             role: 'assistant',
             content: m.content === '' ? null : m.content,
             tool_calls: callArr
-          });
+          };
+          if (replayReasoning && m.reasoning !== '') {
+            assistantMsg['reasoning_content'] = m.reasoning;
+          }
+          msgs.push(assistantMsg);
           for (let c: number = 0; c < m.toolCalls.length; c++) {
             let call: ToolCallRecord = m.toolCalls[c];
             msgs.push({ role: 'tool', tool_call_id: call.id, content: call.result });
           }
-        } else if (m.content !== '') {
-          msgs.push({ role: 'assistant', content: m.content });
+        } else if (m.content !== '' || (replayReasoning && m.reasoning !== '')) {
+          let assistantMsg: Record<string, Object> = { role: 'assistant', content: m.content };
+          if (replayReasoning && m.reasoning !== '') {
+            assistantMsg['reasoning_content'] = m.reasoning;
+          }
+          msgs.push(assistantMsg);
         }
       }
     }
@@ -996,6 +1032,10 @@ export class AgentLoopService {
     tools: Record<string, Object>[], thinkingEnabled: boolean, reasoningEffort: string,
     webSearchEnabled: boolean, jsonMode: boolean = false): Record<string, Object> {
     let input: Record<string, Object>[] = [];
+    // 这里刻意不回传历史思考：Responses 是无状态 API，reasoning item 要带服务端签发的
+    // id/encrypted_content 才能原样回放；本端只有明文 reasoning，猜 item 形状会把官方
+    // 端点打成 400。工作/聊天的默认协议是 Anthropic Messages 与 Chat Completions，
+    // 两者都已补齐回传（见各自的 build*Body）。
     let systemText: string = messages.length > 0 ? messages[0].content : '';
     for (let i: number = 0; i < messages.length; i++) {
       let m: LoopMessage = messages[i];
@@ -1077,6 +1117,9 @@ export class AgentLoopService {
     tools: Record<string, Object>[], thinkingEnabled: boolean, reasoningEffort: string,
     webSearchEnabled: boolean): Record<string, Object> {
     let msgs: Record<string, Object>[] = [];
+    // 与 completions 同一条规则：请求带 tools 时，历史 assistant 的思考必须回传。
+    // Anthropic 协议的载体是 thinking 块（置于 assistant 内容首位），签名捕获到时随块携带。
+    let replayThinking: boolean = tools.length > 0;
     let systemText: string = messages.length > 0 ? messages[0].content : '';
     for (let i: number = 0; i < messages.length; i++) {
       let m: LoopMessage = messages[i];
@@ -1101,9 +1144,11 @@ export class AgentLoopService {
           AgentLoopService.appendAnthropicText(msgs, 'user', m.content);
         }
       } else if (m.role === 'assistant') {
-        // 思考模式下必须把上一轮 assistant 的思考块回传(置于消息首位), 否则服务端 400;
-        // 思考文本与签名仅内存循环内的消息携带(fromTurn), 历史重建的消息不回传
-        let thinking: Object[] = AgentLoopService.anthropicThinkingBlocks(m, thinkingEnabled);
+        // 思考块必须置于 assistant 内容首位。带 tools 时，历史轮次（不只是同一轮的
+        // tool_use 续轮）也要回传：DeepSeek 会把历史 reasoning 拼进上下文，缺了它
+        // 第二轮起就只剩正文总结（本轮内 fromTurn 携带的思考同样走这里）。
+        let thinking: Object[] = replayThinking ?
+          AgentLoopService.anthropicThinkingBlocks(m, thinkingEnabled) : [];
         if (m.toolCalls.length > 0) {
           let blocks: Object[] = thinking.slice();
           if (m.content !== '') {
@@ -1129,14 +1174,12 @@ export class AgentLoopService {
             });
           }
           AgentLoopService.appendAnthropicBlocks(msgs, 'user', results);
-        } else if (m.content !== '') {
-          if (thinking.length > 0) {
-            let blocks: Object[] = thinking.slice();
+        } else if (m.content !== '' || thinking.length > 0) {
+          let blocks: Object[] = thinking.slice();
+          if (m.content !== '') {
             blocks.push({ type: 'text', text: m.content });
-            AgentLoopService.appendAnthropicBlocks(msgs, 'assistant', blocks);
-          } else {
-            AgentLoopService.appendAnthropicText(msgs, 'assistant', m.content);
           }
+          AgentLoopService.appendAnthropicBlocks(msgs, 'assistant', blocks);
         }
       }
     }

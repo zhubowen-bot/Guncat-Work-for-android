@@ -403,6 +403,35 @@ async function listing(conv) {
   check('列表只列新目录', out.includes('new/inner/a.txt') && !out.includes('old/'), out)
 }
 
+// ---------- 回归：大文件也要镜像（旧上限 8MB 会让真机命令看不到文件） ----------
+{
+  console.log('\n回归 大文件镜像')
+  const conv = 'bigfile'
+  // 9MB：刚好越过旧的 8MB 上限，又在新的 32MB 上限内。
+  // 文件工具单次写入有 512KB 上限，这里直接写 memfs（等价于模型用 run_js/命令产出的文件）。
+  const size = 9 * 1024 * 1024
+  WorkFileService.ensureWorkspace(ctx, conv)
+  WorkFileService.writeBytes(rootOf(conv) + '/big.bin', new Uint8Array(size).fill(120))
+  check('写入 9MB 工作区文件', (await listing(conv)).includes('big.bin'))
+  const notes = runCommand(conv, () => {})
+  check('大于旧上限的文件已同步到设备', fs.existsSync(path.join(devicePath(rootOf(conv)), 'big.bin')))
+  check(
+    '设备副本字节数一致',
+    fs.existsSync(path.join(devicePath(rootOf(conv)), 'big.bin')) &&
+      fs.statSync(path.join(devicePath(rootOf(conv)), 'big.bin')).size === size,
+    String(fs.existsSync(path.join(devicePath(rootOf(conv)), 'big.bin'))
+      ? fs.statSync(path.join(devicePath(rootOf(conv)), 'big.bin')).size
+      : -1)
+  )
+  check('同步过程没有超限提示', !notes.some((n) => n.includes('超过镜像上限')), notes.join(' | '))
+
+  // 命令侧改大文件后要能读回工作区（syncUp 同样受 32MB 上限约束）。
+  runCommand(conv, (dir) => {
+    fs.appendFileSync(path.join(dir, 'big.bin'), 'tail')
+  })
+  check('命令改过的大文件已读回工作区', (await listing(conv)).includes('big.bin'))
+}
+
 // ---------- 回归：清空工作区 ----------
 {
   console.log('\n回归 清空工作区')

@@ -4,7 +4,9 @@
 //
 // 边界（与 docs/ANDROID.md 一致）：
 //   · 只镜像 /guncat/data/files/workspaces/<会话>，不同步设置、会话历史与 API Key；
-//   · 单文件 8MB、单次同步 32MB 封顶，超出的文件留在设备上并在结果里明确说明；
+//   · 单文件 32MB、单次同步 64MB 封顶，超出的文件留在设备上并在结果里明确说明；
+//     32MB 同时是原生 fsRead 的上限（ShellManager.java），两边必须对齐 ——
+//     否则同步下去的文件读不回来，工作区会凭空少一块。
 //   · memfs 仍是一等公民：文件工具的写入一定会在下一次命令前落盘，命令行的改动会在
 //     命令结束后读回；后台任务与文件工具同时改同一个文件时按「后写覆盖」处理。
 //
@@ -22,8 +24,13 @@ import { parseJson, shellBridge } from '../native/shellBridge'
 import { setFsDeleteListener } from '../shims/fsEvents'
 
 export const WORKSPACES_ROOT = '/guncat/data/files/workspaces'
-const MAX_FILE_BYTES = 8 * 1024 * 1024
-const MAX_TOTAL_BYTES = 32 * 1024 * 1024
+// base64 过桥会把体积放大 4/3，单文件 32MB 时 JS/Java 两侧各有一份字符串与字节数组，
+// 峰值约 150MB —— 这是 WebView 能稳定承受的上限。再往上应当走分块传输，
+// 而不是继续抬这个数字（原生 fsRead 也只读到 32MB）。
+export const MIRROR_MAX_FILE_BYTES = 32 * 1024 * 1024
+export const MIRROR_MAX_TOTAL_BYTES = 64 * 1024 * 1024
+const MAX_FILE_BYTES = MIRROR_MAX_FILE_BYTES
+const MAX_TOTAL_BYTES = MIRROR_MAX_TOTAL_BYTES
 const MAX_ENTRIES = 20_000
 
 interface LocalEntry {
@@ -328,12 +335,18 @@ export class WorkspaceMirror {
       if (entry.size > MAX_FILE_BYTES) {
         if (!this.state.skipped.has(entry.vpath)) {
           this.state.skipped.add(entry.vpath)
-          this.warn(`文件 ${entry.vpath} 有 ${(entry.size / 1024 / 1024).toFixed(1)}MB，超过镜像上限，未同步到设备`)
+          this.warn(
+            `文件 ${entry.vpath} 有 ${(entry.size / 1024 / 1024).toFixed(1)}MB，超过镜像上限 ` +
+              `${(MAX_FILE_BYTES / 1024 / 1024).toFixed(0)}MB，未同步到设备（真机命令看不到它）`
+          )
         }
         continue
       }
       if (total + entry.size > MAX_TOTAL_BYTES) {
-        this.warn('本次要同步的文件超过 32MB，剩余文件没有写进设备（命令可能看不到它们）')
+        this.warn(
+          `本次要同步的文件超过 ${(MAX_TOTAL_BYTES / 1024 / 1024).toFixed(0)}MB，` +
+            '剩余文件没有写进设备（命令可能看不到它们）'
+        )
         break
       }
       let bytes: Uint8Array
@@ -409,13 +422,19 @@ export class WorkspaceMirror {
       if (entry.size > MAX_FILE_BYTES) {
         if (!this.state.skipped.has(entry.vpath)) {
           this.state.skipped.add(entry.vpath)
-          this.warn(`命令生成了 ${entry.vpath}（${(entry.size / 1024 / 1024).toFixed(1)}MB），超过镜像上限，没有读回工作区`)
+          this.warn(
+            `命令生成了 ${entry.vpath}（${(entry.size / 1024 / 1024).toFixed(1)}MB），` +
+              `超过镜像上限 ${(MAX_FILE_BYTES / 1024 / 1024).toFixed(0)}MB，没有读回工作区`
+          )
         }
         this.state.remoteSigs.set(entry.vpath, sig)
         continue
       }
       if (total + entry.size > MAX_TOTAL_BYTES) {
-        this.warn('本次设备上的新文件超过 32MB，剩余文件没有读回工作区')
+        this.warn(
+          `本次设备上的新文件超过 ${(MAX_TOTAL_BYTES / 1024 / 1024).toFixed(0)}MB，` +
+            '剩余文件没有读回工作区'
+        )
         break
       }
       const parsed = parseJson(bridge.fsRead(entry.vpath))

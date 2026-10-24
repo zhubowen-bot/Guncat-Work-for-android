@@ -553,6 +553,20 @@ try {
   check('镜像：删目录当轮同步到设备', dirMirror.deletePropagated)
   check('镜像：命令删目录后工作区不再列出', dirMirror.syncUpCleaned, dirMirror.paths.join(','))
 
+  // 镜像边界：旧上限 8MB 会让 11MB 级的工作区文件在真机命令里凭空消失（用户实际踩过）。
+  // 断言打包产物里的真实常量，避免改了源码却漏进 Android bundle。
+  const mirrorLimits = await page.evaluate(() => window.__guncatDebug.mirrorLimits)
+  check(
+    '镜像：单文件上限 32MB',
+    mirrorLimits.maxFileBytes === 32 * 1024 * 1024,
+    String(mirrorLimits.maxFileBytes)
+  )
+  check(
+    '镜像：单次同步上限 64MB',
+    mirrorLimits.maxTotalBytes === 64 * 1024 * 1024,
+    String(mirrorLimits.maxTotalBytes)
+  )
+
   const js = await page.evaluate(async () => {
     const { runJs } = window.__guncatDebug
     const ok = await runJs('write("out.txt", inputs["a.txt"].toUpperCase()); inputs["a.txt"].length', {

@@ -7,6 +7,25 @@
 
 ---
 
+## Android 版（0.3.1-android）
+
+### 修复
+
+- **工作区里的大文件不再在真机命令里「凭空消失」**：镜像的单文件上限从 8MB 提到 **32MB**
+  （与原生 `fsRead` 的上限对齐），单次同步从 32MB 提到 **64MB**。11MB 级的 ZIP / 附件现在会
+  真的落到设备，`run_command` 里的 `unzip` / `python3 zipfile` 能看到它；超限提示补上了
+  「真机命令看不到它」，不再让模型以为文件存在、再用一个 `FileNotFoundError` 去猜。
+- **工作 / 交互 / 聊天模式第二轮起不再丢思考（失忆）**：重建跨轮历史时，assistant 的
+  `reasoning` 与 `thinkingSignature` 随正文一起带上；请求带 `tools` 时按协议回传
+  —— OpenAI Chat Completions 拼 `reasoning_content`（带 `tool_calls` 的 assistant 也拼），
+  Anthropic Messages 以 `thinking` 块置于内容首位、签名捕获到时随块携带。此前只回传正文，
+  长任务里最关键的判断依据在下一轮全部消失。
+- **思考内容全量落盘**：删掉 `capReasoning`（单条只留末尾 2 万字符）。reasoning 不再由存储层
+  截断，上限交给上下文预算与 1M 窗口；同时把 reasoning 计入上下文预算的字符量，
+  压缩阈值不再低估真实 prompt。
+
+---
+
 ## Android 版（0.3.0-android）
 
 把 `run_command` 从「JS 模拟的 POSIX 子集」换成**随 APK 内置的真实 Linux 用户态**，

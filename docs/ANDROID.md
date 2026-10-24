@@ -174,7 +174,7 @@ Android 版的 `node:fs` 是 memfs（`src/mobile/shims/fs.ts`），而真实命�
 - 目录账本（`state.dirs`）两边都记：只清「自己同步过、且已从另一侧消失」的目录，
   命令正在后台新建、还没读回工作区的目录不会被当成残留误删；
 - 只镜像 `/guncat/data/files/workspaces/<会话>`，不同步设置、会话历史与 API Key；
-- 单文件 8MB、单次同步 32MB 封顶，超限会写进命令结果，不静默跳过；
+- 单文件 32MB、单次同步 64MB 封顶（32MB 与原生 `fsRead` 对齐），超限会写进命令结果，不静默跳过；
 - 后台任务与文件工具同时改同一个文件时按「后写覆盖」；镜像状态只在本次页面生命周期内保存，
   刷新页面后首次命令会重新上传（memfs 的 mtime 本来也会在恢复时重置）。
 
@@ -356,7 +356,7 @@ python scripts/add-termux-packages.py
 | `targetSdk 28` | Android 10+ 才允许执行应用私有目录文件，降到 28 是内置终端的硬前提；Play 商店新应用不适用此版本，本应用走 sideload |
 | APK 体积 / 磁盘 | APK 约 211MB；首次解压约占 560MB 私有空间 |
 | `pkg install` | 新装 deb 的路径仍写死 `com.termux`，当前未做逐包改写；内置 Python/pip/Git 可用，其他工具需后续适配 |
-| 工作区镜像 | 单文件 8MB / 单次 32MB；大文件、超大目录（如完整 `node_modules`）不会完整落地 |
+| 工作区镜像 | 单文件 32MB / 单次 64MB；更大的单文件、超大目录（如完整 `node_modules`）不会完整落地 |
 | 后台执行 | WebView 退后台可能被冻结；没有前台服务与常驻通知 |
 | 自定义工作区 | 只支持应用沙箱；导出/分享走 ZIP |
 | 分享 | 一律走系统分享面板（可发到微信）；文件经 `content://`（FileShareProvider）交给目标应用 |

@@ -40,8 +40,9 @@ export class StorageManager {
       if (StorageManager.hasHeavyAttachments(convs)) {
         arr = StorageManager.sanitizeConversations(arr);
       }
-      // 工作模式长任务的 reasoning 会无限增长, 落盘前只保留末尾(原有行为, 不丢会话)
-      StorageManager.capReasoning(arr);
+      // 思考内容全量落盘: 下一轮请求要把历史 reasoning 原样回传(带 tools 时是协议硬要求),
+      // 截断会让模型在长任务里丢掉自己此前的判断依据; 上下文预算/1M 窗口负责上限,
+      // 存储层不再私自裁剪(对话文件本来也没有 Preferences 那种单值体积限制)。
       let jsonStr: string = JSON.stringify(arr);
       StorageManager.writeConversationsFile(context, jsonStr);
     } catch (error) {
@@ -182,27 +183,6 @@ export class StorageManager {
   }
 
   // ===== 原有会话预处理(保留, 非破坏性) =====
-
-  // 持久化前修剪思考文本: 单条消息只保留末尾 REASONING_SAVE_MAX_CHARS
-  // (toJson/sanitizeConversations 返回的都是全新对象, 原地修改不影响内存中的会话)
-  private static capReasoning(arr: Object[]): void {
-    for (let i: number = 0; i < arr.length; i++) {
-      let c: Record<string, Object> = arr[i] as Record<string, Object>;
-      let rawMsgs: Object = c['messages'];
-      if (rawMsgs === undefined || !(rawMsgs instanceof Array)) {
-        continue;
-      }
-      let msgs: Object[] = rawMsgs as Object[];
-      for (let j: number = 0; j < msgs.length; j++) {
-        let m: Record<string, Object> = msgs[j] as Record<string, Object>;
-        let r: Object = m['reasoning'];
-        if (typeof r === 'string' && (r as string).length > Constants.REASONING_SAVE_MAX_CHARS) {
-          m['reasoning'] = '…' +
-            (r as string).slice((r as string).length - Constants.REASONING_SAVE_MAX_CHARS);
-        }
-      }
-    }
-  }
 
   // 附件图片(dataUrl/thumbnail)字节总量是否超过安全阈值
   private static hasHeavyAttachments(convs: Conversation[]): boolean {
