@@ -7,6 +7,25 @@
 
 ---
 
+## Android 版（0.3.2-android）
+
+### 修复
+
+- **长任务不再「安静地停住」**：三种协议都识别流终止事件（Completions 的 `finish_reason`、
+  Anthropic 的 `message_stop` / `stop_reason`、Responses 的 `response.completed` / `[DONE]`）。
+  以前只要 HTTP 是 200、`dataEnd` 一到就 resolve —— 连接被网络/代理掐断时，半截正文会被当成
+  最终回答收尾，状态还是 `ok`，用户只看到任务突然不跑了，发“继续”又能接着干。
+  现在没有终止事件就按 transport 错误自动重试，不再冒充正常完成。
+- **自动重试真正生效**：`AgentLoopService.runTurn` 的兜底 `catch` 会把所有 `LoopError`
+  无条件包成 `protocol`，于是 429 / 5xx / 网络传输错误在分类层被写成“不可重试”，
+  之前配好的 `RetryPolicy` 实际上从未生效。现在保留原始分类。
+  同时重试次数 3 → 5，`Retry-After` 不再被 8s 的指数退避封顶截断（最多等 60s），
+  408 / 409 / 425 也纳入可重试范围。
+- **重试前清掉半截输出**：接上 `onRetry`，把上一次尝试已流出的正文、思考与未完成的工具行
+  清空并提示“请求中断，正在自动重试（n/5）”，避免重试成功后出现“旧半截 + 新全文”的重复。
+
+---
+
 ## Android 版（0.3.1-android）
 
 ### 修复

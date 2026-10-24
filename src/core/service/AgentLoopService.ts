@@ -315,6 +315,9 @@ export class AgentLoopService {
     let settled: boolean = false;
     let statusCode: number = 0;
     let dataEnded: boolean = false;
+    // 是否收到协议终止事件(finish_reason / message_stop / response.completed / [DONE])。
+    // 没收到就闭合连接 = 半截流, 必须重试, 不能当成正常回答收尾。
+    let sawComplete: boolean = false;
     let failedMsg: string = '';
     let startTime: number = Date.now();
     let result: LoopTurnResult = new LoopTurnResult();
@@ -358,6 +361,9 @@ export class AgentLoopService {
           result.finishReason = finish;
         }
       };
+      ctx.onComplete = (): void => {
+        sawComplete = true;
+      };
       sseAdapter.handleLine(sseData, ctx);
       // 三种协议统一收口: 工具调用在流式生成过程中即时上抛(调用数或参数量变化时)
       if (callAcc.calls.length > 0) {
@@ -375,6 +381,19 @@ export class AgentLoopService {
 
     try {
       await new Promise<void>((resolve: () => void, reject: (e: Error) => void) => {
+        // 2xx 流结束时统一走这里：没收到终止事件就不算成功，按 transport 错误重试。
+        // 半截回答如果被当成最终答案，模型会「安静地停下」，用户只能手动发“继续”。
+        const settleStream = (): void => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          if (!sawComplete && !abortSignal.aborted) {
+            reject(new LoopError('响应流在结束事件前中断（已自动重试）', 0, 'transport'));
+            return;
+          }
+          resolve();
+        };
         httpRequest.on('dataReceive', (data: ArrayBuffer) => {
           if (abortSignal.aborted) {
             return;
@@ -394,13 +413,22 @@ export class AgentLoopService {
             for (let i: number = 0; i < lines.length; i++) {
               let line: string = lines[i];
               let trimmed: string = line.trim();
-              if (trimmed === '' || trimmed === Constants.SSE_DONE_TOKEN) {
+              if (trimmed === '') {
+                continue;
+              }
+              // [DONE] 也是终止信号：部分网关只发它、不发 finish_reason
+              if (trimmed === Constants.SSE_DONE_TOKEN) {
+                sawComplete = true;
                 continue;
               }
               if (!trimmed.startsWith(Constants.SSE_DATA_PREFIX)) {
                 continue;
               }
               let sseData: string = trimmed.substring(Constants.SSE_DATA_PREFIX.length);
+              if (sseData === Constants.SSE_DONE_TOKEN) {
+                sawComplete = true;
+                continue;
+              }
               handleSseLine(sseData);
             }
           } catch (e) {
@@ -412,24 +440,28 @@ export class AgentLoopService {
         httpRequest.on('dataEnd', () => {
           if (lineBuffer !== '') {
             let trimmed: string = lineBuffer.trim();
-            if (trimmed.startsWith(Constants.SSE_DATA_PREFIX) && trimmed !== Constants.SSE_DONE_TOKEN) {
-              try {
-                handleSseLine(trimmed.substring(Constants.SSE_DATA_PREFIX.length));
-              } catch (e) {
-                let err: Error = e as Error;
-                if (!settled) {
-                  settled = true;
-                  reject(err);
+            if (trimmed.startsWith(Constants.SSE_DATA_PREFIX)) {
+              let sseData: string = trimmed.substring(Constants.SSE_DATA_PREFIX.length);
+              if (sseData === Constants.SSE_DONE_TOKEN) {
+                sawComplete = true;
+              } else {
+                try {
+                  handleSseLine(sseData);
+                } catch (e) {
+                  let err: Error = e as Error;
+                  if (!settled) {
+                    settled = true;
+                    reject(err);
+                  }
+                  return;
                 }
-                return;
               }
             }
             lineBuffer = '';
           }
           dataEnded = true;
           if (statusCode >= 200 && statusCode < 300 && !settled) {
-            settled = true;
-            resolve();
+            settleStream();
           }
         });
 
@@ -480,6 +512,13 @@ export class AgentLoopService {
               } else if (code === 429) {
                 msg = '请求过于频繁，请稍后再试';
                 kind = 'rate_limit';
+              } else if (code === 408 || code === 425) {
+                // 网关/连接层瞬时超时, 和网络传输错误一样值得重试
+                msg = '请求超时 (' + code + ')，正在自动重试';
+                kind = 'transport';
+              } else if (code === 409) {
+                msg = '请求冲突 (' + code + ')，正在自动重试';
+                kind = 'server';
               } else if (code >= 400 && code < 500) {
                 msg = 'API 请求错误 (' + code + ')';
                 let detail: string = AgentLoopService.extractHttpErrorDetail(errorBody);
@@ -498,8 +537,7 @@ export class AgentLoopService {
             return;
           }
           if (dataEnded && !settled) {
-            settled = true;
-            resolve();
+            settleStream();
           }
         }).catch((err: Error) => {
           if (abortSignal.aborted) {
@@ -520,6 +558,12 @@ export class AgentLoopService {
     } catch (e) {
       let err: Error = e as Error;
       if (!abortSignal.aborted) {
+        // 已经是分类错误(LoopError)就原样上抛：网络/流截断是 transport，必须留给
+        // runTurnWithRetry 重试。此前这里无条件包成 protocol，等于把 transport 判成
+        // 不可重试，偶发断流直接终止整个任务。
+        if (err instanceof LoopError) {
+          throw err;
+        }
         if (failedMsg === '' && err.message !== undefined) {
           failedMsg = err.message;
         }

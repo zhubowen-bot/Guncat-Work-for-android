@@ -22,7 +22,12 @@ import { filesDir, cacheDir, tempDir } from '../src/core/platform/appPaths'
 import { StorageManager } from '../src/core/data/StorageManager'
 import { ChatService, resolveEndpointUrl, buildChatCompletionsBody,
   buildAnthropicBody } from '../src/core/service/ChatService'
-import { AgentLoopService, LoopMessage, ToolImageAttachment } from '../src/core/service/AgentLoopService'
+import { AgentLoopService, LoopMessage, ToolImageAttachment,
+  LoopTurnCallbacks } from '../src/core/service/AgentLoopService'
+import { SSEAdapterFactory } from '../src/core/service/SSEAdapterFactory'
+import { ToolCallAccumulator } from '../src/core/service/ToolCallStream'
+import { RetryPolicy } from '../src/core/common/RetryPolicy'
+import { AbortSignal as LoopAbortSignal } from '../src/core/common/Types'
 import { ApiConfig } from '../src/core/model/ApiConfig'
 import { Conversation } from '../src/core/model/Conversation'
 import { Message } from '../src/core/model/Message'
@@ -1096,6 +1101,95 @@ async function main(): Promise<void> {
     '聊天 completions：正文回答回传 reasoning_content',
     chatCompletionMsgs.some((m) => m['role'] === 'assistant' && m['reasoning_content'] === '第一轮思考')
   )
+
+  // ===== 21. 半截流不能当正常结束 =====
+  //
+  // 用户报障：长任务偶尔「安静地停了」，没有任何报错，发“继续”又能接着跑。
+  // 根因是 2xx + dataEnd 就 resolve，不检查 finish_reason/message_stop/response.completed；
+  // 连接被网络/代理掐断时，半截正文被当成最终回答收尾，状态还是 ok。
+  section('21. 半截 SSE 必须重试（不能安静停下）')
+
+  const completionAdapter = SSEAdapterFactory.build('openai-completions', new ToolCallAccumulator())
+  check(
+    'SSE 终止：completions 的 finish_reason 被识别',
+    completionAdapter.extractComplete(
+      JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })
+    )
+  )
+  check(
+    'SSE 终止：completions 半截流（finish_reason=null）不算结束',
+    !completionAdapter.extractComplete(
+      JSON.stringify({ choices: [{ delta: { content: '半截' }, finish_reason: null }] })
+    )
+  )
+  const anthropicAdapter = SSEAdapterFactory.build('anthropic', new ToolCallAccumulator())
+  check('SSE 终止：anthropic 的 message_stop 被识别',
+    anthropicAdapter.extractComplete('{"type":"message_stop"}'))
+  check('SSE 终止：anthropic 的 stop_reason 被识别',
+    anthropicAdapter.extractComplete('{"type":"message_delta","delta":{"stop_reason":"end_turn"}}'))
+  const responsesAdapter = SSEAdapterFactory.build('responses', new ToolCallAccumulator())
+  check('SSE 终止：responses 的 response.completed 被识别',
+    responsesAdapter.extractComplete('{"type":"response.completed"}'))
+  check('SSE 终止：anthropic 普通正文块不算结束',
+    !anthropicAdapter.extractComplete('{"type":"content_block_delta","delta":{"type":"text_delta","text":"hi"}}'))
+
+  // Retry-After 不能被 8s 的指数退避封顶截断（429 常常要求等 30~60s）
+  const retryPolicy = new RetryPolicy(2, 500, 8000, 0.2,
+    ['rate_limit', 'server', 'transport', 'empty'], 60000)
+  check('Retry-After：30s 原样等待，不被 8s 截断',
+    retryPolicy.decide('rate_limit', 0, 30000, 0.5).delayMs === 30000)
+  check('Retry-After：超过 60s 时封顶 60s',
+    retryPolicy.decide('rate_limit', 0, 300000, 0.5).delayMs === 60000)
+
+  // 端到端：第一次只吐半截就断（没有 finish_reason、没有 [DONE]），第二次完整。
+  // 期望：第一次被判定为中断并重试，最终拿到第二次的完整回答。
+  let truncAttempts = 0
+  const truncServer = nodeHttp.createServer((req, res) => {
+    req.on('data', () => {})
+    req.on('end', () => {
+      truncAttempts++
+      res.writeHead(200, { 'content-type': 'text/event-stream' })
+      if (truncAttempts === 1) {
+        res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: '半截回答' } }] }) + '\n\n')
+        res.end()
+        return
+      }
+      res.write('data: ' + JSON.stringify({
+        choices: [{ delta: { content: '完整回答' }, finish_reason: 'stop' }]
+      }) + '\n\n')
+      res.write('data: [DONE]\n\n')
+      res.end()
+    })
+  })
+  await new Promise<void>((resolve) => truncServer.listen(0, '127.0.0.1', () => resolve()))
+  const truncAddress = truncServer.address()
+  const truncPort = typeof truncAddress === 'object' && truncAddress !== null ? truncAddress.port : 0
+  const truncCfg = new ApiConfig()
+  truncCfg.provider = 'openai-completions'
+  truncCfg.baseUrl = 'http://127.0.0.1:' + String(truncPort)
+  truncCfg.apiKey = 'sk-trunc-test'
+  truncCfg.model = 'trunc-model'
+  truncCfg.autoSuffix = true
+  const truncCallbacks = new LoopTurnCallbacks()
+  let truncRetries = 0
+  truncCallbacks.onRetry = (): void => {
+    truncRetries++
+  }
+  const truncTurn = await AgentLoopService.runTurnWithRetry(
+    truncCfg,
+    [LoopMessage.system('你是测试助手'), LoopMessage.user('请回答')],
+    true,
+    'high',
+    false,
+    truncCallbacks,
+    new LoopAbortSignal(),
+    true,
+    2
+  )
+  check('半截流被判定为中断并自动重试', truncRetries === 1, String(truncRetries))
+  check('两次请求都到了服务端', truncAttempts === 2, String(truncAttempts))
+  check('重试后拿到完整回答（不是半截）', truncTurn.content === '完整回答', truncTurn.content)
+  stopServer(truncServer)
 
   // ===== 结果 =====
   console.log(`\n${'─'.repeat(58)}`)

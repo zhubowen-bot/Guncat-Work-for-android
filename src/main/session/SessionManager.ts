@@ -1554,6 +1554,23 @@ export class SessionManager {
           callbacks.onUsage = (speed: number, hit: number): void => {
             this.patchMessage(conv.id, targetMsg.id, { tokenSpeed: speed, cacheHitRate: hit })
           }
+          // 请求级重试：上一次尝试可能已经流出了一半正文/思考（流被掐断、429、5xx）。
+          // 不先把界面上那半截清掉，重试成功后会变成「旧半截 + 新全文」重复一遍。
+          callbacks.onRetry = (attempt: number, reason: string): void => {
+            streamed = compactNote
+            targetMsg.toolCalls = []
+            this.patchMessage(conv.id, targetMsg.id, {
+              content: streamed,
+              displayContent: streamed,
+              reasoning: ''
+            })
+            this.emit({
+              type: 'notice',
+              level: 'warn',
+              text:
+                `请求中断，正在自动重试（${attempt}/${Constants.WORK_LLM_RETRY_MAX}）：` + reason
+            })
+          }
 
           // 记录本次请求的字符量，与 usage 里的真实 prompt tokens 配对，
           // 推导「本任务实测的字符→token 比例」（原版 requestChars）

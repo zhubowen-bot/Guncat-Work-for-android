@@ -1106,6 +1106,9 @@ export class ChatService {
     // Anthropic 思考块签名与加密思考块(思考模式下本地工具循环回传所需)
     let thinkingSignature: string = '';
     let redactedThinking: string = '';
+    // 是否收到协议终止事件(finish_reason / message_stop / response.completed / [DONE])。
+    // 没收到就闭合连接 = 半截流, 不能当成正常回答结束。
+    let sawComplete: boolean = false;
     let streamResult: ChatStreamResult = new ChatStreamResult();
     // 对齐 web 版本: SSE 解析出一个 delta 就立即 onToken 全量累积,
     // UI 端 50ms 节流刷新. 不做应用层字符拆分 (避免 setTimeout 队列过长 OOM)
@@ -1135,6 +1138,9 @@ export class ChatService {
         let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
         callbacks.onUsage(stats[0], stats[1]);
       };
+      ctx.onComplete = (): void => {
+        sawComplete = true;
+      };
       sseAdapter.handleLine(sseData, ctx);
       // 工具调用流式生成过程中即时上抛(调用数或累计参数量变化时)
       if (callAcc.calls.length > 0) {
@@ -1155,6 +1161,18 @@ export class ChatService {
         let statusCode: number = 0;
         let dataEnded: boolean = false;
         let settled: boolean = false;
+        // 2xx 流结束时统一走这里：没有终止事件就是半截流，明确报错而不是静默收尾。
+        let settleStream = (): void => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          if (!sawComplete && !abortSignal.aborted) {
+            reject(new Error('响应流在结束事件前中断，请重试或继续'));
+            return;
+          }
+          resolve();
+        };
         httpRequest.on('dataReceive', (data: ArrayBuffer) => {
           if (abortSignal.aborted) {
             return;
@@ -1172,13 +1190,22 @@ export class ChatService {
             for (let i: number = 0; i < lines.length; i++) {
               let line: string = lines[i];
               let trimmed: string = line.trim();
-              if (trimmed === '' || trimmed === Constants.SSE_DONE_TOKEN) {
+              if (trimmed === '') {
+                continue;
+              }
+              if (trimmed === Constants.SSE_DONE_TOKEN) {
+                sawComplete = true;
                 continue;
               }
               if (!trimmed.startsWith(Constants.SSE_DATA_PREFIX)) {
                 continue;
               }
-              processSseData(trimmed.substring(Constants.SSE_DATA_PREFIX.length));
+              let sseData: string = trimmed.substring(Constants.SSE_DATA_PREFIX.length);
+              if (sseData === Constants.SSE_DONE_TOKEN) {
+                sawComplete = true;
+                continue;
+              }
+              processSseData(sseData);
             }
           } catch (e) {
             let err: Error = e as Error;
@@ -1189,24 +1216,28 @@ export class ChatService {
         httpRequest.on('dataEnd', () => {
           if (lineBuffer !== '') {
             let trimmed: string = lineBuffer.trim();
-            if (trimmed.startsWith(Constants.SSE_DATA_PREFIX) && trimmed !== Constants.SSE_DONE_TOKEN) {
-              try {
-                processSseData(trimmed.substring(Constants.SSE_DATA_PREFIX.length));
-              } catch (e) {
-                let err: Error = e as Error;
-                if (!settled) {
-                  settled = true;
-                  reject(err);
+            if (trimmed.startsWith(Constants.SSE_DATA_PREFIX)) {
+              let sseData: string = trimmed.substring(Constants.SSE_DATA_PREFIX.length);
+              if (sseData === Constants.SSE_DONE_TOKEN) {
+                sawComplete = true;
+              } else {
+                try {
+                  processSseData(sseData);
+                } catch (e) {
+                  let err: Error = e as Error;
+                  if (!settled) {
+                    settled = true;
+                    reject(err);
+                  }
+                  return;
                 }
-                return;
               }
             }
             lineBuffer = '';
           }
           dataEnded = true;
           if (statusCode !== 0 && statusCode >= 200 && statusCode < 300 && !settled) {
-            settled = true;
-            resolve();
+            settleStream();
           }
         });
 
@@ -1258,6 +1289,10 @@ export class ChatService {
                 msg = 'API Key 无效，请检查设置';
               } else if (code === 429) {
                 msg = '请求过于频繁，请稍后再试';
+              } else if (code === 408 || code === 425) {
+                msg = '请求超时 (' + code + ')，请重试';
+              } else if (code === 409) {
+                msg = '请求冲突 (' + code + ')，请重试';
               } else if (code >= 400 && code < 500) {
                 msg = 'API 请求错误 (' + code + ')，请检查配置';
               } else if (code >= 500) {
@@ -1270,8 +1305,7 @@ export class ChatService {
             return;
           }
           if (dataEnded && !settled) {
-            settled = true;
-            resolve();
+            settleStream();
           }
         }).catch((err: Error) => {
           if (abortSignal.aborted) {

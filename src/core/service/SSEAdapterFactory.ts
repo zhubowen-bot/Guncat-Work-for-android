@@ -84,6 +84,55 @@ export class SSEAdapterFactory {
       }
       return '';
     };
+    // 协议终止事件: 流式请求只有收到它才算完整结束。缺了它(连接被代理/网络掐断)
+    // 时调用方必须按 transport 错误重试, 不能把半截正文当成最终回答。
+    adapter.extractComplete = (sseData: string): boolean => {
+      try {
+        if (protocol === 'responses') {
+          return sseData.indexOf('"response.completed"') >= 0 ||
+            sseData.indexOf('"response.incomplete"') >= 0;
+        }
+        if (protocol === 'anthropic') {
+          if (sseData.indexOf('"message_stop"') >= 0) {
+            return true;
+          }
+          // 部分兼容网关不发 message_stop，只发带 stop_reason 的 message_delta
+          if (sseData.indexOf('"stop_reason"') < 0) {
+            return false;
+          }
+          let json: Object = JSON.parse(sseData);
+          if (typeof json !== 'object' || json === null) {
+            return false;
+          }
+          let delta: Object = (json as Record<string, Object>)['delta'];
+          if (typeof delta !== 'object' || delta === null) {
+            return false;
+          }
+          let stop: Object = (delta as Record<string, Object>)['stop_reason'];
+          return typeof stop === 'string' && (stop as string) !== '';
+        }
+        // completions: 最后一块带非空 finish_reason
+        if (sseData.indexOf('finish_reason') < 0) {
+          return false;
+        }
+        let json2: Object = JSON.parse(sseData);
+        if (typeof json2 !== 'object' || json2 === null) {
+          return false;
+        }
+        let choices: Object = (json2 as Record<string, Object>)['choices'];
+        if (!(choices instanceof Array) || choices.length === 0) {
+          return false;
+        }
+        let first: Object = choices[0];
+        if (typeof first !== 'object' || first === null) {
+          return false;
+        }
+        let finish: Object = (first as Record<string, Object>)['finish_reason'];
+        return typeof finish === 'string' && (finish as string) !== '';
+      } catch (e) {
+        return false;
+      }
+    };
     return adapter;
   }
 }

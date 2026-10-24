@@ -10,6 +10,9 @@ export class SSEParseContext {
   onUsage: (usage: Record<string, Object> | null) => void = () => {};
   onToolEvent: (sseData: string) => void = () => {};
   onFinishReason: (finish: string) => void = () => {};
+  // 协议级终止事件(finish_reason / message_stop / response.completed)。
+  // 没有它 = 流被截断, 调用方不能把半截回答当成正常结束。
+  onComplete: () => void = () => {};
 }
 
 export class SSEProtocolAdapter {
@@ -21,6 +24,7 @@ export class SSEProtocolAdapter {
   extractRedactedThinking: (sseData: string) => string = () => '';
   extractUsage: (sseData: string) => Record<string, Object> | null = () => null;
   extractFinishReason: (sseData: string) => string = () => '';
+  extractComplete: (sseData: string) => boolean = () => false;
   collectToolEvent: (sseData: string) => void = () => {};
 
   // 统一流水线: 失败优先(返回 true 表示已处理并停止); 其余按固定顺序派发
@@ -55,6 +59,9 @@ export class SSEProtocolAdapter {
     let finish: string = this.extractFinishReason(sseData);
     if (finish !== '') {
       ctx.onFinishReason(finish);
+    }
+    if (this.extractComplete(sseData)) {
+      ctx.onComplete();
     }
   }
 }
