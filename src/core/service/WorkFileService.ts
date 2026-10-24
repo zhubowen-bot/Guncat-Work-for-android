@@ -1571,7 +1571,7 @@ export class WorkFileService {
   static toolDefs(webSearchEnabled: boolean): Record<string, Object>[] {
     let defs: Record<string, Object>[] = [];
     defs.push(WorkFileService.makeTool('list_files',
-      '列出工作区中的文件与目录。path 为空时列出整个工作区(含子目录), 否则列出指定目录。返回每项的相对路径与大小。',
+      '列出工作区中的文件与目录。path 为空时列出整个工作区(含子目录), 否则列出指定目录。返回每项的相对路径与大小。**Android 注意**: 文件名若是非法 UTF-8(Windows 中文 ZIP 解压后常见), 这里可能显示为空; 用 run_command 的 `find ... -print0` 核实, 不要据此断言文件丢失。',
       WorkFileService.props1('path', WorkFileService.strProp('要列出的目录相对路径, 留空表示工作区根目录')),
       []));
     defs.push(WorkFileService.makeTool('read_file',

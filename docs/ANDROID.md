@@ -184,7 +184,18 @@ Termux 仓库的新包仍引用 `/data/data/com.termux/...`，`pkg install` 装�
 libui` 链加载时会因此报 `cannot find "libbinder_ndk.so" from verneed[0] ... /system/lib64/libui.so`。
 本项目的工具链清单已排除 `libandroid-stub`；手工加包时不要把它装回来。
 
-### 4.7 浏览器预览的回退
+### 4.7 文件名编码：Windows 中文 ZIP 的「隐形文件」
+
+Android/Linux 的文件名本质是字节串，不强制 UTF-8。Windows 中文 ZIP 的条目名常是 GBK/CP936；
+`unzip`/`tar` 直接解压会写出非法 UTF-8 字节名。终端 `find` 能列出来，但 `list_files`/`read_file`/
+`glob`/`grep` 走 JS 字符串，无法表示这些名字，于是目录显示为空 —— **这不是文件丢了**。
+
+处理原则：**先修名，后解压**。解压前用 Python 检查 ZIP 条目名（`zipfile` 对非 UTF-8 标志按
+cp437 解码，可用 `name.encode('cp437')` 还原原始字节，再按 UTF-8 → cp936 解码）；已解压的用
+`find ... -print0` 或 `os.listdir(b'.')` 查原始字节名，在终端里重命名。模型侧已写入
+`PromptBuilder.fileNameEncodingNote()` 与 `list_files` 工具描述，避免下一次误判成「目录为空」。
+
+### 4.8 浏览器预览的回退
 
 `window.GuncatShell` 不存在时（`npm run dev:android`、`scripts/android-check.mjs`），
 `ShellTask` 回退到 `src/mobile/platform/shell.ts` 的 JS POSIX 子集。这条路径只服务开发预览：

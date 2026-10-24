@@ -51,6 +51,10 @@
   实测 node/python（numpy/scipy/PIL/lxml）/git/jq/sqlite3/curl/openssl 在清空后均正常。
 - **工作区同步只读文件**：`fsWrite` 覆盖 0400 的 `.git/objects` 会 EACCES；现在先 `chmod 0600`，
   失败则删除重建，不再往每条命令输出里刷「写入设备失败」。
+- **Windows 中文 ZIP 的文件名编码经验**：GBK/CP936 条目名解压后会变成非法 UTF-8 字节名，
+  终端 `find` 可见但 `list_files`/`read_file`/`glob`/`grep` 看不见。已在系统提示、交互模式
+  工作区段和 `list_files` 描述里写明：**先修名再解压**；已解压的用 `find -print0` 或
+  Python `os.listdir(b'.')` 查原始字节并重命名，不要误判成文件丢失。
 - **`run_command` 的 cwd 不存在时自动创建**：手机上传话传 `cwd: "test"` 不必先 `create_dir`；
   管道重定向里的 `test/pipe.txt` 仍要自己 `mkdir -p test`（shell 语义，不是工具替你造目录）。
 - **输入框不再被插话按钮顶成两行**：执行中隐藏语音/拍照给输入框让位；`useAutoResize` 空输入
