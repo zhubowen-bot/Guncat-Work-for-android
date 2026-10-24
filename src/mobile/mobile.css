@@ -251,7 +251,7 @@ body.platform-android code {
 
   .composer textarea {
     width: 100%;
-    font-size: 16px;
+    font-size: 14px;
     min-height: 40px;
     max-height: 26vh;
     padding: 7px 14px;
@@ -287,6 +287,7 @@ body.platform-android code {
 
   /* 再兜一层：占位符不换行（不支持时上面的让位也足够） */
   .composer textarea::placeholder {
+    font-size: 13px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
