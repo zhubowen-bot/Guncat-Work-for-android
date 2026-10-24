@@ -208,7 +208,7 @@ export function createMobileHost(): MobileHost {
   ): Promise<{ names: string[]; imported: number; failed: string[]; canceled: boolean }> {
     const paths = await pickFilesFromDevice({
       extensions: options.extensions,
-      maxCount: options.multiple === true ? 20 : 1,
+      maxCount: options.multiple === true ? 100 : 1,
       multiple: options.multiple === true,
       camera: options.camera === true,
       imagesOnly: options.camera === true || options.imagesOnly === true
@@ -432,8 +432,8 @@ export function createMobileHost(): MobileHost {
         pickAndImport(conversationId, {
           multiple: source !== 'camera',
           camera: source === 'camera',
-          imagesOnly: source === 'gallery',
-          extensions: ['pdf', 'docx', 'xlsx', 'pptx', 'txt', 'md', 'csv', 'json', 'png', 'jpg', 'jpeg', 'webp']
+          // 相册入口仍然只列图片；「上传文件」不设扩展名白名单 —— 用户要放什么文件由自己决定。
+          imagesOnly: source === 'gallery'
         })
     },
 

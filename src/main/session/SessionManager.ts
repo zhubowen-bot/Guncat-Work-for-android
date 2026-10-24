@@ -2281,9 +2281,10 @@ export class SessionManager {
           continue
         }
         const stat = fs.statSync(p)
-        // 与上游单文件上限保持一致，避免把超大文件塞进工作区
-        if (stat.size > Constants.WORK_WRITE_MAX_BYTES * 4) {
-          failed.push(`${path.basename(p)}（超过体积上限）`)
+        // 不按扩展名挑文件：用户有终端，什么格式都可能要放进工作区。
+        // 这里只保留一个防止整机 OOM 的硬上限（相册照片通常几 MB 到几十 MB）。
+        if (stat.size > Constants.WORK_UPLOAD_MAX_BYTES) {
+          failed.push(`${path.basename(p)}（超过 ${Math.round(Constants.WORK_UPLOAD_MAX_BYTES / (1024 * 1024))}MB 上限）`)
           continue
         }
         const buf: Buffer = fs.readFileSync(p)

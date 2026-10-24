@@ -92,6 +92,9 @@ export class Constants {
   static readonly WORK_WRITE_MAX_BYTES: number = 512 * 1024;
   // 工具结果送回模型的字符上限
   static readonly WORK_RESULT_MAX_CHARS: number = 12000;
+  // 用户上传文件的大小上限（不是格式白名单：手机相册照片动辄几 MB，
+  // 原来的 2MB 上限会把整批照片判失败）。只防 OOM，不挑扩展名。
+  static readonly WORK_UPLOAD_MAX_BYTES: number = 128 * 1024 * 1024;
   // PDF 分页提取的默认页数(parse_document 的 page_count 默认值)
   static readonly WORK_PDF_PAGES_PER_CALL: number = 30;
   // PDF 转图的默认页数(pdf_to_images 的 page_count 默认值)

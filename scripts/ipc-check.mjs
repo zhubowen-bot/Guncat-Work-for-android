@@ -936,6 +936,17 @@ check('上传：选中的文件被导入工作区', uploadOk.canceled === false 
 check('上传后文件真的在工作区里', (await inv('workspace:list', conv3.id)).some((e) => e.path === '报表.csv'))
 mod.__setOpenDialog(null)
 
+// 相册照片动辄几 MB：旧上限是 512KB × 4 = 2MB，会把整批照片都判成「超过体积上限」。
+// 这里直接塞一个 3MB 的文件，钉住「上传不再按 2MB 拒绝」。
+const bigPhoto = path.join(intakeDir, '相册大图.jpg')
+fs.writeFileSync(bigPhoto, Buffer.alloc(3 * 1024 * 1024, 7))
+const bigResult = await inv('intake:import', conv3.id, [bigPhoto])
+check(
+  '大于 2MB 的相册文件也能导入（旧上限会把整批照片判失败）',
+  bigResult.imported === 1 && bigResult.failed.length === 0,
+  `imported=${bigResult.imported} failed=${bigResult.failed.join(',')}`
+)
+
 // --- 聊天模式附件：此前整条链路是空壳（审计 P0） ---
 //
 // 事故形状：SessionManager.makeAttachments 只留了文件名（dataUrl / parsedText / fileId 全空串），
