@@ -2,6 +2,7 @@ package com.guncat.work;
 
 import android.content.Context;
 import android.os.Build;
+import android.system.Os;
 import android.util.Base64;
 import android.util.Log;
 import android.webkit.JavascriptInterface;
@@ -185,13 +186,16 @@ public final class ShellManager {
         builder.directory(cwd);
         Map<String, String> env = builder.environment();
         env.clear();
+        // 不要设全局 LD_LIBRARY_PATH。Termux 的二进制/共享库都带 DT_RUNPATH=$PREFIX/lib；
+        // 全局设置会连 Android 系统库（libjpeg/libcrypto/libsasl2…）一起劫持到前缀。
+        // 实测 ffmpeg 的 libhwui → libjpeg 链会拿到 Termux 的 IJL 版本，报
+        // cannot locate symbol "tjInitDecompress"；换别的系统库还会继续报同类符号冲突。
         env.put("PREFIX", prefix);
         env.put("TERMUX_PREFIX", prefix);
         env.put("HOME", bootstrap.homePath());
         env.put("TMPDIR", prefix + "/tmp");
         env.put("TMP", prefix + "/tmp");
         env.put("PATH", prefix + "/bin:/system/bin:/system/xbin:/vendor/bin");
-        env.put("LD_LIBRARY_PATH", prefix + "/lib");
         env.put("SHELL", prefix + "/bin/bash");
         env.put("LANG", "C.UTF-8");
         env.put("LC_ALL", "C.UTF-8");
@@ -206,8 +210,10 @@ public final class ShellManager {
         env.put("HOME", bootstrap.homePath());
         env.put("TMPDIR", prefix + "/tmp");
         env.put("PATH", prefix + "/bin:/system/bin:/system/xbin:/vendor/bin");
-        env.put("LD_LIBRARY_PATH", prefix + "/lib");
         env.put("SHELL", prefix + "/bin/bash");
+        // 上层 envJson 也不许把全局库路径塞回来；需要临时覆盖时在命令前写
+        // `LD_LIBRARY_PATH=... cmd`，那只影响这一条命令。
+        env.remove("LD_LIBRARY_PATH");
         env.put("PWD", cwd.getAbsolutePath());
         return launch(builder, cwd, virtualCwd, "bundled", limit);
     }
@@ -461,6 +467,17 @@ public final class ShellManager {
                 throw new IOException("无法创建目录: " + parent.getAbsolutePath());
             }
             byte[] bytes = Base64.decode(base64 == null ? "" : base64, Base64.DEFAULT);
+            // 同步 .git 对象等 0400 只读文件时，直接 FileOutputStream 会 EACCES。
+            // 先 chmod 0600；chmod 也失败就删掉重建（父目录可写时这是最后兜底）。
+            if (file.exists() && !file.canWrite()) {
+                try {
+                    Os.chmod(file.getAbsolutePath(), 0600);
+                } catch (Exception ignored) {
+                    if (!file.delete()) {
+                        throw new IOException("文件只读且无法改写: " + file.getAbsolutePath());
+                    }
+                }
+            }
             OutputStream output = new FileOutputStream(file);
             try {
                 output.write(bytes);

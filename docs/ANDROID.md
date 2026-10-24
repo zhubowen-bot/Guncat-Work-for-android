@@ -160,8 +160,11 @@ Android 版的 `node:fs` 是 memfs（`src/mobile/shims/fs.ts`），而真实命�
 - 后台任务登记表仍由 `CommandService` 维护，`job_output` 的游标只对 JS 侧已读到的文本切片。
 
 环境变量用别名路径（`PREFIX=/data/data/com.guncat.work/abcd`、`HOME=.../abcde`、
-`TMPDIR=$PREFIX/tmp`、`LD_LIBRARY_PATH=$PREFIX/lib`、`PATH=$PREFIX/bin:/system/bin:...`），
-并覆盖上层传下来的 `/guncat/data`。
+`TMPDIR=$PREFIX/tmp`、`PATH=$PREFIX/bin:/system/bin:...`），并覆盖上层传下来的 `/guncat/data`。
+**不注入全局 `LD_LIBRARY_PATH`**：Termux 二进制/共享库都带 `DT_RUNPATH=$PREFIX/lib`；全局注入会连
+Android 系统库也解析到前缀同名库（`libjpeg`/`libcrypto`/`libsasl2`…），ffmpeg 的 `libhwui → libjpeg`
+链就会报 `cannot locate symbol "tjInitDecompress"`。需要临时覆盖时在命令前写
+`LD_LIBRARY_PATH=... cmd`。
 
 ### 4.6 已内置的软件与 `pkg install` 的边界
 

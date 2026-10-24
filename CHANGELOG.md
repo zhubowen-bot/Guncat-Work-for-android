@@ -32,16 +32,25 @@
 - **targetSdk 28**：Android 10+ 禁止 targetSdk ≥ 29 的应用执行私有目录文件；内置终端必须
   降 targetSdk（Termux 官方同款做法），`minSdk` 同步为 28。
 - **ShellManager**：`ProcessBuilder` 直接拉起 `abcd/bin/bash --noprofile --norc -c`，
-  stdout/stderr 合并后按 UTF-8 逐块读取；环境变量用 `PREFIX`/`HOME`/`TMPDIR`/`LD_LIBRARY_PATH`。
+  stdout/stderr 合并后按 UTF-8 逐块读取；环境变量用 `PREFIX`/`HOME`/`TMPDIR`/`PATH`，不注入全局 `LD_LIBRARY_PATH`。
 - **工作区镜像**（`src/mobile/platform/mirror.ts`）：执行前把会话工作区从 memfs 写到
   `files/guncat-data/files/workspaces/<会话>`，执行后同步回 memfs。单文件 8MB / 单次 32MB 封顶，
   不同步设置、会话历史与 API Key。
 - **进程管理**：输出环形缓冲 + 丢弃计数；超时/停止/`job_kill` 按 `/proc` 递归杀子孙进程。
-- **ffmpeg/ffprobe 链接修复**：Termux 的 `libandroid-stub` 会往 `$PREFIX/lib` 塞一套**假的**
+- **ffmpeg/ffprobe 链接修复（两层）**：
+  第一层，Termux 的 `libandroid-stub` 会往 `$PREFIX/lib` 塞一套**假的**
   `libbinder_ndk.so`/`libandroid.so`/`libmediandk.so`/`libOpenSLES.so`。`libplacebo → libvulkan →
-  系统 libui` 加载时优先命中假 `libbinder_ndk`，符号版本对不上就报
-  `cannot find "libbinder_ndk.so" from verneed[0] ... /system/lib64/libui.so`。现在 bootstrap
-  不再安装这些 stub 库，让系统真库接管；ffmpeg/ffprobe 可正常动态链接。
+  系统 libui` 加载时优先命中假 `libbinder_ndk`，报
+  `cannot find "libbinder_ndk.so" from verneed[0] ... /system/lib64/libui.so`。bootstrap 已剔除
+  这些 stub 库。
+  第二层（真正根因），`ShellManager` 原来全局注入 `LD_LIBRARY_PATH=$PREFIX/lib`，会把 Android
+  系统库也劫持到 Termux 同名库：`/system/lib64/libhwui.so` 需要 `libjpeg` 的 `tjInitDecompress`，
+  却拿到 Termux 的 IJL 版 `libjpeg.so`，于是报 `cannot locate symbol "tjInitDecompress"`。
+  Termux 的二进制/共享库本身都带 `DT_RUNPATH=$PREFIX/lib`，所以现在**不再注入全局
+  LD_LIBRARY_PATH**（envJson 也被移除）；需要临时覆盖时在命令前写 `LD_LIBRARY_PATH=... cmd`。
+  实测 node/python（numpy/scipy/PIL/lxml）/git/jq/sqlite3/curl/openssl 在清空后均正常。
+- **工作区同步只读文件**：`fsWrite` 覆盖 0400 的 `.git/objects` 会 EACCES；现在先 `chmod 0600`，
+  失败则删除重建，不再往每条命令输出里刷「写入设备失败」。
 - **`run_command` 的 cwd 不存在时自动创建**：手机上传话传 `cwd: "test"` 不必先 `create_dir`；
   管道重定向里的 `test/pipe.txt` 仍要自己 `mkdir -p test`（shell 语义，不是工具替你造目录）。
 - **输入框不再被插话按钮顶成两行**：执行中隐藏语音/拍照给输入框让位；`useAutoResize` 空输入
