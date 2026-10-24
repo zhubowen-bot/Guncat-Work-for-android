@@ -5,6 +5,7 @@ import { Sidebar } from './components/Sidebar'
 import { Composer } from './components/Composer'
 import { Timeline } from './components/Timeline'
 import { WorkspacePanel } from './components/WorkspacePanel'
+import { Picker } from './components/Picker'
 import { SettingsDialog } from './components/SettingsDialog'
 import { SpeechBar } from './components/SpeechBar'
 import { agentById, isVirtualAgentId } from './conversations'
@@ -293,47 +294,48 @@ export default function App() {
               此前这个值被写死在主进程里，工作模式永远拿不到 Max 档；
               交互模式的「关闭」也被错写成了 'none'。 */}
           {mode !== 'chat' ? (
-            <label className="topbar__effort" title="推理强度（越高越慢，长程复杂任务建议拉满）">
-              推理
-              {mode === 'interactive' ? (
-                <select
-                  value={interactiveEffort}
-                  onChange={(e) => setInteractiveEffort(e.target.value)}
-                  disabled={running}
-                >
-                  <option value="high">均衡</option>
-                  <option value="low">快速</option>
-                  <option value="off">关闭</option>
-                </select>
-              ) : (
-                <select
-                  value={reasoningEffort}
-                  onChange={(e) => setReasoningEffort(e.target.value)}
-                  disabled={running}
-                >
-                  <option value="max">极高</option>
-                  <option value="high">均衡</option>
-                  <option value="low">快速</option>
-                </select>
-              )}
-            </label>
+            <Picker
+              variant="plain"
+              triggerClassName="topbar__effort"
+              prefix="推理"
+              title="推理强度（越高越慢，长程复杂任务建议拉满）"
+              ariaLabel="选择推理强度"
+              value={mode === 'interactive' ? interactiveEffort : reasoningEffort}
+              disabled={running}
+              options={
+                mode === 'interactive'
+                  ? [
+                      { value: 'high', label: '均衡' },
+                      { value: 'low', label: '快速' },
+                      { value: 'off', label: '关闭' }
+                    ]
+                  : [
+                      { value: 'max', label: '极高' },
+                      { value: 'high', label: '均衡' },
+                      { value: 'low', label: '快速' }
+                    ]
+              }
+              onChange={(value) =>
+                mode === 'interactive' ? setInteractiveEffort(value) : setReasoningEffort(value)
+              }
+            />
           ) : null}
           {/* 模型胶囊（对齐原版 ChatPage 输入区左下角那颗）：直接在这儿换配置，
               不必进设置。原版弹层上半部分就是配置列表 —— 这里用一个下拉等价表达。 */}
           {profiles.length > 0 ? (
-            <label className="topbar__model" title="当前配置方案（切换即换模型与接入地址）">
-              <select
-                value={settings?.currentApiProfileId ?? ''}
-                disabled={running}
-                onChange={(e) => void switchProfile(e.target.value)}
-              >
-                {profiles.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.config.model !== '' ? `${p.config.model} · ${p.name}` : p.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <Picker
+              variant="plain"
+              triggerClassName="topbar__model"
+              title="当前配置方案（切换即换模型与接入地址）"
+              ariaLabel="选择模型配置"
+              value={settings?.currentApiProfileId ?? ''}
+              disabled={running}
+              options={profiles.map((p) => ({
+                value: p.id,
+                label: p.config.model !== '' ? `${p.config.model} · ${p.name}` : p.name
+              }))}
+              onChange={(value) => void switchProfile(value)}
+            />
           ) : null}
           {/* 表格提取：原版唯一不依赖对话的独立工具页，入口在顶栏（桌面端没有 pages/ 概念） */}
           <button

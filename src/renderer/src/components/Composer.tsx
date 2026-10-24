@@ -5,6 +5,7 @@ import { useVoiceInput } from '../speech/useVoiceInput'
 import { useStore } from '../store'
 import { MODE_HINT } from '../conversations'
 import { AttachmentBar } from './AttachmentBar'
+import { Picker } from './Picker'
 import {
   detectMention,
   MentionPopup,
@@ -314,48 +315,47 @@ export function Composer({ running, mode, onSend, onSteer, onAbort }: Props) {
       {/* 手机上把顶栏的模型 / 推理 / 联网收进输入框上方的胶囊，避免顶栏挤成一排 */}
       <div className="composer__chips">
         {profiles.length > 0 ? (
-          <label className="composer-chip" title="当前模型配置（切换即换模型与接入地址）">
-            <select
-              value={settings?.currentApiProfileId ?? ''}
-              disabled={running}
-              onChange={(e) => void switchProfile(e.target.value)}
-            >
-              {profiles.map((profile) => (
-                <option key={profile.id} value={profile.id}>
-                  {profile.config.model !== '' ? profile.config.model : profile.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <Picker
+            variant="chip"
+            triggerClassName="composer-chip"
+            title="当前模型配置（切换即换模型与接入地址）"
+            ariaLabel="选择模型"
+            value={settings?.currentApiProfileId ?? ''}
+            disabled={running}
+            options={profiles.map((profile) => ({
+              value: profile.id,
+              label: profile.config.model !== '' ? profile.config.model : profile.name
+            }))}
+            onChange={(value) => void switchProfile(value)}
+          />
         ) : null}
 
         {mode !== 'chat' ? (
-          <label className="composer-chip" title="推理强度">
-            <span>推理</span>
-            <select
-              value={mode === 'interactive' ? interactiveEffort : reasoningEffort}
-              disabled={running}
-              onChange={(e) =>
-                mode === 'interactive'
-                  ? setInteractiveEffort(e.target.value)
-                  : setReasoningEffort(e.target.value)
-              }
-            >
-              {mode === 'interactive' ? (
-                <>
-                  <option value="high">均衡</option>
-                  <option value="low">快速</option>
-                  <option value="off">关闭</option>
-                </>
-              ) : (
-                <>
-                  <option value="max">极高</option>
-                  <option value="high">均衡</option>
-                  <option value="low">快速</option>
-                </>
-              )}
-            </select>
-          </label>
+          <Picker
+            variant="chip"
+            triggerClassName="composer-chip"
+            prefix="推理"
+            title="推理强度"
+            ariaLabel="选择推理强度"
+            value={mode === 'interactive' ? interactiveEffort : reasoningEffort}
+            disabled={running}
+            options={
+              mode === 'interactive'
+                ? [
+                    { value: 'high', label: '均衡' },
+                    { value: 'low', label: '快速' },
+                    { value: 'off', label: '关闭' }
+                  ]
+                : [
+                    { value: 'max', label: '极高' },
+                    { value: 'high', label: '均衡' },
+                    { value: 'low', label: '快速' }
+                  ]
+            }
+            onChange={(value) =>
+              mode === 'interactive' ? setInteractiveEffort(value) : setReasoningEffort(value)
+            }
+          />
         ) : null}
 
         {mode === 'chat' ? (

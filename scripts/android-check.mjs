@@ -153,6 +153,33 @@ try {
   check('手机布局（抽屉按钮可见）', await page.locator('.mobile-menu-btn').isVisible())
   check('顶栏不再显示状态副标题', (await page.locator('.topbar__title small').count()) === 0)
   check('输入框上方胶囊可见', await page.locator('.composer__chips').isVisible())
+  check('输入区不再使用原生 select', (await page.locator('.composer__chips select').count()) === 0)
+  const composerHeights = await page.evaluate(() => {
+    const rect = (selector) => {
+      const element = document.querySelector(selector)
+      return element === null ? 0 : Math.round(element.getBoundingClientRect().height)
+    }
+    return {
+      input: rect('.composer textarea'),
+      mic: rect('.composer__mic'),
+      send: rect('.composer__send')
+    }
+  })
+  check(
+    '输入框与发送/语音按钮同高',
+    composerHeights.input === composerHeights.mic && composerHeights.input === composerHeights.send,
+    JSON.stringify(composerHeights)
+  )
+  check(
+    '手机不启用桌面 hover（避免按钮点完一直深色）',
+    await page.evaluate(() => !document.documentElement.classList.contains('hoverable'))
+  )
+  await page.click('.composer__chips .picker__trigger')
+  await page.waitForSelector('.picker__sheet', { timeout: 3000 })
+  check('选择器打开底部弹层', await page.locator('.picker__sheet').isVisible())
+  await page.waitForTimeout(350)
+  await page.screenshot({ path: path.join(SHOTS, 'picker.png') })
+  await page.click('.picker__close')
   check('上传/拍照按钮可见', (await page.locator('.composer__upload').isVisible()) && (await page.locator('.composer__camera').isVisible()))
   await page.screenshot({ path: path.join(SHOTS, 'home.png') })
 

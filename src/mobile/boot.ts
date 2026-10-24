@@ -36,6 +36,8 @@ function installViewportHeight(): void {
 export async function bootMobile(): Promise<void> {
   // 系统提示与 run_command 描述按 Android 的 bash 写，而不是 Windows cmd
   setShellPlatform('android')
+  // 手机端没有可靠 hover：即使 WebView 把 matchMedia 报成 hover，也不启用桌面 hover 规则
+  document.documentElement.classList.remove('hoverable')
   await hydrateFs()
   installBundledResources()
   initAppPaths({ dataRoot: DATA_ROOT, resourcesRoot: RESOURCES_ROOT })

@@ -13,6 +13,7 @@ import { Constants } from '@core/common/Constants'
 import { useStore } from '../store'
 import { useSpeech } from '../speech/speechStore'
 import { IconChevronDown, IconClose } from '../icons'
+import { Picker } from './Picker'
 import {
   reinstallBundled,
   setShellBackend,
@@ -521,16 +522,13 @@ export function SettingsDialog({ open: openOverride }: SettingsDialogProps = {})
           <div className="field field--row">
             <div>
               <label>配置方案</label>
-              <select
+              <Picker
+                variant="field"
+                ariaLabel="选择配置方案"
                 value={settings?.currentApiProfileId ?? ''}
-                onChange={(e) => void switchProfile(e.target.value)}
-              >
-                {profiles.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+                options={profiles.map((p) => ({ value: p.id, label: p.name }))}
+                onChange={(value) => void switchProfile(value)}
+              />
             </div>
             <div>
               <label>配置名称</label>
@@ -557,13 +555,13 @@ export function SettingsDialog({ open: openOverride }: SettingsDialogProps = {})
 
           <div className="field">
             <label>接入方式</label>
-            <select value={draft.provider} onChange={(e) => update('provider', e.target.value)}>
-              {PROVIDERS.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
+            <Picker
+              variant="field"
+              ariaLabel="选择接入方式"
+              value={draft.provider}
+              options={PROVIDERS.map((p) => ({ value: p.id, label: p.label }))}
+              onChange={(value) => update('provider', value)}
+            />
           </div>
 
           <div className="field">
@@ -680,20 +678,17 @@ export function SettingsDialog({ open: openOverride }: SettingsDialogProps = {})
             <div className="field field--row" style={{ marginTop: 10 }}>
               <div>
                 <label>搜索引擎</label>
-                <select
+                <Picker
+                  variant="field"
+                  ariaLabel="选择搜索引擎"
                   value={search.engine}
-                  onChange={(e) => updateSearch('engine', e.target.value)}
-                >
-                  {engines.length === 0 ? (
-                    <option value={search.engine}>{search.engine}</option>
-                  ) : (
-                    engines.map((engine) => (
-                      <option key={engine.id} value={engine.id}>
-                        {engine.label}
-                      </option>
-                    ))
-                  )}
-                </select>
+                  options={
+                    engines.length === 0
+                      ? [{ value: search.engine, label: search.engine }]
+                      : engines.map((engine) => ({ value: engine.id, label: engine.label }))
+                  }
+                  onChange={(value) => updateSearch('engine', value)}
+                />
               </div>
               <div>
                 <label>单次结果条数</label>

@@ -15,6 +15,7 @@ import type {
 } from '@ipc/contract'
 import { Constants } from '@core/common/Constants'
 import { useStore } from '../store'
+import { Picker } from './Picker'
 import {
   IconAudio,
   IconChevronDown,
@@ -660,19 +661,17 @@ export function WorkspacePanel() {
       {rootInfo !== null ? (
         <div className="workspace__perm">
           <span className="workspace__perm-label">命令审批</span>
-          <select
-            className="workspace__perm-select"
+          <Picker
+            variant="field"
+            triggerClassName="workspace__perm-select"
+            ariaLabel="命令审批"
+            sheetTitle="命令审批"
             disabled={running}
             value={rootInfo.commandPermission}
             title={running ? '任务执行中，稍后再改' : COMMAND_PERMISSIONS.find((p) => p.value === rootInfo.commandPermission)?.hint}
-            onChange={(e) => void applyPermission(e.target.value)}
-          >
-            {COMMAND_PERMISSIONS.map((p) => (
-              <option key={p.value} value={p.value} title={p.hint}>
-                {p.label}
-              </option>
-            ))}
-          </select>
+            options={COMMAND_PERMISSIONS.map((p) => ({ value: p.value, label: p.label, hint: p.hint }))}
+            onChange={(value) => void applyPermission(value)}
+          />
         </div>
       ) : null}
 

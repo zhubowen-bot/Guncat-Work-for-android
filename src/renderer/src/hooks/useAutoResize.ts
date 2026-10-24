@@ -20,9 +20,12 @@ export function useAutoResize(
     let lastWidth = element.clientWidth
     const apply = (): void => {
       if (value === '') {
-        element.style.height = '44px'
+        // 高度交给 CSS 的 .is-empty（桌面 44 / 手机 40），不让占位符参与测量
+        element.style.height = ''
+        element.classList.add('is-empty')
         return
       }
+      element.classList.remove('is-empty')
       element.style.height = 'auto'
       element.style.height = `${element.scrollHeight}px`
     }

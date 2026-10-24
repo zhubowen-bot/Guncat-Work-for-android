@@ -252,10 +252,14 @@ body.platform-android code {
   .composer textarea {
     width: 100%;
     font-size: 16px;
-    min-height: 44px;
+    min-height: 40px;
     max-height: 26vh;
-    padding: 11px 14px;
-    border-radius: 22px;
+    padding: 7px 14px;
+    border-radius: 20px;
+  }
+
+  .composer textarea.is-empty {
+    height: 40px;
   }
 
   .composer__mic,
@@ -289,10 +293,10 @@ body.platform-android code {
   }
 
   .composer__send {
-    width: 44px;
-    height: 44px;
+    width: 40px;
+    height: 40px;
     padding: 0;
-    border-radius: 22px;
+    border-radius: 20px;
     justify-content: center;
     margin: 0;
     gap: 0;
@@ -396,6 +400,8 @@ body.platform-android code {
   .notice {
     bottom: calc(92px + env(safe-area-inset-bottom));
     max-width: calc(100vw - 32px);
+    /* 工作区是全屏 z-index:65；提示条必须在它上面，否则只在关掉工作区后才看得见 */
+    z-index: 100;
   }
 
   /* 触控目标：所有小图标按钮至少 40px */
@@ -519,5 +525,22 @@ body.platform-android code {
   .sidebar--rail {
     width: min(64vw, 320px);
     max-width: 320px;
+  }
+}
+/* 触摸设备没有 hover：按下时给一次轻反馈，松手即恢复，不粘住 */
+@media (hover: none) {
+  .icon-btn:active:not(:disabled),
+  .mobile-icon-btn:active:not(:disabled),
+  .composer__tool:active:not(:disabled),
+  .composer__mic:active:not(:disabled),
+  .composer__send:active:not(:disabled),
+  .composer-chip:active:not(:disabled),
+  .btn:active:not(:disabled),
+  .picker__trigger:active:not(:disabled) {
+    opacity: 0.72;
+  }
+
+  .picker__option:active {
+    background: var(--bg-sunken);
   }
 }

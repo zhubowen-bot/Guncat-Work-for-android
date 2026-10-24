@@ -5,6 +5,12 @@ import './styles.css'
 import 'katex/dist/katex.min.css'
 import { reportStage, describeError } from './bootReport'
 
+// 只有鼠标/触控板才启用 :hover。手机 WebView 会把上一次点击的 :hover 状态粘住，
+// 表现为「点一下按钮一直深色，点空白才恢复」；这里给 CSS 一个总开关。
+if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+  document.documentElement.classList.add('hoverable')
+}
+
 // 启动诊断的第一层：脚本级异常。
 // 模块顶层抛错、脚本被 CSP 拦掉、import 失败这类问题会先落到这里；
 // 而它们在白屏上跟「React 挂载失败」长得一模一样，只有上报能区分。
