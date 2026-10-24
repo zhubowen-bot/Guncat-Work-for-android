@@ -252,9 +252,11 @@ body.platform-android code {
   .composer textarea {
     width: 100%;
     font-size: 14px;
+    line-height: 20px;
     min-height: 40px;
     max-height: 26vh;
-    padding: 7px 14px;
+    /* 40px 胶囊内垂直居中：上下各 9px + 20px 行高 + 2px 边框 = 40px */
+    padding: 9px 14px;
     border-radius: 20px;
   }
 
