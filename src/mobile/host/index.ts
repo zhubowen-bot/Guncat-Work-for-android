@@ -508,26 +508,19 @@ export function createMobileHost(): MobileHost {
 
     /**
      * 统一导出 / 分享。save 走系统文件管理器（用户选位置、可取消）；
-     * share 交给原生分享（target=wechat 时直接指向微信，不可用则退回系统面板）。
+     * share 一律交给系统分享面板（里面可以直接选微信）。
      */
     transfer: async (request: TransferRequestDto): Promise<TransferResultDto> => {
       try {
         const payload = await buildTransferPayload(session, request)
         if (request.action === 'share') {
-          const target = request.target === 'wechat' ? 'wechat' : 'system'
-          const outcome = shareBytesTo(payload.name, payload.mime, payload.bytes, target)
+          const outcome = shareBytesTo(payload.name, payload.mime, payload.bytes)
           if (!outcome.ok) {
             return { status: 'error', message: outcome.error ?? '分享失败' }
           }
           return {
             status: 'shared',
-            message: outcome.fallback
-              ? target === 'wechat'
-                ? '没有找到可用的微信接收入口，已打开系统分享面板'
-                : '已打开系统分享面板'
-              : target === 'wechat'
-                ? `已调起微信分享：${payload.name}`
-                : '已打开系统分享面板'
+            message: `已打开系统分享面板：${payload.name}（可在这里选微信）`
           }
         }
         const saved = await saveBytesToUserLocation(payload.name, payload.mime, payload.bytes)

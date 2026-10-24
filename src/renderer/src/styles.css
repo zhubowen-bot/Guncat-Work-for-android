@@ -3116,9 +3116,22 @@ select {
   text-align: center;
 }
 
+/*
+ * 二进制/无预览文件的动作区：
+ * 之前是 flex 横排 —— 四个中文按钮挤在一行，手机上每个都被压成两三行竖排字，
+ * 既难认也难看。改成竖向菜单：一行一个按钮、标签不换行、宽度统一。
+ */
 .preview__info-actions {
   display: flex;
-  gap: 10px;
+  flex-direction: column;
+  gap: 8px;
+  width: min(300px, 100%);
+}
+
+.preview__info-actions .btn {
+  width: 100%;
+  justify-content: center;
+  white-space: nowrap;
 }
 
 .workspace__foot {

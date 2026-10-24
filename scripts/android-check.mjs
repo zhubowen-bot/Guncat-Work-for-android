@@ -367,7 +367,7 @@ try {
     const transferText = await page.locator('.transfer__sheet').innerText()
     check(
       '导出先弹「存哪 / 分享到哪」的选择（不再点一下就报已导出）',
-      transferText.includes('保存到') && transferText.includes('分享到微信'),
+      transferText.includes('保存到') && transferText.includes('分享'),
       transferText.replace(/\s+/g, ' ').slice(0, 80)
     )
     await page.waitForTimeout(250)
@@ -375,6 +375,41 @@ try {
     await page.click('.transfer__sheet .picker__close')
   } else {
     check('导出先弹「存哪 / 分享到哪」的选择（不再点一下就报已导出）', false, '工作区里没有文件')
+  }
+
+  // 二进制文件没有内置预览，那一页的动作区曾经是「四个按钮挤一行、字被压成竖排」。
+  // 这里断言它已改成竖排单行，并留一张截图复核。
+  const binarySeeded = await page.evaluate(async () => {
+    const conversations = await window.guncat.conversations.list()
+    if (conversations.length === 0) {
+      return ''
+    }
+    const root = '/guncat/data/files/workspaces/' + conversations[0].id
+    const bytes = String.fromCharCode(0xff, 0xfe, 0x00, 0x01, 0x80)
+    window.__guncatDebug.writeFileBase64(root + '/binary.bin', btoa(bytes))
+    return conversations[0].id
+  })
+  if (binarySeeded !== '') {
+    await page.click('.workspace__head .icon-btn[title="刷新"]')
+    await page.waitForTimeout(500)
+    await page.locator('.file-item__name', { hasText: 'binary.bin' }).click()
+    await page.waitForSelector('.preview__info-actions', { timeout: 3000 })
+    const infoLayout = await page.locator('.preview__info-actions').evaluate((el) => {
+      const style = getComputedStyle(el)
+      const buttons = [...el.querySelectorAll('button')].map((button) => ({
+        height: Math.round(button.getBoundingClientRect().height),
+        text: (button.textContent ?? '').trim()
+      }))
+      return { direction: style.flexDirection, buttons }
+    })
+    check(
+      '无预览文件的动作区：竖排、每项单行（不再被挤成竖排字）',
+      infoLayout.direction === 'column' && infoLayout.buttons.every((b) => b.height <= 48),
+      JSON.stringify(infoLayout)
+    )
+    await page.waitForTimeout(250)
+    await page.screenshot({ path: path.join(SHOTS, 'preview-binary.png') })
+    await page.click('.preview__head .icon-btn')
   }
 
   await page.screenshot({ path: path.join(SHOTS, 'workspace.png') })

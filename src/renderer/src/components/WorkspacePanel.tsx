@@ -482,7 +482,7 @@ export function WorkspacePanel() {
   }
 
   /**
-   * 打包导出：先开「导出/分享」弹层，让用户选保存位置还是分享到微信。
+   * 打包导出：先开「导出/分享」弹层，让用户选保存位置还是分享。
    * 不再点一下就直接写下载目录再提示「已导出」。
    */
   function exportWorkspace(): void {
@@ -515,7 +515,7 @@ export function WorkspacePanel() {
     )
   }
 
-  /** 单个文件直接分享到微信（原生侧不可用时自动退回系统分享面板） */
+  /** 单个文件直接分享：交给系统分享面板（面板里可以直接选微信） */
   function shareEntry(entry: WorkspaceEntryDto): void {
     if (activeId === null) {
       return
@@ -528,8 +528,7 @@ export function WorkspacePanel() {
         name: entry.name,
         title: '分享文件'
       },
-      'share',
-      'wechat'
+      'share'
     )
   }
 
@@ -582,7 +581,7 @@ export function WorkspacePanel() {
           <span className="file-item__size">
             {previewPath === entry.path ? '读取中…' : formatSize(entry.size)}
           </span>
-          {/* 每行的三个动作常显：下载 / 分享到微信 / 删除。
+          {/* 每行的三个动作常显：下载 / 分享 / 删除。
               此前删除只在桌面鼠标悬停时才露出（.file-item__del opacity:0 + .hoverable），
               手机上根本没有 hover，按钮就永远看不见 —— 这是真机报障的原形。 */}
           <span className="file-item__acts">
@@ -596,7 +595,7 @@ export function WorkspacePanel() {
             </button>
             <button
               className="icon-btn file-item__act"
-              title="分享这个文件到微信"
+              title="分享这个文件（系统分享面板，可发到微信）"
               disabled={running}
               onClick={() => shareEntry(entry)}
             >

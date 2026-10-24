@@ -118,8 +118,8 @@ export function WorkspacePreviewOverlay() {
     })
   }
 
-  /** 预览里的这一个文件：下载（选位置）或直接分享到微信 */
-  function transferFile(action: 'save' | 'share', target?: 'system' | 'wechat'): void {
+  /** 预览里的这一个文件：下载（选位置）或交给系统分享面板 */
+  function transferFile(action: 'save' | 'share'): void {
     const segments: string[] = path.split('/')
     const name: string = segments[segments.length - 1] ?? path
     void runTransfer(
@@ -130,8 +130,7 @@ export function WorkspacePreviewOverlay() {
         name,
         title: action === 'save' ? '下载文件' : '分享文件'
       },
-      action,
-      target
+      action
     )
   }
 
@@ -169,18 +168,19 @@ export function WorkspacePreviewOverlay() {
         <div className="preview__info">
           <span className="preview__info-hint">{content.hint}</span>
           <div className="preview__info-actions">
-            <button className="btn btn--sm" onClick={() => transferFile('save')}>
+            <button className="btn" onClick={() => transferFile('save')}>
+              <IconDownload size={14} />
               下载
             </button>
-            <button className="btn btn--ghost btn--sm" onClick={() => transferFile('share', 'wechat')}>
-              <IconShare size={13} />
-              分享到微信
+            <button className="btn" onClick={() => transferFile('share')}>
+              <IconShare size={14} />
+              分享
             </button>
-            <button className="btn btn--sm" onClick={openExternal}>
+            <button className="btn" onClick={openExternal}>
               用系统默认程序打开
             </button>
-            <button className="btn btn--ghost btn--sm" onClick={reveal}>
-              <IconFolder size={13} />
+            <button className="btn" onClick={reveal}>
+              <IconFolder size={14} />
               在文件管理器中显示
             </button>
           </div>
@@ -217,8 +217,8 @@ export function WorkspacePreviewOverlay() {
           </button>
           <button
             className="filecard__action"
-            title="分享这个文件到微信"
-            onClick={() => transferFile('share', 'wechat')}
+            title="分享这个文件（系统分享面板，可发到微信）"
+            onClick={() => transferFile('share')}
           >
             <IconShare size={13} />
             分享

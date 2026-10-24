@@ -118,12 +118,17 @@
   `file:transfer` 通道与「导出/分享」弹层。保存一定先经过系统保存位置选择
   （桌面是保存对话框，Android 是 `ACTION_CREATE_DOCUMENT`），可自选目录、可改名、可取消；
   取消不再弹「已导出」，失败如实报错。
-- **分享到微信**：单个文件、文件预览、工作区压缩包都能直接分享；Android 原生侧优先
-  `setPackage("com.tencent.mm")` 直发，微信不可用（没装 / 不收该类型）时退回系统分享面板并
-  明确提示。分享文件改由 `FileShareProvider` 以 `content://` 暴露，不再为了分享一次就往
-  「下载」里塞一份副本。
-- **工作区文件树每行三个动作常显**：下载 / 分享到微信 / 删除。删除按钮此前是
+- **分享统一走系统分享面板**：单个文件、文件预览、工作区压缩包都能分享。此前试过
+  `setPackage("com.tencent.mm")` 直达微信，微信对文件类型挑得很严，实际只会得到
+  `No Activity found to handle Intent … pkg=com.tencent.mm`；现在一律打开系统面板
+  （面板里可以直接选微信，且不挑类型）。分享文件由 `FileShareProvider` 以
+  `content://` 暴露，不再为了分享一次就往「下载」里塞一份副本。
+- **工作区文件树每行三个动作常显**：下载 / 分享 / 删除。删除按钮此前是
   `opacity:0` + `.hoverable .file-item:hover` 才出现，手机没有 hover，等于永远不可见。
+- **分享图标改成弯箭头**：原来的「方框 + 向上箭头」读起来就是「上传/导出」，
+  换成一道向右弯出去的箭头。
+- **无预览文件的动作区改成竖排**：原先四个中文按钮横排挤在一行，手机上每个都被压成
+  两三行竖排字；现在一行一个、标签不换行、宽度统一。
 - **复制失败修复**：Android WebView 不授予页面剪贴板写权限，
   `navigator.clipboard.writeText` 必抛 `NotAllowedError`。新增原生 `copyText`
   （ClipboardManager），并按「原生桥 → navigator.clipboard → execCommand」三级回退；

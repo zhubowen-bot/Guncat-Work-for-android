@@ -2,14 +2,12 @@ package com.guncat.work;
 
 import android.Manifest;
 import android.app.Activity;
-import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.content.pm.ResolveInfo;
 import android.database.Cursor;
 import android.graphics.Color;
 import android.media.MediaScannerConnection;
@@ -49,7 +47,6 @@ import java.io.FileOutputStream;
 import java.io.OutputStream;
 import java.security.SecureRandom;
 import java.util.ArrayList;
-import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -682,11 +679,6 @@ public class MainActivity extends Activity {
         return intent;
     }
 
-    private boolean canResolve(Intent intent) {
-        List<ResolveInfo> matches = getPackageManager().queryIntentActivities(intent, 0);
-        return matches != null && !matches.isEmpty();
-    }
-
     /** WebView 拿不到的系统能力。所有方法都在 JS 线程调用。 */
     private class NativeBridge {
         /**
@@ -794,20 +786,18 @@ public class MainActivity extends Activity {
             }
         }
 
-        @JavascriptInterface
-        public String shareFile(String name, String mime, String base64) {
-            return shareFileTo(name, mime, base64, "system");
-        }
-
         /**
-         * 分享文件。target = wechat 时直接指向微信；微信没装或明确不收这种类型时
-         * 退回系统分享面板（并回一个 ok:fallback，界面据此提示）。
+         * 分享文件：一律打开**系统分享面板**。
+         *
+         * 不再用 `setPackage("com.tencent.mm")` 直达微信 —— 微信对文件类型挑得很严，
+         * 硬指过去只会得到 `No Activity found to handle Intent … pkg=com.tencent.mm`，
+         * 而系统面板本来就能选微信（而且不挑类型）。
          *
          * 文件先写到 cache/share 再由 FileShareProvider 以 content:// 暴露：
-         * 不再为了分享一次就往「下载」里塞一份，也不依赖 MediaStore 的类型推断。
+         * 不为了分享一次就往「下载」里塞一份，也不依赖 MediaStore 的类型推断。
          */
         @JavascriptInterface
-        public String shareFileTo(String name, String mime, String base64, String target) {
+        public String shareFile(String name, String mime, String base64) {
             try {
                 byte[] bytes = Base64.decode(base64, Base64.DEFAULT);
                 File dir = new File(getCacheDir(), "share");
@@ -825,22 +815,6 @@ public class MainActivity extends Activity {
                 Uri uri = FileShareProvider.uriFor(MainActivity.this, file);
                 String type = mime == null || mime.isEmpty() ? "*/*" : mime;
                 Intent intent = buildSendIntent(uri, type, safeName);
-                if ("wechat".equals(target)) {
-                    Intent wechat = new Intent(intent);
-                    wechat.setPackage("com.tencent.mm");
-                    if (canResolve(wechat)) {
-                        startActivity(wechat);
-                        return "ok";
-                    }
-                    // 微信对部分类型（zip / office 文档）只注册了宽泛的 */* 过滤器：换类型再试一次
-                    wechat.setType("*/*");
-                    if (canResolve(wechat)) {
-                        startActivity(wechat);
-                        return "ok";
-                    }
-                    startActivity(Intent.createChooser(intent, "分享文件"));
-                    return "ok:fallback";
-                }
                 startActivity(Intent.createChooser(intent, "分享文件"));
                 return "ok";
             } catch (Exception e) {

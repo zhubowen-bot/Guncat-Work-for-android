@@ -334,7 +334,7 @@ export function registerIpcHandlers(session: SessionManager): void {
       }
       if (request.action === 'share') {
         try {
-          return shareOnDesktop(payload, request.target)
+          return shareOnDesktop(payload)
         } catch (e) {
           return { status: 'error', message: String(e instanceof Error ? e.message : e) }
         }
@@ -603,8 +603,8 @@ function mimeTypeForFile(filePath: string): string {
       return 'image/x-icon'
     case '.avif':
       return 'image/avif'
-    // 以下类型以前一律退回 octet-stream：预览层无所谓，但「分享到微信」这类
-    // 需要真实 MIME 的出口会因此被微信拒收（它按类型决定收不收文件）。
+    // 以下类型以前一律退回 octet-stream：预览层无所谓，但「分享」这类
+    // 需要真实 MIME 的出口会因此被接收方拒收（它按类型决定收不收文件）。
     case '.pdf':
       return 'application/pdf'
     case '.docx':
@@ -723,28 +723,20 @@ function uniqueFilePath(filePath: string): string {
 /**
  * 桌面端的「分享」：这里没有 Android 那样的系统分享面板，能兑现的是
  * 「在下载目录留一份副本 + 把路径放进剪贴板 + 在资源管理器里定位」——
- * 微信桌面版支持直接粘贴路径/拖入文件，这条链路是真正可用的。
- * 目标为微信时顺手尝试唤起微信（协议失败不影响已完成的那份副本）。
+ * 微信桌面版支持直接粘贴路径或拖入文件，这条链路是真正可用的。
+ * 不再尝试 `weixin://`：协议唤起既不可靠，也不解决「文件交给谁」的问题。
  */
-function shareOnDesktop(payload: TransferPayload, target?: 'system' | 'wechat'): TransferResultDto {
+function shareOnDesktop(payload: TransferPayload): TransferResultDto {
   const dir: string = path.join(app.getPath('downloads'), 'Guncat Work')
   fs.mkdirSync(dir, { recursive: true })
   const file: string = uniqueFilePath(path.join(dir, payload.name))
   fs.writeFileSync(file, payload.bytes)
   clipboard.writeText(file)
   shell.showItemInFolder(file)
-  if (target === 'wechat') {
-    void Promise.resolve(shell.openExternal('weixin://')).catch((): void => undefined)
-    return {
-      status: 'shared',
-      path: file,
-      message: `已保存并复制路径：${file}。可直接在微信里粘贴或拖入发送`
-    }
-  }
   return {
     status: 'shared',
     path: file,
-    message: `已保存并复制路径：${file}。可在微信中粘贴或拖入发送`
+    message: `已保存并复制路径：${file}。可粘贴或拖入任意应用（含微信）发送`
   }
 }
 

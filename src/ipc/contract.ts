@@ -486,7 +486,9 @@ export interface WorkspaceRef {
  * 为什么不复用 workspace:exportZip / message:exportDocx：那两条命令的语义是
  * 「立刻写进默认下载目录」，用户既没有确认环节也选不了位置（Android 上表现为
  * 点一下就提示「已导出」，连文件落在哪都不知道）。这里把「要哪份文件」与
- * 「怎么处置」拆开：save 一定先经过系统保存位置选择，share 一定先给出分享去向。
+ * 「怎么处置」拆开：save 一定先经过系统保存位置选择，share 一定走系统分享面板
+ * （面板里本来就能选微信，不再自己拼一个「分享到微信」的直达 Intent —— 微信对
+ * 文件类型挑得很严，直达失败只会甩出一句 No Activity found）。
  *
  * 三选一确定内容：path（工作区相对路径）→ messageId（导出该条回答）→ 两者都空（打包工作区）。
  */
@@ -499,8 +501,6 @@ export interface TransferRequestDto {
   /** 建议文件名（保存对话框的默认名、分享时的标题） */
   suggestedName?: string
   action: 'save' | 'share'
-  /** share 的去向：system = 系统分享面板；wechat = 直接微信（不可用时退回系统面板） */
-  target?: 'system' | 'wechat'
 }
 
 export interface TransferResultDto {

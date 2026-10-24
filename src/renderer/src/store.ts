@@ -252,11 +252,7 @@ interface State {
   transferSubject: TransferSubject | null
   openTransfer(subject: TransferSubject): void
   closeTransfer(): void
-  runTransfer(
-    subject: TransferSubject,
-    action: 'save' | 'share',
-    target?: 'system' | 'wechat'
-  ): Promise<void>
+  runTransfer(subject: TransferSubject, action: 'save' | 'share'): Promise<void>
   /** 在接下来这段时间内不要自动置底（界面块的本地状态回传用） */
   freezeAutoScroll(ms: number): void
   reloadSettings(): Promise<void>
@@ -764,9 +760,10 @@ export const useStore = create<State>((set, get) => {
      *
      * 关键口径：save 一定先经过系统保存位置选择（桌面是保存对话框，Android 是
      * ACTION_CREATE_DOCUMENT）—— 这既是用户要的「确认流程」，也让他们自己决定
-     * 文件落在哪。取消不再提示「已导出」，失败如实报错。
+     * 文件落在哪。share 一律交给系统分享面板（面板里可以直接选微信）。
+     * 取消不再提示「已导出」，失败如实报错。
      */
-    async runTransfer(subject, action, target) {
+    async runTransfer(subject, action) {
       set({ transferSubject: null })
       const conversationId: string = subject.conversationId || get().activeId || ''
       if (conversationId === '') {
@@ -782,8 +779,7 @@ export const useStore = create<State>((set, get) => {
           path: subject.path,
           messageId: subject.messageId,
           suggestedName: subject.name,
-          action,
-          target
+          action
         })
         if (result.status === 'saved') {
           const where: string = result.path ?? subject.name

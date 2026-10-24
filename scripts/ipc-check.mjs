@@ -650,11 +650,10 @@ check(
 const transferShared = await inv('file:transfer', {
   conversationId: conv3.id,
   path: '素材.txt',
-  action: 'share',
-  target: 'wechat'
+  action: 'share'
 })
 check(
-  '分享到微信：留一份副本并把路径放进剪贴板',
+  '分享：留一份副本并把路径放进剪贴板（桌面没有系统分享面板）',
   transferShared.status === 'shared' &&
     transferShared.path !== undefined &&
     fs.existsSync(transferShared.path) &&

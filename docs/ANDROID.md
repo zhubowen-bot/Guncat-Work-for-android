@@ -347,7 +347,7 @@ python scripts/add-termux-packages.py
 | 工作区镜像 | 单文件 8MB / 单次 32MB；大文件、超大目录（如完整 `node_modules`）不会完整落地 |
 | 后台执行 | WebView 退后台可能被冻结；没有前台服务与常驻通知 |
 | 自定义工作区 | 只支持应用沙箱；导出/分享走 ZIP |
-| 分享到微信 | 文件经 `content://`（FileShareProvider）交给微信；微信对部分类型（如 zip）可能不收，此时自动退回系统分享面板 |
+| 分享 | 一律走系统分享面板（可发到微信）；文件经 `content://`（FileShareProvider）交给目标应用 |
 | 数据迁移 | 桌面版数据目录与 Android IndexedDB 不互通；没有导入通道 |
 | 加密 | 没有系统凭据保险库，API Key 明文存应用私有配置 |
 
@@ -365,8 +365,8 @@ python scripts/add-termux-packages.py
   `pdf_to_images` 渲染出可读 JPEG，并校验 `/pdfjs/*` 随包数据全部可访问；
   同时把 `Worker` 换成一构造就抛错的实现，并删掉 `ReadableStream` 的原生异步迭代器
   （模拟老 WebView），确认这两条兼容路径都由 App 自己补上；
-- 工作区：文件行「下载 / 分享到微信 / 删除」三个动作在触屏上常显；
-  「导出」先弹去向选择（保存到手机 / 分享到微信 / 其他应用），不再点一下就直接写下载目录；
+- 工作区：文件行「下载 / 分享 / 删除」三个动作在触屏上常显；
+  「导出」先弹去向选择（保存到手机 / 系统分享面板），不再点一下就直接写下载目录；
 - `npm run typecheck`（node/web/mobile）。
 
 真机验证建议：安装 APK 后依次测
@@ -381,6 +381,6 @@ python scripts/add-termux-packages.py
 5. 超时/终止：`sleep 60` 会被超时杀掉；后台 `sleep 60` 用 `job_kill` 结束；
 6. 兜底：设置切到系统 Shell，重复第 2 步，确认仍可用（无 Python/pip/Git）；
 7. 导出 Word/ZIP（应弹系统保存位置选择，取消后不应提示成功）；
-8. 单文件「下载」与「分享到微信」、工作区「导出 → 分享到微信」；
+8. 单文件「下载」与「分享」、工作区「导出 → 分享」，系统面板里能选到微信；
 9. 复制（文本 / MD / 代码块）应显示「已复制」而不是 `NotAllowedError`；
    长按选中一小段再复制，剪贴板里应只有那一段。

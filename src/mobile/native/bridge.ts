@@ -15,8 +15,6 @@ export interface AndroidBridge {
   exportFile?(name: string, mime: string, base64: string): string
   openFile(name: string, mime: string, base64: string): string
   shareFile(name: string, mime: string, base64: string): string
-  /** target = 'wechat' 直接指向微信，不可用时退回系统分享面板 */
-  shareFileTo?(name: string, mime: string, base64: string, target: string): string
   /** 写系统剪贴板；返回 "ok" 或 "err:…" */
   copyText?(text: string): string
   toast(message: string): void
@@ -209,42 +207,29 @@ export function openBytes(name: string, mime: string, bytes: Uint8Array): void {
 
 export interface ShareOutcome {
   ok: boolean
-  /** true = 目标应用（如微信）不可用，已退回系统分享面板 */
-  fallback?: boolean
   error?: string
 }
 
 /**
- * 分享文件。target='wechat' 时由原生侧直接指向微信；微信不可用会退回系统分享面板。
+ * 分享文件：一律走**系统分享面板**。
+ *
+ * 曾经试过 `setPackage("com.tencent.mm")` 直达微信，结果是
+ * `No Activity found to handle Intent … pkg=com.tencent.mm`：微信对文件类型挑得很严，
+ * 用包名硬指过去只会把失败甩给用户，而系统面板本来就能选微信（还不挑类型）。
  * 没有原生桥时用 Web Share API（桌面 Chrome 支持），再不行就退化成下载。
  */
-export function shareBytesTo(
-  name: string,
-  mime: string,
-  bytes: Uint8Array,
-  target: 'system' | 'wechat' = 'system'
-): ShareOutcome {
+export function shareBytesTo(name: string, mime: string, bytes: Uint8Array): ShareOutcome {
   const bridge = androidBridge()
   if (bridge !== null) {
     try {
-      const result =
-        typeof bridge.shareFileTo === 'function'
-          ? bridge.shareFileTo(name, mime, bytesToBase64(bytes), target)
-          : bridge.shareFile(name, mime, bytesToBase64(bytes))
+      const result = bridge.shareFile(name, mime, bytesToBase64(bytes))
       if (result === 'ok') {
         return { ok: true }
-      }
-      if (result === 'ok:fallback') {
-        return { ok: true, fallback: true }
       }
       return { ok: false, error: result.replace(/^err:/, '') }
     } catch (e) {
       return { ok: false, error: String(e) }
     }
-  }
-  if (target === 'wechat') {
-    // 浏览器里没有「直接微信」这个概念，交给系统分享面板
-    return shareBytesTo(name, mime, bytes, 'system')
   }
   void (async () => {
     const file = new File([bytes.slice().buffer as ArrayBuffer], name, { type: mime })
@@ -262,7 +247,7 @@ export function shareBytesTo(
 }
 
 export function shareBytes(name: string, mime: string, bytes: Uint8Array): void {
-  shareBytesTo(name, mime, bytes, 'system')
+  shareBytesTo(name, mime, bytes)
 }
 
 /**

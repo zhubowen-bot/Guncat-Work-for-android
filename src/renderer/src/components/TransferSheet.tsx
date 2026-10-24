@@ -4,13 +4,16 @@
 // 「已导出」—— 没有确认环节、也选不了位置，用户根本不知道文件去了哪。
 // 现在统一先弹这一层，把「要处置什么、能怎么处置」讲清楚：
 //   · 保存到手机/电脑：撒手交给系统保存位置选择（可换目录、改文件名、可取消）
-//   · 分享到微信：Android 直接指向微信；不可用时原生侧会退回系统分享面板
-//   · 其他应用分享：系统分享面板
+//   · 分享：打开**系统分享面板**（面板里可以直接选微信/QQ 等）
 // 工作区打包、单个文件、一条回答的 Word 共用这一层。
+//
+// 曾经单独做过「分享到微信」的直达按钮，但微信对文件类型挑得很严，
+// `setPackage("com.tencent.mm")` 只会得到 `No Activity found to handle Intent`；
+// 系统面板本来就能选微信，而且不挑类型，所以统一收回到系统面板。
 import { createPortal } from 'react-dom'
 import type { JSX } from 'react'
 import { useStore } from '../store'
-import { IconDownload, IconShare, IconSend } from '../icons'
+import { IconDownload, IconShare } from '../icons'
 
 /** Android 宿主注入的原生桥在上面；桌面端没有，据此给不同的按钮文案 */
 function isAndroid(): boolean {
@@ -30,9 +33,9 @@ export function TransferSheet(): JSX.Element | null {
   }
   const android = isAndroid()
 
-  const act = (action: 'save' | 'share', target?: 'system' | 'wechat'): void => {
+  const act = (action: 'save' | 'share'): void => {
     close()
-    void runTransfer(subject, action, target)
+    void runTransfer(subject, action)
   }
 
   const kindHint =
@@ -78,35 +81,17 @@ export function TransferSheet(): JSX.Element | null {
           </span>
         </button>
 
-        <button
-          type="button"
-          className="picker__option"
-          onClick={() => act('share', 'wechat')}
-        >
+        <button type="button" className="picker__option" onClick={() => act('share')}>
           <span className="photo-sheet__action">
             <span className="photo-sheet__icon">
               <IconShare size={20} />
             </span>
             <span className="picker__option-text">
-              <span className="picker__option-label">分享到微信</span>
+              <span className="picker__option-label">分享…</span>
               <span className="picker__option-hint">
                 {android
-                  ? '直接打开微信发送；没有可用入口时退回系统分享面板'
-                  : '在下载目录留一份副本并复制其路径，可直接粘贴或拖进微信'}
-              </span>
-            </span>
-          </span>
-        </button>
-
-        <button type="button" className="picker__option" onClick={() => act('share', 'system')}>
-          <span className="photo-sheet__action">
-            <span className="photo-sheet__icon">
-              <IconSend size={20} />
-            </span>
-            <span className="picker__option-text">
-              <span className="picker__option-label">其他应用分享</span>
-              <span className="picker__option-hint">
-                {android ? '打开系统分享面板，选其他应用' : '留一份副本并复制路径，便于发送到任意应用'}
+                  ? '打开系统分享面板，可直接选微信、QQ 等应用'
+                  : '在下载目录留一份副本并复制路径，可粘贴或拖进任意应用'}
               </span>
             </span>
           </span>
