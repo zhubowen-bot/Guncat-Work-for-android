@@ -143,7 +143,7 @@ never mirrored. Oversized files are reported explicitly instead of silently skip
 | Voice input | ✅ MediaRecorder + provider transcription |
 | Persistence | ✅ IndexedDB (app-private, removed on uninstall) |
 | Built-in Linux terminal (bash / Python / pip / Git) | ✅ bundled in the APK, arm64; extracted on first launch |
-| PDF parsing / search / page rendering | ✅ PDF.js (WebView worker + canvas); CJK CMaps, standard fonts and wasm bundled |
+| PDF parsing / search / page rendering | ✅ PDF.js (main-thread fake worker + canvas, no Web Worker); CJK CMaps, standard fonts and wasm bundled |
 | Custom workspace directory | ⚠️ not supported; use the app sandbox and ZIP export |
 | "Reveal in file manager" | ⚠️ replaced by save/share to Downloads |
 | Long background tasks | ⚠️ WebView may be frozen in background; keep the app in foreground |

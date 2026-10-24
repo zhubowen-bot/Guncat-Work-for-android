@@ -196,9 +196,13 @@ export namespace pdfService {
   export class PdfDocument {
     private inner: PdfDocumentBackend | null = null
     private opened: boolean = false
+    /** 最近一次加载失败的原因（给调用方拼诊断文案用；成功时为空） */
+    lastError: string = ''
 
     loadDocument(absPath: string): ParseResult {
+      this.lastError = ''
       if (backend === null) {
+        this.lastError = 'PDF 后端未安装'
         return ParseResult.PARSE_ERROR_FORMAT
       }
       try {
@@ -210,6 +214,7 @@ export namespace pdfService {
         this.opened = true
         return ParseResult.PARSE_SUCCESS
       } catch (e) {
+        this.lastError = e instanceof Error ? e.message : String(e)
         const code: number | undefined = (e as { code?: number }).code
         if (code === ParseResult.PARSE_ERROR_PASSWORD || code === ParseResult.PARSE_ERROR_CERT) {
           return code
@@ -232,7 +237,9 @@ export namespace pdfService {
      * 这里 await 一次，后面的同步访问器就都成立（页内容由 prepare() 预取）。
      */
     async loadDocumentAsync(absPath: string): Promise<ParseResult> {
+      this.lastError = ''
       if (backend === null) {
+        this.lastError = 'PDF 后端未安装'
         return ParseResult.PARSE_ERROR_FORMAT
       }
       try {
@@ -247,6 +254,7 @@ export namespace pdfService {
         this.opened = true
         return ParseResult.PARSE_SUCCESS
       } catch (e) {
+        this.lastError = e instanceof Error ? e.message : String(e)
         const code: number | undefined = (e as { code?: number }).code
         if (code === ParseResult.PARSE_ERROR_PASSWORD || code === ParseResult.PARSE_ERROR_CERT) {
           return code

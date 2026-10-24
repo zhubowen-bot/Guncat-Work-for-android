@@ -17,7 +17,7 @@ import { shellStatus } from './platform/shellExec'
 import { mirrorRootFor } from './platform/mirror'
 import { runJs } from './platform/libguncatjs'
 import { pdfService } from '@kit.PDFKit'
-import { installPdfJsBackend } from './platform/pdfBackend'
+import { installPdfJsBackend, preloadPdfJs } from './platform/pdfBackend'
 
 export const DATA_ROOT = '/guncat/data'
 export const RESOURCES_ROOT = '/guncat/resources'
@@ -108,6 +108,9 @@ export async function bootMobile(): Promise<void> {
     }
   }
   await session.bootstrap()
+  // 后台预热 PDF 引擎：首次打开 PDF 时不再等两个 chunk 下载/解析。
+  // 失败只记日志，不阻塞启动；真正失败的原因会在第一次工具调用时返回。
+  preloadPdfJs()
   document.documentElement.dataset.platform = 'android'
   document.body.classList.add('platform-android')
   installViewportHeight()

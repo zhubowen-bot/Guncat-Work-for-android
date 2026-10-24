@@ -83,7 +83,7 @@ export class PdfTextExtractor {
         throw new Error('PDF 加载异常: ' + PdfTextExtractor.errMessage(e as Object));
       }
       if (pr !== pdfService.ParseResult.PARSE_SUCCESS) {
-        throw new Error(PdfTextExtractor.parseResultMessage(pr));
+        throw new Error(PdfTextExtractor.parseResultMessage(pr, doc.lastError));
       }
       loaded = true;
       result.pageCount = doc.getPageCount();
@@ -138,7 +138,7 @@ export class PdfTextExtractor {
         throw new Error('PDF 加载异常: ' + PdfTextExtractor.errMessage(e as Object));
       }
       if (pr !== pdfService.ParseResult.PARSE_SUCCESS) {
-        throw new Error(PdfTextExtractor.parseResultMessage(pr));
+        throw new Error(PdfTextExtractor.parseResultMessage(pr, doc.lastError));
       }
       loaded = true;
       try {
@@ -224,7 +224,7 @@ export class PdfTextExtractor {
         throw new Error('PDF 加载异常: ' + PdfTextExtractor.errMessage(e as Object));
       }
       if (pr !== pdfService.ParseResult.PARSE_SUCCESS) {
-        throw new Error(PdfTextExtractor.parseResultMessage(pr));
+        throw new Error(PdfTextExtractor.parseResultMessage(pr, doc.lastError));
       }
       loaded = true;
       result.pageCount = doc.getPageCount();
@@ -384,20 +384,24 @@ export class PdfTextExtractor {
       .trim();
   }
 
-  private static parseResultMessage(result: pdfService.ParseResult): string {
+  private static parseResultMessage(result: pdfService.ParseResult, detail: string = ''): string {
+    let base: string = '';
     if (result === pdfService.ParseResult.PARSE_ERROR_FILE) {
-      return '文件读取失败或不是有效的 PDF';
+      base = '文件读取失败或不是有效的 PDF';
+    } else if (result === pdfService.ParseResult.PARSE_ERROR_FORMAT) {
+      base = 'PDF 格式解析失败(文档结构损坏)';
+    } else if (result === pdfService.ParseResult.PARSE_ERROR_PASSWORD) {
+      base = '该 PDF 已加密, 暂无法解析';
+    } else if (result === pdfService.ParseResult.PARSE_ERROR_CERT) {
+      base = 'PDF 证书校验失败';
+    } else {
+      base = 'PDF 服务内部错误(码 ' + result.toString() + ')';
     }
-    if (result === pdfService.ParseResult.PARSE_ERROR_FORMAT) {
-      return 'PDF 格式解析失败(文档结构损坏)';
+    // 后端的具体失败原因（例如「PDF 引擎加载超时」）比枚举文案更有诊断价值
+    if (detail !== undefined && detail !== '') {
+      base = base + '（' + detail + '）';
     }
-    if (result === pdfService.ParseResult.PARSE_ERROR_PASSWORD) {
-      return '该 PDF 已加密, 暂无法解析';
-    }
-    if (result === pdfService.ParseResult.PARSE_ERROR_CERT) {
-      return 'PDF 证书校验失败';
-    }
-    return 'PDF 服务内部错误(码 ' + result.toString() + ')';
+    return base;
   }
 
   private static errMessage(e: Object): string {

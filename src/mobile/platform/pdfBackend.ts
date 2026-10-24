@@ -4,12 +4,20 @@
 // 差别只在运行环境：
 //   1. 渲染 —— 桌面端主进程没有 DOM，用 @napi-rs/canvas；WebView 里直接创建
 //      <canvas>，PDF.js 的 render() 原生就支持。
-//   2. Worker / 随包数据 —— 浏览器版 PDF.js 必须走 Web Worker，CMap、标准字体、
-//      wasm 解码器也要通过 HTTP 取。构建期把 pdfjs-dist 的这几组数据拷到
-//      assets/public/pdfjs/（见 vite.mobile.config.ts 的 guncat-pdfjs-assets），
-//      运行时用 document.baseURI 拼出同源 URL；GuncatServer 会按静态资源返回。
-//   3. 文件读取 —— 仍然走 node:fs 的浏览器替身（memfs），所以和桌面端一样用
+//   2. 引擎运行方式 —— **刻意不用 Web Worker**。Android WebView 上 `new Worker`
+//      + module worker 的组合并不可靠：worker 脚本加载失败时 PDF.js 会等不到
+//      "ready" 消息，`getDocument()` 永远不 settle，界面就一直转圈。
+//      这里把 pdf.worker 模块也 import 进主线程并挂到 `globalThis.pdfjsWorker`，
+//      PDF.js 会走官方的 fake worker（LoopbackPort）路径，完全不创建 Worker。
+//      代价是解析在主线程执行；PdfTextExtractor 本来就逐页 await，可接受。
+//   3. 随包数据 —— CMap、标准字体、wasm 解码器通过同源 HTTP 取。构建期把
+//      pdfjs-dist 的这几组数据拷到 assets/public/pdfjs/（见 vite.mobile.config.ts
+//      的 guncat-pdfjs-assets），运行时用 document.baseURI 拼出同源 URL。
+//   4. 文件读取 —— 仍然走 node:fs 的浏览器替身（memfs），所以和桌面端一样用
 //      fs.readFileSync(absPath) 把工作区文件读成字节，再交给 PDF.js。
+//
+// 另外，每个可能挂住的阶段都有超时（引擎加载 / 打开 / 取页 / 渲染）。
+// 宁可返回一条明确的「PDF 引擎无响应」，也不让工具无限转圈。
 //
 // 其余语义与桌面端/鸿蒙侧一致：加密归因 PARSE_ERROR_PASSWORD、扫描件返回空文本、
 // searchKey 不可用时由 PdfTextExtractor 逐页子串扫描兜底。
@@ -35,13 +43,58 @@ interface PdfJsRawDocument {
   destroy(): Promise<void>
 }
 
-interface PdfJsModule {
-  version: string
-  GlobalWorkerOptions: { workerSrc: string }
-  getDocument(source: Record<string, unknown>): { promise: Promise<PdfJsRawDocument> }
+interface PdfJsLoadingTask {
+  promise: Promise<PdfJsRawDocument>
+  destroy(): Promise<void>
 }
 
-// PDF.js 体积不小（解析器 + worker）。动态 import，没人碰 PDF 的会话不付启动成本。
+interface PdfJsModule {
+  version: string
+  getDocument(source: Record<string, unknown>): PdfJsLoadingTask
+}
+
+/** PDF 引擎（两个 JS chunk）加载上限 */
+const PDF_ENGINE_TIMEOUT_MS = 20_000
+/** 打开文档（解析 trailer/xref）上限 */
+const PDF_OPEN_TIMEOUT_MS = 30_000
+/** 单页取页/取文字上限 */
+const PDF_PAGE_TIMEOUT_MS = 20_000
+/** 单页渲染上限 */
+const PDF_RENDER_TIMEOUT_MS = 30_000
+
+/** 给一个可能永远不 settle 的 Promise 加硬超时，避免工具无限转圈 */
+function withTimeout<T>(work: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let settled = false
+    const timer = setTimeout(() => {
+      if (settled) {
+        return
+      }
+      settled = true
+      reject(new Error(message))
+    }, ms)
+    work.then(
+      (value) => {
+        if (settled) {
+          return
+        }
+        settled = true
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error) => {
+        if (settled) {
+          return
+        }
+        settled = true
+        clearTimeout(timer)
+        reject(error)
+      }
+    )
+  })
+}
+
+// PDF.js 体积不小（解析器 + worker 模块）。动态 import，没人碰 PDF 的会话不付启动成本。
 let pdfjsPromise: Promise<PdfJsModule> | null = null
 
 /** 随包 PDF.js 数据的同源地址（assets/public/pdfjs/…） */
@@ -49,23 +102,47 @@ function assetUrl(sub: string): string {
   return new URL('pdfjs/' + sub, document.baseURI).href
 }
 
+/**
+ * 加载 PDF.js 主模块 + worker 模块。
+ *
+ * worker 模块只作为「主线程实现」导入：它的末尾会把 `WorkerMessageHandler`
+ * 挂到 `globalThis.pdfjsWorker`，PDF.js 看到它就直接用 LoopbackPort，不再
+ * `new Worker(...)`。这一步是 Android 上不转圈的关键。
+ */
 function loadPdfjs(): Promise<PdfJsModule> {
   if (pdfjsPromise === null) {
-    pdfjsPromise = import('pdfjs-dist/legacy/build/pdf.mjs')
-      .then((mod) => {
-        const lib: PdfJsModule = mod as unknown as PdfJsModule
-        // 构建期把 pdf.worker.min.mjs 拷成 pdfjs/pdf.worker.mjs；加版本号避免
-        // GuncatServer 的 max-age 缓存把旧 worker 留在 WebView 里。
-        lib.GlobalWorkerOptions.workerSrc = assetUrl('pdf.worker.mjs') + '?v=' + __APP_VERSION__
+    pdfjsPromise = withTimeout(
+      (async () => {
+        const [main, worker] = await Promise.all([
+          import('pdfjs-dist/legacy/build/pdf.mjs'),
+          import('pdfjs-dist/legacy/build/pdf.worker.min.mjs')
+        ])
+        const lib: PdfJsModule = main as unknown as PdfJsModule
+        const handler = (worker as { WorkerMessageHandler?: unknown }).WorkerMessageHandler
+        if (handler === undefined) {
+          throw new Error('PDF worker 模块未导出 WorkerMessageHandler')
+        }
+        ;(globalThis as typeof globalThis & { pdfjsWorker?: unknown }).pdfjsWorker = {
+          WorkerMessageHandler: handler
+        }
         return lib
-      })
-      .catch((error) => {
-        // 允许下次重试（例如 worker 资源尚未就绪）
-        pdfjsPromise = null
-        throw error
-      })
+      })(),
+      PDF_ENGINE_TIMEOUT_MS,
+      'PDF 引擎加载超时（JS 资源没有就绪）'
+    ).catch((error) => {
+      // 允许下次重试
+      pdfjsPromise = null
+      throw error
+    })
   }
   return pdfjsPromise
+}
+
+/** 启动后后台预热 PDF 引擎：第一次真正打开 PDF 时不再等 chunk 下载/解析 */
+export function preloadPdfJs(): void {
+  void loadPdfjs().catch((error) => {
+    console.warn('[pdf] 预加载失败', error)
+  })
 }
 
 // ===== 文本拼装（与桌面端共用 core/platform/pdfTextLayout.ts） =====
@@ -76,7 +153,7 @@ function loadPdfjs(): Promise<PdfJsModule> {
  * 就会出现「桌面读得出、手机读不出」。
  */
 function buildSource(absPath: string): Record<string, unknown> {
-  const source: Record<string, unknown> = {
+  return {
     // 传一份拷贝：PDF.js 会接管这段字节并在文档销毁时释放
     data: new Uint8Array(fs.readFileSync(absPath)),
     useWorkerFetch: false,
@@ -90,7 +167,6 @@ function buildSource(absPath: string): Record<string, unknown> {
     wasmUrl: assetUrl('wasm/'),
     iccUrl: assetUrl('iccs/')
   }
-  return source
 }
 
 // ===== 页 / 文档 =====
@@ -114,12 +190,20 @@ class PdfPage implements pdfService.PdfPageBackend {
     if (this.text !== null) {
       return
     }
-    const raw: PdfJsRawPage = await this.doc.getPage(this.index + 1)
+    const raw: PdfJsRawPage = await withTimeout(
+      this.doc.getPage(this.index + 1),
+      PDF_PAGE_TIMEOUT_MS,
+      'PDF 取页超时（第 ' + (this.index + 1) + ' 页）'
+    )
     this.raw = raw
     const viewport = raw.getViewport({ scale: 1 })
     this.width = viewport.width
     this.height = viewport.height
-    const content = await raw.getTextContent()
+    const content = await withTimeout(
+      raw.getTextContent(),
+      PDF_PAGE_TIMEOUT_MS,
+      'PDF 文字层读取超时（第 ' + (this.index + 1) + ' 页）'
+    )
     this.text = itemsToText(content.items)
     this.objects = itemsToObjects(content.items)
   }
@@ -145,7 +229,11 @@ class PdfPage implements pdfService.PdfPageBackend {
     if (this.raw === null) {
       throw new Error('PDF 页面尚未准备完成')
     }
-    const canvas: HTMLCanvasElement = await renderRawPageToCanvas(this.raw, width, height)
+    const canvas: HTMLCanvasElement = await withTimeout(
+      renderRawPageToCanvas(this.raw, width, height),
+      PDF_RENDER_TIMEOUT_MS,
+      'PDF 页面渲染超时（第 ' + (this.index + 1) + ' 页）'
+    )
     return image.createPixelMapFromCanvas(canvas)
   }
 }
@@ -223,10 +311,17 @@ export class PdfJsBackend implements pdfService.PdfBackend {
       return null
     }
     const pdfjs: PdfJsModule = await loadPdfjs()
+    const task: PdfJsLoadingTask = pdfjs.getDocument(buildSource(absPath))
     try {
-      const doc: PdfJsRawDocument = await pdfjs.getDocument(buildSource(absPath)).promise
+      const doc: PdfJsRawDocument = await withTimeout(
+        task.promise,
+        PDF_OPEN_TIMEOUT_MS,
+        'PDF 打开超时（引擎无响应）'
+      )
       return new PdfDocumentBackend(doc)
     } catch (e: unknown) {
+      // 超时/损坏时把底层加载任务一并销毁，避免后台继续占资源
+      void task.destroy().catch((): void => undefined)
       const name: string = String((e as { name?: string }).name ?? '')
       if (name === 'PasswordException') {
         const err = new Error('PDF 已加密，需要密码')

@@ -54,11 +54,13 @@ function mobilePlatformRedirect() {
 //   standard_fonts/ 标准 14 字体的度量（渲染 PDF 时用）
 //   wasm/           JPEG2000 / JBIG2 图片解码器
 //   iccs/           CMYK ICC 色彩配置
-// worker 本身是独立脚本，也必须能从同源加载（CSP worker-src 'self'）。
 //
 // 这些文件不适合经 Vite 的 import 打进 bundle（169 个 bcmap + 二进制），
 // 因此构建结束时原样拷进 assets/public/pdfjs；`vite dev` 则由中间件直接
 // 从 node_modules 提供同一批路径，开发态与打包态 URL 完全一致。
+//
+// 注意：这里**不**拷 pdf.worker.mjs。Android 端刻意走 PDF.js 的主线程
+// fake worker（见 mobile/platform/pdfBackend.ts），不需要独立 worker 脚本。
 const PDFJS_ROOT = resolve(ROOT, 'node_modules/pdfjs-dist')
 const PDFJS_DIRS = ['cmaps', 'standard_fonts', 'wasm', 'iccs']
 const PDFJS_OUT = resolve(ROOT, 'android/app/src/main/assets/public/pdfjs')
@@ -86,9 +88,7 @@ function pdfjsAssets(): Plugin {
       server.middlewares.use('/pdfjs', (req, res, next) => {
         const raw = (req.url ?? '').split('?')[0]
         const rel = decodeURIComponent(raw).replace(/^\/+/, '')
-        // 运行时 worker 固定叫 pdf.worker.mjs；node_modules 里是压缩版
-        const mapped = rel === 'pdf.worker.mjs' ? 'build/pdf.worker.min.mjs' : rel
-        const file = resolve(PDFJS_ROOT, mapped)
+        const file = resolve(PDFJS_ROOT, rel)
         if (!file.startsWith(PDFJS_ROOT + sep) || !existsSync(file) || statSync(file).isDirectory()) {
           next()
           return
@@ -105,10 +105,6 @@ function pdfjsAssets(): Plugin {
         if (existsSync(from)) {
           cpSync(from, resolve(PDFJS_OUT, dir), { recursive: true })
         }
-      }
-      const worker = resolve(PDFJS_ROOT, 'build/pdf.worker.min.mjs')
-      if (existsSync(worker)) {
-        cpSync(worker, resolve(PDFJS_OUT, 'pdf.worker.mjs'))
       }
     }
   }

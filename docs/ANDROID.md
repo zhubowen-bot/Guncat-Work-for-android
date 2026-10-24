@@ -66,7 +66,7 @@
 | --- | --- | --- |
 | `@kit.ArkTS` | `src/mobile/kit/ArkTS.ts` | 桌面版从 `node:util` 取 TextEncoder；浏览器原生已有，且 node:util 的 polyfill 在 bundle 里不可靠 |
 | `@kit.ImageKit` | `src/mobile/kit/ImageKit.ts` | 浏览器没有 `nativeImage`：用 `createImageBitmap` + canvas 解码/缩放/编码 |
-| `@kit.PDFKit` | `src/mobile/kit/PDFKit.ts` + `src/mobile/platform/pdfBackend.ts` | 后端接 PDF.js（WebView 内 worker + DOM canvas）；CMap / 标准字体 / wasm 随包 |
+| `@kit.PDFKit` | `src/mobile/kit/PDFKit.ts` + `src/mobile/platform/pdfBackend.ts` | 后端接 PDF.js（主线程 fake worker + DOM canvas，不创建 Web Worker）；CMap / 标准字体 / wasm 随包 |
 | `@core/platform/shellExec` | `src/mobile/platform/shellExec.ts` | 没有 `child_process`：走原生 `GuncatShell` 桥（真机）或内置 JS Shell（浏览器预览） |
 | `libguncatjs.so` | `src/mobile/platform/libguncatjs.ts` | `node:vm` → Web Worker（可真正终止） |
 | `@core/platform/native/svgRaster` | `src/mobile/platform/svgRaster.ts` | `@napi-rs/canvas` → 浏览器 Image + canvas |
@@ -94,9 +94,10 @@ PDF 三件套（`parse_document` / `search_pdf` / `pdf_to_images`）与桌面端
 
 | 环节 | Android 做法 |
 | --- | --- |
-| 后端注入 | `src/mobile/platform/pdfBackend.ts` 的 `installPdfJsBackend()`，在 `boot.ts` 里调用 |
+| 后端注入 | `src/mobile/platform/pdfBackend.ts` 的 `installPdfJsBackend()`，在 `boot.ts` 里调用；启动后 `preloadPdfJs()` 预热 |
 | 解析引擎 | `pdfjs-dist/legacy/build/pdf.mjs`，动态 import（首次打开 PDF 才加载，约 474KB gzip 144KB） |
-| Worker | 构建期把 `pdf.worker.min.mjs` 拷成 `assets/public/pdfjs/pdf.worker.mjs`，与页面同源 |
+| Worker | **不使用 Web Worker**：同时 import `pdf.worker.min.mjs` 并挂到 `globalThis.pdfjsWorker`，走 PDF.js 的 LoopbackPort/fake worker。Android WebView 的 module worker 失败时会让 `getDocument()` 永远不 settle，这是「一直转圈」的根因 |
+| 超时 | 引擎加载 20s、打开 30s、取页/文字 20s、渲染 30s；超时返回明确原因，不再无限转圈 |
 | 随包数据 | `pdfjs/{cmaps,standard_fonts,wasm,iccs}` 原样拷进 assets；中文 PDF 的文字层依赖 `cmaps` |
 | 文件读取 | 仍走 `node:fs` 替身（memfs）：`fs.readFileSync(absPath)` → `Uint8Array` → PDF.js |
 | 页面渲染 | 直接创建 DOM `<canvas>`，铺白底后交给 `page.render()`；`transferToImageBitmap()` 转成 `PixelMap` |
@@ -104,7 +105,7 @@ PDF 三件套（`parse_document` / `search_pdf` / `pdf_to_images`）与桌面端
 | 文本拼装 | 与桌面端共用 `core/platform/pdfTextLayout.ts`（`hasEOL` 换行、版面兜底），避免两端读出不同结果 |
 
 `vite.mobile.config.ts` 里的 `guncat-pdfjs-assets` 插件负责两件事：构建结束时把上述四组
-数据与 worker 拷进产物；`vite dev` 时用中间件从 `node_modules/pdfjs-dist` 提供同一批
+数据拷进产物；`vite dev` 时用中间件从 `node_modules/pdfjs-dist` 提供同一批
 `/pdfjs/*` 路径。开发态与打包态的 URL 完全一致，不依赖 CDN 或网络。
 
 已知边界（与桌面端一致）：加密 PDF 需要密码（返回 `PARSE_ERROR_PASSWORD`）；扫描件没有
@@ -360,6 +361,7 @@ python scripts/add-termux-packages.py
 - `run_js`：输入/输出、完成值、`while(true)` 在 1.5s 被终止；
 - PDF：`parse_document` 文字层（英文与中文 CMap 各一份）、`search_pdf` 命中页码、
   `pdf_to_images` 渲染出可读 JPEG，并校验 `/pdfjs/*` 随包数据全部可访问；
+  同时把 `Worker` 换成一构造就抛错的实现，确认整条链路不再依赖 Web Worker；
 - `npm run typecheck`（node/web/mobile）。
 
 真机验证建议：安装 APK 后依次测

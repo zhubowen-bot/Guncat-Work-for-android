@@ -29,7 +29,8 @@ termux-packages 仓库中找到对应 `packages/<包名>/build.sh` 及其源码�
 ## PDF.js
 
 - 项目：<https://github.com/mozilla/pdf.js>
-- 包：`pdfjs-dist@5.7.284`（`legacy/build/pdf.mjs` 与 `pdf.worker.min.mjs`）
+- 包：`pdfjs-dist@5.7.284`（`legacy/build/pdf.mjs` 与 `pdf.worker.min.mjs`；后者在
+  Android 端作为主线程 fake worker 的实现被 import，不单独分发 worker 脚本）
 - 许可：Apache-2.0（见 `node_modules/pdfjs-dist/LICENSE`，打包产物中的
   `assets/public/pdfjs/*` 保留上游 LICENSE 文件）
 - 用途：Android 端的 PDF 文字层解析、关键词搜索与页面转图（`parse_document` /

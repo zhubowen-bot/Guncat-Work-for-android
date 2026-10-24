@@ -164,7 +164,7 @@ targetSdk ≥ 29 的应用执行私有目录里的文件（Termux 官方也一�
 | 语音输入 | ✅ MediaRecorder + 服务商转写（需另配或复用多模态配置） |
 | 内置 Linux 终端（bash / Python / pip / Git） | ✅ 随 APK 打包，arm64；首次启动解压 |
 | 数据持久化 | ✅ IndexedDB（应用私有，卸载即清除） |
-| PDF 解析 / 搜索 / 页面转图 | ✅ PDF.js（WebView 内 worker + canvas）；中文 CMap、标准字体、wasm 随包 |
+| PDF 解析 / 搜索 / 页面转图 | ✅ PDF.js（主线程 fake worker + canvas，不依赖 Web Worker）；中文 CMap、标准字体、wasm 随包 |
 | 自定义工作区目录 | ⚠️ 不支持：使用应用沙箱工作区，可用 ZIP 导出 |
 | 文件管理器「定位」 | ⚠️ 改为保存/分享到系统下载目录 |
 | 后台长任务 | ⚠️ WebView 退到后台可能被系统冻结，长任务请保持前台 |
@@ -201,7 +201,7 @@ android/
 - 首屏启动、抽屉、快捷设置、全屏设置页（390×844）；
 - 保存配置 → 新建会话 → 流式回答（mock SSE）→ 重启后会话与配置仍在；
 - 工作模式：模型发起 `run_command` → 内置终端执行 `ls` → 结果回传 → 收尾；
-- PDF：`parse_document` 文字层（含中文 CMap）、`search_pdf` 关键词、`pdf_to_images` 渲染 JPEG；
+- PDF：`parse_document` 文字层（含中文 CMap）、`search_pdf` 关键词、`pdf_to_images` 渲染 JPEG；并在禁用 `Worker` 的条件下跑完整链路；
 - Shell：管道、追加写、grep、find、sed；无原生桥时退回 JS Shell 的回退路径；
 - `run_js`：输入/输出、完成值、`while(true)` 1.5 秒内被 Worker 终止；
 - `npm run typecheck`（node/web/mobile 三套 tsconfig）。

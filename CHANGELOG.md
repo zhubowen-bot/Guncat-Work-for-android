@@ -18,13 +18,19 @@
   （关键词定位）、`pdf_to_images`（页面渲染成 `pdf_images/<文件名>/p001.jpg`）。
   此前 `@kit.PDFKit` 只有接口没有后端，任何 PDF 都会得到「后端不可用」。
 - **后端实现**：`src/mobile/platform/pdfBackend.ts` 用 `pdfjs-dist` 的 legacy build，
-  动态 import；WebView 内直接创建 DOM canvas 渲染，`transferToImageBitmap()` 转 `PixelMap`
-  后交给 `ImagePacker` 写 JPEG。文本拼装与桌面端共用 `core/platform/pdfTextLayout.ts`。
+  动态 import；**不使用 Web Worker** —— 同时 import `pdf.worker.min.mjs` 并挂到
+  `globalThis.pdfjsWorker`，走 PDF.js 的 LoopbackPort/fake worker。Android WebView 上
+  module worker 加载失败时 PDF.js 会永远等不到 "ready"，这是三款工具「一直转圈」的根因。
+  渲染直接创建 DOM canvas，`transferToImageBitmap()` 转 `PixelMap` 后交给 `ImagePacker`
+  写 JPEG。文本拼装与桌面端共用 `core/platform/pdfTextLayout.ts`。
+- **超时兜底**：引擎加载 20s、打开 30s、取页/文字 20s、渲染 30s；任何一步挂住都会返回
+  明确原因（并带进 `PdfDocument.lastError`），不再无限转圈。
 - **随包数据**：构建期把 `pdfjs-dist` 的 `cmaps/`（169 个）、`standard_fonts/`、`wasm/`、
-  `iccs/` 与 worker 拷进 `assets/public/pdfjs/`；`vite dev` 由中间件提供同一批路径。
+  `iccs/` 拷进 `assets/public/pdfjs/`；`vite dev` 由中间件提供同一批路径。
   中文 PDF 的文字层依赖 CMap，缺少时只能读出空白或乱码。
 - **冒烟**：`android-check` 新增英文/中文 PDF 的文字层、搜索、渲染 JPEG 与随包数据的
-  可访问性断言（中文样例用 Type0 + `UniGB-UCS2-H`，专门覆盖 CMap 路径）。
+  可访问性断言（中文样例用 Type0 + `UniGB-UCS2-H`，专门覆盖 CMap 路径），并在
+  「Worker 一构造就抛错」的条件下跑完整条 PDF 链路，确保不再依赖 Web Worker。
 
 ### 内置 Linux 终端
 

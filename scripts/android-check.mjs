@@ -364,26 +364,42 @@ try {
   check('run_js 输入/输出/完成值', js.ok.ok && js.ok.outputs['out.txt'] === 'ABC' && js.ok.result === '3')
   check('run_js 死循环被 Worker 终止', !js.loop.ok && js.loop.error.includes('超时'))
 
-  // PDF：解析文字层 → 搜索 → 渲染成 JPG（走真实的 PDF.js worker 与随包数据）
+  // PDF：解析文字层 → 搜索 → 渲染成 JPG（走真实的 PDF.js 与随包数据）
   const pdfSmoke = await page.evaluate(async (pdfBase64) => {
     const conversation = await window.guncat.conversations.create('work', 'work')
     const root = '/guncat/data/files/workspaces/' + conversation.id
     const abs = root + '/smoke.pdf'
     window.__guncatDebug.writeFileBase64(abs, pdfBase64)
-    const debug = window.__guncatDebug
-    const extracted = await debug.pdf.extract(abs, 1, 5)
-    const hits = await debug.pdf.search(abs, 'hello')
-    const rendered = await debug.pdf.render(abs, root + '/pdf_images/smoke', 1, 1)
-    const jpg = await window.guncat.workspace.readBinary(conversation.id, 'pdf_images/smoke/p001.jpg')
-    return {
-      ready: debug.pdf.ready,
-      extracted,
-      hits,
-      rendered,
-      jpg: { mimeType: jpg.mimeType, size: jpg.size, prefix: jpg.dataUrl.slice(0, 30) }
+    // Android WebView 上 module worker 不可靠，后端应走主线程 fake worker：
+    // 这里把 Worker 换成「一构造就抛错」，PDF 仍然可用才算真的不依赖它。
+    const OriginalWorker = window.Worker
+    let workerAttempts = 0
+    window.Worker = class {
+      constructor() {
+        workerAttempts += 1
+        throw new Error('Worker disabled in PDF smoke')
+      }
+    }
+    try {
+      const debug = window.__guncatDebug
+      const extracted = await debug.pdf.extract(abs, 1, 5)
+      const hits = await debug.pdf.search(abs, 'hello')
+      const rendered = await debug.pdf.render(abs, root + '/pdf_images/smoke', 1, 1)
+      const jpg = await window.guncat.workspace.readBinary(conversation.id, 'pdf_images/smoke/p001.jpg')
+      return {
+        ready: debug.pdf.ready,
+        workerAttempts,
+        extracted,
+        hits,
+        rendered,
+        jpg: { mimeType: jpg.mimeType, size: jpg.size, prefix: jpg.dataUrl.slice(0, 30) }
+      }
+    } finally {
+      window.Worker = OriginalWorker
     }
   }, buildSamplePdf())
   check('PDF 后端已注入', pdfSmoke.ready === true)
+  check('PDF 不依赖 Web Worker（主线程 fake worker）', pdfSmoke.workerAttempts === 0)
   check(
     'PDF 文字层解析',
     pdfSmoke.extracted.pageCount === 1 && pdfSmoke.extracted.pages[0]?.includes('Hello PDF smoke'),
