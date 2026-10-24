@@ -473,6 +473,86 @@ try {
   )
   check('工作区镜像根与 cwd 一致', mirrored === '/guncat/data/files/workspaces/conv_x', mirrored)
 
+  // 目录镜像：浏览器里没有真机 Shell 桥，就用内存版假桥驱动真实的 WorkspaceMirror，
+  // 验证「工作区删目录 → 设备副本当轮消失」「命令删目录 → 工作区不再列出」两个方向。
+  // 曾经的问题：delete_file 返回已删除、stat 还能看见；rm -rf 后 list_files 仍列旧目录。
+  const dirMirror = await page.evaluate(async () => {
+    const conversation = await window.guncat.conversations.create('work', 'work')
+    const root = '/guncat/data/files/workspaces/' + conversation.id
+    const device = new Map() // 虚拟路径 → { dir, size, data }（假设备，等价 ShellManager.fs*）
+    const entriesOf = (base) => {
+      const prefix = base.replace(/\/+$/, '') + '/'
+      const entries = []
+      for (const [path, item] of device) {
+        if (path.startsWith(prefix)) {
+          entries.push([path.slice(prefix.length), item.dir ? 'd' : 'f', item.size, Date.now()])
+        }
+      }
+      return entries
+    }
+    const bridge = {
+      info: () => '{"ok":true}',
+      start: () => '{"ok":false,"error":"fake"}',
+      read: () => '{"ok":false,"error":"fake"}',
+      kill: () => {},
+      release: () => {},
+      reinstallBundled: () => {},
+      fsList: (vpath) => JSON.stringify({ ok: true, entries: entriesOf(vpath), truncated: false }),
+      fsRead: (vpath) => {
+        const item = device.get(vpath)
+        if (item === undefined || item.dir) {
+          return '{"ok":false,"error":"不是文件"}'
+        }
+        return JSON.stringify({ ok: true, data: item.data ?? '', size: item.size, mtime: Date.now() })
+      },
+      fsWrite: (vpath, base64) => {
+        device.set(vpath, { dir: false, data: base64, size: base64.length })
+        return '{"ok":true}'
+      },
+      fsDelete: (vpath) => {
+        for (const key of Array.from(device.keys())) {
+          if (key === vpath || key.startsWith(vpath + '/')) {
+            device.delete(key)
+          }
+        }
+        return '{"ok":true}'
+      },
+      fsMkdir: (vpath) => {
+        if (!device.has(vpath)) {
+          device.set(vpath, { dir: true, size: 0 })
+        }
+        return '{"ok":true}'
+      },
+      fsStat: (vpath) => JSON.stringify({ ok: true, exists: device.has(vpath) })
+    }
+    window.GuncatShell = bridge
+    const mirror = new window.__guncatDebug.WorkspaceMirror(root)
+
+    // 工作区里造一棵目录树（writeFileBase64 会自动补父目录）
+    window.__guncatDebug.writeFileBase64(root + '/ghost/inner/x.txt', 'eA==')
+    mirror.syncDown()
+    const syncedDown = device.has(root + '/ghost/inner/x.txt')
+
+    // 1) 工作区删目录（面板删除 / delete_file 走同一条 fs 删除路径）
+    await window.guncat.workspace.remove(conversation.id, 'ghost')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const deletePropagated = !Array.from(device.keys()).some((key) => key.startsWith(root + '/ghost'))
+
+    // 2) 命令删目录：设备上 rm -rf 之后工作区不能还列着
+    window.__guncatDebug.writeFileBase64(root + '/gone/inner/y.txt', 'eQ==')
+    mirror.syncDown()
+    bridge.fsDelete(root + '/gone')
+    mirror.syncUp()
+    const items = await window.guncat.workspace.list(conversation.id)
+    const syncUpCleaned = !items.some((item) => item.path.startsWith('gone'))
+    // 假桥只服务于本段用例，不能留给后面的「工作模式工具调用」把 run_command 抢走
+    delete window.GuncatShell
+    return { syncedDown, deletePropagated, syncUpCleaned, paths: items.map((item) => item.path) }
+  })
+  check('镜像：工作区目录同步到设备', dirMirror.syncedDown)
+  check('镜像：删目录当轮同步到设备', dirMirror.deletePropagated)
+  check('镜像：命令删目录后工作区不再列出', dirMirror.syncUpCleaned, dirMirror.paths.join(','))
+
   const js = await page.evaluate(async () => {
     const { runJs } = window.__guncatDebug
     const ok = await runJs('write("out.txt", inputs["a.txt"].toUpperCase()); inputs["a.txt"].length', {

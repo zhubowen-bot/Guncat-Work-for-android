@@ -14,7 +14,7 @@ import { pickFilesFromDevice } from './native/picker'
 import { createMobileHost } from './host'
 import { runShell } from './platform/shell'
 import { shellStatus } from './platform/shellExec'
-import { mirrorRootFor } from './platform/mirror'
+import { mirrorRootFor, installMirrorFsEvents, WorkspaceMirror } from './platform/mirror'
 import { runJs } from './platform/libguncatjs'
 import { pdfService } from '@kit.PDFKit'
 import { installPdfJsBackend, preloadPdfJs } from './platform/pdfBackend'
@@ -60,6 +60,8 @@ export async function bootMobile(): Promise<void> {
   // 手机端没有可靠 hover：即使 WebView 把 matchMedia 报成 hover，也不启用桌面 hover 规则
   document.documentElement.classList.remove('hoverable')
   await hydrateFs()
+  // 工作区删除要同步到设备镜像：delete_file 之后紧接着的 stat/ls 不能还看见已删目录
+  installMirrorFsEvents()
   installBundledResources()
   initAppPaths({ dataRoot: DATA_ROOT, resourcesRoot: RESOURCES_ROOT })
   clearTempDir()
@@ -95,6 +97,8 @@ export async function bootMobile(): Promise<void> {
     runJs,
     shellStatus,
     mirrorRootFor,
+    // 冒烟用：直接驱动镜像的同步逻辑（浏览器里没有原生 Shell，但有假桥也能测目录收敛）
+    WorkspaceMirror,
     // 浏览器冒烟专用：造测试素材 + 直接驱动 PDF 三件套（与工具执行走同一套内核）
     writeFileBase64,
     pdf: {

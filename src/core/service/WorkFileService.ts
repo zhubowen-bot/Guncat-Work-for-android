@@ -1328,6 +1328,12 @@ export class WorkFileService {
       }
       WorkFileService.deleteRecursive(root);
       WorkFileService.ensureDir(root);
+      // 删完再核对一次：删不掉还回「已清空」就是假成功，调用方会据此以为数据没了
+      let left: string[] = fileIo.listFileSync(root);
+      if (left.length > 0) {
+        return WorkFileService.fail('清空未彻底: 仍有 ' + left.length.toString() +
+          ' 项存在(可能被占用或权限不足)');
+      }
       return WorkFileService.ok('已清空工作区(' + items.length.toString() + ' 项)');
     }
     let abs: string | null = WorkFileService.resolveSafe(root, rel);
@@ -1341,6 +1347,10 @@ export class WorkFileService {
       return WorkFileService.fail('路径不存在: ' + rel);
     }
     WorkFileService.deleteRecursive(abs);
+    // 同上：以磁盘（memfs）的真实状态为准，不靠「调用没抛异常」推断成功
+    if (fileIo.accessSync(abs)) {
+      return WorkFileService.fail('删除未生效: ' + rel + ' 仍然存在(可能被占用或权限不足)');
+    }
     return WorkFileService.ok('已删除 ' + rel);
   }
 

@@ -9,6 +9,7 @@
 // 应用切到后台/页面卸载时再做一次全量快照兜底。
 import { Volume, createFsFromVolume } from 'memfs'
 import type * as NodeFs from 'node:fs'
+import { notifyFsDelete } from './fsEvents'
 
 const volume = new Volume()
 const baseFs = createFsFromVolume(volume) as unknown as typeof NodeFs
@@ -217,6 +218,10 @@ function wrapMethod(name: string, fn: (...args: never[]) => unknown): (...args: 
       if (name === 'renameSync' || name === 'rename' || name === 'copyFileSync' || name === 'copyFile') {
         mark(pathArg(args[1]))
       }
+    }
+    // 删除类操作触发镜像通知（设备上的副本必须跟着消失，否则就是幻影）
+    if (name === 'rmSync' || name === 'rmdirSync' || name === 'unlinkSync') {
+      notifyFsDelete(pathArg(args[0]))
     }
     return result
   }

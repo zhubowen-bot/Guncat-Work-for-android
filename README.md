@@ -137,8 +137,10 @@ npm run dev:android   # http://127.0.0.1:5174
   的 arm64 包。纯 Python 包可以直接 `pip install`（pip 已预装）。
 - 执行命令前，App 会把当前会话工作区从 memfs 镜像到应用私有目录
   （`/data/data/com.guncat.work/files/guncat-data/files/workspaces/<会话>`），
-  命令结束后把新建/修改/删除的文件同步回工作区 —— 所以 `ls`、`grep -r`、`tar`、`git status`
+  命令结束后把新建/修改/删除的文件与目录同步回工作区 —— 所以 `ls`、`grep -r`、`tar`、`git status`
   看到的就是你在界面上看到的文件。
+- 目录和文件一样双向收敛：`delete_file` 删目录会立刻删掉设备副本（`stat` 不会再说还在），
+  `rm -rf` 删掉的目录也会从工作区里消失，不会留下只在 `list_files` 里存在的幻影目录。
 - **系统 Shell（兜底）**：内置终端不可用（非 arm64、解压失败）时可切到
   `/system/bin/sh`（mksh + toybox），仍支持管道、重定向和工作区镜像，但没有上面这些工具。
 - 设置页「终端命令执行 (Shell)」可切换后端、查看内置终端安装进度、重新安装。

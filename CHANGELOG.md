@@ -63,6 +63,12 @@
 - **工作区镜像**（`src/mobile/platform/mirror.ts`）：执行前把会话工作区从 memfs 写到
   `files/guncat-data/files/workspaces/<会话>`，执行后同步回 memfs。单文件 8MB / 单次 32MB 封顶，
   不同步设置、会话历史与 API Key。
+- **目录镜像双向收敛**（同一轮修复）：`delete_file` 删目录/清空工作区后，设备副本当轮删除
+  （memfs 的 `rmdirSync`/`rmSync`/`unlinkSync` 经 `src/mobile/shims/fsEvents.ts` 通知镜像），
+  `rm -rf` 删掉的目录也会从 memfs 消失；`list_files`、工作区面板与运行时快照不再出现
+  「磁盘上已经没了、列表里还列着」或「删掉又长回来」的幻影目录。删除改为以真实状态核对
+  （停不掉的删除会报错而不是谎报成功）；镜像只清自己同步过的目录，列表被 2 万条目截断时
+  不做删除推断，避免大工作区误删。
 - **进程管理**：输出环形缓冲 + 丢弃计数；超时/停止/`job_kill` 按 `/proc` 递归杀子孙进程。
 - **ffmpeg/ffprobe 链接修复（两层）**：
   第一层，Termux 的 `libandroid-stub` 会往 `$PREFIX/lib` 塞一套**假的**

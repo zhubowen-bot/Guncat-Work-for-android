@@ -167,7 +167,12 @@ Android 版的 `node:fs` 是 memfs（`src/mobile/shims/fs.ts`），而真实命�
 `<filesDir>/guncat-data/files/workspaces/<conv>`，命令结束后再扫一遍设备目录：
 
 - 新增/修改的文件读回 memfs（`fs.writeFileSync`，沿用原有 IndexedDB 持久化）；
-- 命令删掉的文件从 memfs 删除；
+- 命令删掉的文件与目录从 memfs 删除；工作区里删掉的目录在下次同步时从设备删除；
+- **删除是立即同步的**：memfs 的 `rmSync`/`rmdirSync`/`unlinkSync` 经
+  `src/mobile/shims/fsEvents.ts` 通知镜像，当轮就删设备副本。否则 `delete_file` 返回
+  「已删除」之后紧接着 `stat` 还会看到目录，等于假成功；
+- 目录账本（`state.dirs`）两边都记：只清「自己同步过、且已从另一侧消失」的目录，
+  命令正在后台新建、还没读回工作区的目录不会被当成残留误删；
 - 只镜像 `/guncat/data/files/workspaces/<会话>`，不同步设置、会话历史与 API Key；
 - 单文件 8MB、单次同步 32MB 封顶，超限会写进命令结果，不静默跳过；
 - 后台任务与文件工具同时改同一个文件时按「后写覆盖」；镜像状态只在本次页面生命周期内保存，

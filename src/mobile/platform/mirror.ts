@@ -7,10 +7,19 @@
 //   · 单文件 8MB、单次同步 32MB 封顶，超出的文件留在设备上并在结果里明确说明；
 //   · memfs 仍是一等公民：文件工具的写入一定会在下一次命令前落盘，命令行的改动会在
 //     命令结束后读回；后台任务与文件工具同时改同一个文件时按「后写覆盖」处理。
+//
+// 目录必须和文件一样双向收敛（否则 list_files / 运行时快照会说谎）：
+//   · 删除是「立即同步」的：memfs 里 rmdir/rm/unlink 会经 shims/fsEvents 通知到这里，
+//     设备副本当轮就删（见 installMirrorFsEvents）。不能等下一条命令 —— 中间任何一次
+//     `stat` / `ls` 都会看到本该删掉的目录，而 delete_file 已经回了「已删除」。
+//   · 命令侧删掉的目录在 syncUp 里按账本（state.dirs）清掉 memfs；memfs 侧删掉的目录
+//     在 syncDown 里清掉设备。账本只认「我们自己同步过的目录」，命令正在后台新建、
+//     还没读回工作区的目录不会被误删。
 import fs from 'node:fs'
 import path from 'node:path'
 import { bytesToBase64, base64ToBytes } from '../native/bridge'
 import { parseJson, shellBridge } from '../native/shellBridge'
+import { setFsDeleteListener } from '../shims/fsEvents'
 
 export const WORKSPACES_ROOT = '/guncat/data/files/workspaces'
 const MAX_FILE_BYTES = 8 * 1024 * 1024
@@ -51,6 +60,27 @@ function stateOf(root: string): MirrorState {
     states.set(root, state)
   }
   return state
+}
+
+/** 把 dir 及其整个子树从账本里抹掉（目录已确认在设备上不存在了）。 */
+function forgetUnder(state: MirrorState, dir: string): void {
+  const prefix = dir + '/'
+  const hit = (key: string): boolean => key === dir || key.startsWith(prefix)
+  for (const key of Array.from(state.dirs)) {
+    if (hit(key)) {
+      state.dirs.delete(key)
+    }
+  }
+  for (const key of Array.from(state.remoteSigs.keys())) {
+    if (hit(key)) {
+      state.remoteSigs.delete(key)
+    }
+  }
+  for (const key of Array.from(state.localSigs.keys())) {
+    if (hit(key)) {
+      state.localSigs.delete(key)
+    }
+  }
 }
 
 /**
@@ -177,6 +207,84 @@ export class WorkspaceMirror {
     }
   }
 
+  /**
+   * 设备上残留、但工作区里已经删掉的目录：删掉它们。
+   *
+   * 只清账本里的目录（我们同步过的），不碰设备上的未知目录 —— 后台任务可能正在
+   * 里面写东西、还没被 syncUp 读回工作区，按「未知即删除」会把它们连根拔掉。
+   */
+  private pruneRemoteDirs(localDirs: Set<string>): void {
+    const bridge = shellBridge()
+    if (bridge === null) {
+      return
+    }
+    const stale = Array.from(this.state.dirs).filter(
+      (dir) => dir !== this.root && dir.startsWith(this.root + '/') && !localDirs.has(dir)
+    )
+    if (stale.length === 0) {
+      return
+    }
+    const all = new Set(stale)
+    // 从深到浅逐个看：祖先也在待删集合里时，删祖先就够（fsDelete 是递归的）
+    stale.sort((a, b) => b.length - a.length)
+    for (const dir of stale) {
+      let parent = dir
+      let covered = false
+      while (true) {
+        const at = parent.lastIndexOf('/')
+        if (at <= 0) {
+          break
+        }
+        parent = parent.slice(0, at)
+        if (all.has(parent)) {
+          covered = true
+          break
+        }
+      }
+      if (covered) {
+        continue
+      }
+      const result = parseJson(bridge.fsDelete(dir))
+      if (result.ok === true) {
+        forgetUnder(this.state, dir)
+      } else {
+        // 删不掉就留着账本，下一条命令再试；不能静默当成已删
+        this.warn(
+          `清理设备残留目录失败: ${dir}` +
+            (typeof result.error === 'string' ? `（${result.error}）` : '')
+        )
+      }
+    }
+  }
+
+  /**
+   * 命令删掉的目录：从工作区里也删掉（syncUp 用）。
+   *
+   * 只处理账本里的目录，并且只在目录已经空了的时候删 —— 如果里面还有文件，说明
+   * 那是工作区自己新写的（或后台任务还没读回），保留下来，下次同步再判。
+   */
+  private pruneLocalDirs(remoteDirs: Set<string>): void {
+    const stale = Array.from(this.state.dirs).filter(
+      (dir) => dir !== this.root && dir.startsWith(this.root + '/') && !remoteDirs.has(dir)
+    )
+    if (stale.length === 0) {
+      return
+    }
+    stale.sort((a, b) => b.length - a.length)
+    for (const dir of stale) {
+      try {
+        if (!fs.existsSync(dir)) {
+          forgetUnder(this.state, dir)
+          continue
+        }
+        fs.rmdirSync(dir)
+        forgetUnder(this.state, dir)
+      } catch {
+        // 非空（还有工作区自己的文件）或被占用：保留账本，下次 syncUp 再收敛
+      }
+    }
+  }
+
   /** memfs → 设备。返回失败提示（已写进 warnings）。 */
   syncDown(): void {
     const bridge = shellBridge()
@@ -187,6 +295,11 @@ export class WorkspaceMirror {
     const local = listLocal(this.root)
     if (local.truncated) {
       this.warn(`工作区文件超过 ${MAX_ENTRIES} 个，只镜像了前 ${MAX_ENTRIES} 个`)
+    }
+    // 工作区里已经不存在的目录，设备上先清掉（deleted 后紧接一条命令也能看到真实状态）。
+    // 列表被截断时不能按「没列出来」推断删除，否则大工作区会被误删。
+    if (!local.truncated) {
+      this.pruneRemoteDirs(new Set(local.dirs))
     }
 
     const mkdir = (vpath: string): void => {
@@ -246,15 +359,18 @@ export class WorkspaceMirror {
       )
     }
 
-    // memfs 里删掉的文件，设备上也要删：ls 才不会看见幽灵文件
-    const localPaths = new Set(local.files.map((entry) => entry.vpath))
-    for (const vpath of Array.from(this.state.remoteSigs.keys())) {
-      if (localPaths.has(vpath) || !vpath.startsWith(this.root + '/')) {
-        continue
+    // memfs 里删掉的文件，设备上也要删：ls 才不会看见幽灵文件。
+    // 同样：列表截断时只做「已知没变」的判断，不拿残缺列表当删除依据。
+    if (!local.truncated) {
+      const localPaths = new Set(local.files.map((entry) => entry.vpath))
+      for (const vpath of Array.from(this.state.remoteSigs.keys())) {
+        if (localPaths.has(vpath) || !vpath.startsWith(this.root + '/')) {
+          continue
+        }
+        parseJson(bridge.fsDelete(vpath))
+        this.state.remoteSigs.delete(vpath)
+        this.state.localSigs.delete(vpath)
       }
-      parseJson(bridge.fsDelete(vpath))
-      this.state.remoteSigs.delete(vpath)
-      this.state.localSigs.delete(vpath)
     }
   }
 
@@ -275,6 +391,8 @@ export class WorkspaceMirror {
     for (const dir of remote.dirs) {
       try {
         fs.mkdirSync(dir, { recursive: true })
+        // 设备目录也记进账本：命令建的空目录要能被后面的删除流程收敛，不能只是读回工作区
+        this.state.dirs.add(dir)
       } catch {
         // 目录已存在或无权限，后面写文件时会报
       }
@@ -321,22 +439,105 @@ export class WorkspaceMirror {
       }
     }
 
-    // 命令删掉的文件，工作区里也要消失
-    for (const vpath of Array.from(this.state.remoteSigs.keys())) {
-      if (remotePaths.has(vpath) || !vpath.startsWith(this.root + '/')) {
-        continue
-      }
-      try {
-        if (fs.existsSync(vpath) && fs.statSync(vpath).isFile()) {
-          fs.rmSync(vpath, { force: true })
+    // 命令删掉的文件/目录，工作区里也要消失。
+    // 设备列表被截断时（超过 MAX_ENTRIES）不能按「没列出来」推断删除，
+    // 否则一个 node_modules 大小的目录会把工作区里的文件误删一大片。
+    if (!remote.truncated) {
+      for (const vpath of Array.from(this.state.remoteSigs.keys())) {
+        if (remotePaths.has(vpath) || !vpath.startsWith(this.root + '/')) {
+          continue
         }
-      } catch {
-        // 忽略：最多留一个幽灵文件，下次同步会再试
+        try {
+          if (fs.existsSync(vpath) && fs.statSync(vpath).isFile()) {
+            fs.rmSync(vpath, { force: true })
+          }
+        } catch {
+          // 忽略：最多留一个幽灵文件，下次同步会再试
+        }
+        this.state.remoteSigs.delete(vpath)
+        this.state.localSigs.delete(vpath)
       }
-      this.state.remoteSigs.delete(vpath)
-      this.state.localSigs.delete(vpath)
+
+      // 命令删掉的目录，工作区里也要消失（只清账本里、已经空了的目录）
+      this.pruneLocalDirs(new Set(remote.dirs))
     }
   }
+}
+
+// ===== 工作区删除 → 设备副本立即删除 =====
+//
+// delete_file 返回「已删除」之后，模型往往紧接着 run_command `stat` 验一下；如果设备副本
+// 要等下一次 syncDown 才收拾，那一眼看到的就是「说删了其实还在」。所以 memfs 的
+// rmdir/rm/unlink 一发生就把设备副本删掉，不等命令。
+//
+// 合并策略：delete_file 清一个大目录会触发成百上千次 unlink/rmdir，逐次过桥会把主线程拖死；
+// 这里把同一轮的删除攒进微任务，只对最上层路径调一次 fsDelete（原生侧本来就是递归删）。
+const pendingDeletes = new Map<string, Set<string>>()
+let flushScheduled = false
+
+function noteLocalDelete(absPath: string): void {
+  const root = mirrorRootFor(absPath)
+  if (root === WORKSPACES_ROOT) {
+    return // 不是会话工作区（设置/缓存/日志），没有镜像
+  }
+  if (absPath !== root && !absPath.startsWith(root + '/')) {
+    return
+  }
+  let batch = pendingDeletes.get(root)
+  if (batch === undefined) {
+    batch = new Set()
+    pendingDeletes.set(root, batch)
+  }
+  batch.add(absPath)
+  if (!flushScheduled) {
+    flushScheduled = true
+    queueMicrotask(flushLocalDeletes)
+  }
+}
+
+function flushLocalDeletes(): void {
+  flushScheduled = false
+  const batches = Array.from(pendingDeletes)
+  pendingDeletes.clear()
+  for (const batch of batches) {
+    const root = batch[0]
+    const paths = Array.from(batch[1])
+    const bridge = shellBridge()
+    if (bridge === null) {
+      continue // 浏览器预览没有设备侧，工作区本身就是唯一真值
+    }
+    const state = stateOf(root)
+    const all = new Set(paths)
+    for (const dir of paths) {
+      // 祖先也在这一批里：删祖先就够（fsDelete 递归），跳过子路径
+      let parent = dir
+      let covered = false
+      while (true) {
+        const at = parent.lastIndexOf('/')
+        if (at <= 0) {
+          break
+        }
+        parent = parent.slice(0, at)
+        if (all.has(parent)) {
+          covered = true
+          break
+        }
+      }
+      if (covered) {
+        continue
+      }
+      const result = parseJson(bridge.fsDelete(dir))
+      if (result.ok === true) {
+        forgetUnder(state, dir)
+      }
+      // 失败就留着账本：下一次 syncDown 的 pruneRemoteDirs 会再试，不会假装成功
+    }
+  }
+}
+
+/** 在移动端启动时调用一次：让 memfs 的删除操作同步到设备镜像。 */
+export function installMirrorFsEvents(): void {
+  setFsDeleteListener(noteLocalDelete)
 }
 
 /** 把设备上的真实路径换回 /guncat/data，避免模型看见 /data/user/0/... 这种噪声 */
