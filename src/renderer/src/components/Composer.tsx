@@ -20,8 +20,7 @@ import {
   IconRefresh,
   IconSend,
   IconSteer,
-  IconStop,
-  IconStopCircle
+  IconStop
 } from '../icons'
 
 interface Props {
@@ -298,7 +297,7 @@ export function Composer({ running, mode, onSend, onSteer, onAbort }: Props) {
     mode === 'chat' ? '发消息…' : mode === 'interactive' ? '描述界面…' : '交代任务…'
 
   return (
-    <div className="composer">
+    <div className="composer" data-running={running ? 'true' : 'false'}>
       <AttachmentBar
         attachments={attachments}
         onRemove={(target) => setAttachments((prev) => prev.filter((a) => a.path !== target))}
@@ -471,7 +470,7 @@ export function Composer({ running, mode, onSend, onSteer, onAbort }: Props) {
               aria-label="停止生成"
               onClick={onAbort}
             >
-              <IconStopCircle size={20} />
+              <IconStop size={20} />
               <span className="composer__send-label">停止</span>
             </button>
           </>

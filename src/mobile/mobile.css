@@ -274,6 +274,20 @@ body.platform-android code {
     display: inline-flex !important;
   }
 
+  /* 执行中出现「插话」按钮时，行内会多一个按钮，窄屏会把输入框挤到换行。
+     语音/拍照在执行中不是关键路径，先让位，保证输入框始终是一行高。 */
+  .composer[data-running='true'] .composer__mic,
+  .composer[data-running='true'] .composer__camera {
+    display: none !important;
+  }
+
+  /* 再兜一层：占位符不换行（不支持时上面的让位也足够） */
+  .composer textarea::placeholder {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   .composer__send {
     width: 44px;
     height: 44px;

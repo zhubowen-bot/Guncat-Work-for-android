@@ -172,8 +172,15 @@ export class CommandService {
       if (resolved === null) {
         return CommandService.fail('cwd 必须是工作区内的相对路径(不允许越出工作区): ' + cwdRel);
       }
-      if (!fileIo.accessSync(resolved) || !fileIo.statSync(resolved).isDirectory()) {
-        return CommandService.fail('cwd 不是工作区里已存在的目录: ' + cwdRel);
+      if (!fileIo.accessSync(resolved)) {
+        try {
+          fileIo.mkdirSync(resolved, true);
+        } catch {
+          return CommandService.fail('cwd 不存在且创建失败: ' + cwdRel);
+        }
+      }
+      if (!fileIo.statSync(resolved).isDirectory()) {
+        return CommandService.fail('cwd 不是工作区里的目录: ' + cwdRel);
       }
       cwd = resolved;
     }

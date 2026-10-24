@@ -4108,6 +4108,18 @@ check(
   escapeRun.ok === false && escapeRun.output.includes('cwd')
 )
 
+const autoCwdDir = path.join(cmdRoot, 'auto-cwd-check')
+fs.rmSync(autoCwdDir, { recursive: true, force: true })
+const autoCwdRun = await CommandService.run(
+  convCmd.id, cmdRoot, { command: isWin ? 'cd' : 'pwd', cwd: 'auto-cwd-check' }, null
+)
+check(
+  'cwd 不存在时自动创建（手机上传话不必先 create_dir）',
+  autoCwdRun.ok === true && autoCwdRun.output.includes('auto-cwd-check'),
+  autoCwdRun.output.slice(0, 120)
+)
+fs.rmSync(autoCwdDir, { recursive: true, force: true })
+
 process.env.GUNCAT_FAKE_API_KEY = 'sk-should-never-leak'
 const envRun = await CommandService.run(convCmd.id, cmdRoot, { command: isWin ? 'set' : 'env' }, null)
 check(

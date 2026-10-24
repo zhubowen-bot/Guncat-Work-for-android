@@ -176,6 +176,11 @@ dig/nslookup、htop、wget、zip、Git 2.56、Python 3.14 + pip + numpy/scipy/pi
 Termux 仓库的新包仍引用 `/data/data/com.termux/...`，`pkg install` 装出来的文件路径不会自动
 改写；当前**不承诺** `pkg install` 的包可直接运行，需要额外工具应优先用已内置的这批。
 
+另外，Termux 的 `libandroid-stub` 是**编译期桩**，不能随运行时一起装：它会在 `$PREFIX/lib`
+放假的 `libbinder_ndk.so`/`libandroid.so` 等，遮蔽系统真库。ffmpeg 的 `libplacebo → libvulkan →
+libui` 链加载时会因此报 `cannot find "libbinder_ndk.so" from verneed[0] ... /system/lib64/libui.so`。
+本项目的工具链清单已排除 `libandroid-stub`；手工加包时不要把它装回来。
+
 ### 4.7 浏览器预览的回退
 
 `window.GuncatShell` 不存在时（`npm run dev:android`、`scripts/android-check.mjs`），

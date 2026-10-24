@@ -1,4 +1,4 @@
-﻿// 时间线：按形态决定呈现方式。
+// 时间线：按形态决定呈现方式。
 //
 //   聊天模式  → 逐条气泡（MessageView）。
 //   工作模式  → **一个用户请求 = 一个回合**，回合内每一轮 assistant 按发生顺序**直接陈列**：
@@ -100,15 +100,6 @@ export function Timeline({ messages, mode, running, lastAssistantId, onEditToInp
         </span>
         <div className="loop-head__text">
           <strong>{interactiveMode ? '交互模式' : '工作模式'}</strong>
-          <small>
-            {running
-              ? interactiveMode
-                ? '正在生成界面…'
-                : '任务执行中...'
-              : interactiveMode
-                ? 'Canvas 就绪 · 生成可交互的卡片和面板'
-                : 'Harness 就绪 · 配合数十种工具和技能交付结果'}
-          </small>
         </div>
       </div>
 

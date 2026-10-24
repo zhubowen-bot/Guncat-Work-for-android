@@ -37,6 +37,16 @@
   `files/guncat-data/files/workspaces/<会话>`，执行后同步回 memfs。单文件 8MB / 单次 32MB 封顶，
   不同步设置、会话历史与 API Key。
 - **进程管理**：输出环形缓冲 + 丢弃计数；超时/停止/`job_kill` 按 `/proc` 递归杀子孙进程。
+- **ffmpeg/ffprobe 链接修复**：Termux 的 `libandroid-stub` 会往 `$PREFIX/lib` 塞一套**假的**
+  `libbinder_ndk.so`/`libandroid.so`/`libmediandk.so`/`libOpenSLES.so`。`libplacebo → libvulkan →
+  系统 libui` 加载时优先命中假 `libbinder_ndk`，符号版本对不上就报
+  `cannot find "libbinder_ndk.so" from verneed[0] ... /system/lib64/libui.so`。现在 bootstrap
+  不再安装这些 stub 库，让系统真库接管；ffmpeg/ffprobe 可正常动态链接。
+- **`run_command` 的 cwd 不存在时自动创建**：手机上传话传 `cwd: "test"` 不必先 `create_dir`；
+  管道重定向里的 `test/pipe.txt` 仍要自己 `mkdir -p test`（shell 语义，不是工具替你造目录）。
+- **输入框不再被插话按钮顶成两行**：执行中隐藏语音/拍照给输入框让位；`useAutoResize` 空输入
+  不再按占位符量高度，并在按钮增减导致宽度变化时重算；停止键改成实心方框，标题栏下方那行
+  “Canvas/Harness 就绪”删除。
 - **系统 Shell 兜底**：非 arm64 或解压失败时可切 `/system/bin/sh`，能力降级但工作区镜像照旧。
 - **设置页**「终端命令执行 (Shell)」：切换内置/系统后端、显示首次解压进度、重新安装。
 - **浏览器预览**仍回退到 `src/mobile/platform/shell.ts` 的 JS 子集（无 `window.GuncatShell` 时）。

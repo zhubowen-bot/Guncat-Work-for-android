@@ -128,7 +128,7 @@ export function IconMic(props: IconProps) {
 export function IconStop(props: IconProps) {
   return (
     <Svg {...props}>
-      <rect x="7" y="7" width="10" height="10" rx="2.2" />
+      <rect x="7" y="7" width="10" height="10" rx="1.6" fill="currentColor" stroke="none" />
     </Svg>
   )
 }

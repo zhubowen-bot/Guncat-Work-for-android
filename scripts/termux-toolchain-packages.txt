@@ -1,4 +1,4 @@
-brotli
+﻿brotli
 c-ares
 cmocka
 dnsutils
@@ -25,7 +25,6 @@ libandroid-complex-math
 libandroid-execinfo
 libandroid-shmem
 libandroid-spawn
-libandroid-stub
 libaom
 libass
 libavif
