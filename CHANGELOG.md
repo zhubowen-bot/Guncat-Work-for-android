@@ -158,6 +158,13 @@
 - **命令审批默认档从「危险命令需批准」改为「自动审批」**：危险命令先交另一个模型审阅，
   放行才静默执行，拦下或审不出结论仍然弹卡请人批准（fail-closed）；四档里的
   「完全权限」仍需用户自己选，硬禁表在任何档位下都拒绝。
+- **POSIX 越界路径判定改成反向边界（Android 真机复核）**：原来沿用一张「系统目录前缀」
+  白名单，且要求「目录名 + 分隔符」，于是 `ls /etc`（一级）漏、`ls -l /etc/hosts` 中；
+  Android 的 `/system`、`/vendor`、`/product`、`/odm`、`/apex`、`/data`、`/sdcard`、
+  `/storage`、`/proc` 又都不在表里 —— `ls /sdcard`、`ls /system`、`ls -l /proc/self/exe`、
+  `touch /sdcard/x`、`tar czf /sdcard/x.tar .`、`bash /sdcard/evil.sh` 全部静默执行。
+  现在任何绝对 POSIX 路径只要不在工作区根下就判「触及工作区之外的路径」；只保留
+  `/dev/null` 一类 I/O 通道与引号里的 sed/awk 正则字面量两个降噪口子。
 
 ### 已知边界
 

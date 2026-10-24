@@ -236,6 +236,13 @@ WebView 原生桥的环境里跑通工作模式。
 安全策略仍在 core：`CommandGuard` 硬禁、四档审批、工作区越界判定全部保留。内置 Linux 终端
 让「能跑什么」变多，但「谁批准」没有放宽；脚本同审、输出截断、`.spill/` 落盘照旧。
 
+越界判定的 POSIX 一侧按 Android 的真实布局做（`src/core/service/CommandGuard.ts` 的
+`firstPosixPathOutside`）：任何绝对路径只要不在工作区根下就判「触及工作区之外的路径」，
+不再依赖 `ABS_PATH_RE` 那张「系统目录前缀」白名单 —— Android 能读到的 `/system`、
+`/vendor`、`/apex`、`/data`、`/sdcard`、`/storage`、`/proc` 都不在那张表里，而且一级形态
+（`ls /etc`）因为要求「目录名 + 分隔符」一直漏检。只留两个降噪口子：`/dev/null` 这类纯
+I/O 通道，以及引号里、首段不是真实根名的 `/x/` 正则字面量（`awk '/error/'`、`sed '/start/p'`）。
+
 ## 5. `run_js`
 
 桌面版用 `node:vm` 的 `timeout` 硬中断；Android 版用 Blob Worker：

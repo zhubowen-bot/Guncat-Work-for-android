@@ -163,46 +163,50 @@ tier('1. 必拦-硬禁（不给审批入口）', FORBIDDEN, 'forbidden')
 // 2. 必拦-危险（危险档要批准，但不许静默）
 // ============================================================================
 
-const RISKY = isWin
-  ? ['del report.txt', 'git push origin main', 'curl -O https://x.example/y.zip',
-    'npm install -g typescript', 'taskkill /im node.exe /f',
-    'reg add HKCU\\Environment /v Path /d x', 'reg add HKCU\\Software\\Foo /v x /d y',
-    'schtasks /delete /tn Daily /f',
-    'Unregister-ScheduledTask -TaskName Daily', 'useradd bob', 'chpasswd',
-    'Set-LocalUser -Name bob -Password $s', 'terraform apply -destroy',
-    'aws s3 rm s3://bucket/key', 'kubectl delete pod x', 'helm uninstall app',
-    'restic forget --prune', 'git clean -fdx', 'git push -f', 'git filter-repo --invert-paths',
-    'setfacl -m u:bob:rwx secret', 'iptables -F', 'modprobe floppy', 'sysctl -w net.ipv4.ip_forward=1',
-    'docker run --privileged -v /:/host ubuntu', 'npm publish', 'rsync -a --delete src/ dst/',
-    'history -c', 'node -e "require(\'fs\').rmSync(\'probes\')"',
-    'python -c "import shutil; shutil.rmtree(\'probes\')"', 'powershell -enc SQB0AGUA',
-    'certutil -urlcache -split -f 127.0.0.1/a.exe a.exe', 'type payload.txt > run.bat',
-    'copy payload.txt run.bat', 'bash -c "echo hi"', 'java -jar tool.jar',
-    'npx tsx scripts/dev.ts', 'po%PATH:~0,5%wer /s', 'dir .. /b',
-    'echo escape > ..\\escape_cmd.txt', 'node C:\\Windows\\system.ini',
-    `type ${OUTSIDE}`, `del C:\\Users\\me\\Documents\\GitHub\\x\\a.txt`, 'move a.txt b.txt',
-    'dotnet ef database update', 'echo x | mysql app', 'Get-CimInstance Win32_Service | Remove-CimInstance',
-    'ifconfig eth0 down', 'resolvconf -u', 'defaults write com.apple.Finder AppleShowAllFiles true',
-    'Set-Service -Name Spooler -StartupType Disabled',
-    // 换了 API 名字等于没登记：这几条是本轮从参考项目语料里补进来的形态
-    'Limit-EventLog -LogName System -BackupRetentionCount 0',
-    'softwareupdate --remove 1234',
-    'cipher /e secret.txt',
-    'vssadmin list shadowstorage',
-    'wevtutil cl Application',
-    'Set-Disk -Number 0 -IsOffline $true',
-    'New-Object IO.FileStream("a.txt", 3)',
-    'git config core.pager "sh -c evil"',
-    'cat .git/HEAD']
-  : ['rm -f report.txt', 'git push origin main', 'curl -O https://x.example/y.zip',
-    'npm install -g typescript', 'kill -9 1234',
-    'echo escape > ../escape_cmd.txt', 'ls -la ..', 'node /etc/hosts', 'bash -c "echo hi"',
-    'docker run --privileged -v /:/host ubuntu', 'npm publish', 'git clean -fdx',
-    'iptables -F', 'modprobe floppy', 'Set-Service -Name Spooler -StartupType Disabled',
-    'Limit-EventLog -LogName System -BackupRetentionCount 0',
-    'softwareupdate --remove 1234', 'cp a.txt b.txt', 'ln -s /etc/passwd link',
-    'truncate -s 0 big.log', 'mount /dev/sdb1 /mnt/usb', 'passwd bob',
-    'ssh host.example.com uptime', 'chattr +i important.txt', 'cat .git/HEAD']
+// 两套方言的语料**都跑**。判定层本身不分平台，所以在 Windows 上只跑 Windows 语料
+// 等于让 POSIX 那一半（Android 用的正是这一半）长期没有回归 —— 本轮 Android 越界
+// 漏检就是在这个盲区里活下来的。
+const RISKY = [
+  // —— Windows 写法 ——
+  'del report.txt', 'git push origin main', 'curl -O https://x.example/y.zip',
+  'npm install -g typescript', 'taskkill /im node.exe /f',
+  'reg add HKCU\\Environment /v Path /d x', 'reg add HKCU\\Software\\Foo /v x /d y',
+  'schtasks /delete /tn Daily /f',
+  'Unregister-ScheduledTask -TaskName Daily', 'useradd bob', 'chpasswd',
+  'Set-LocalUser -Name bob -Password $s', 'terraform apply -destroy',
+  'aws s3 rm s3://bucket/key', 'kubectl delete pod x', 'helm uninstall app',
+  'restic forget --prune', 'git clean -fdx', 'git push -f', 'git filter-repo --invert-paths',
+  'setfacl -m u:bob:rwx secret', 'iptables -F', 'modprobe floppy', 'sysctl -w net.ipv4.ip_forward=1',
+  'docker run --privileged -v /:/host ubuntu', 'npm publish', 'rsync -a --delete src/ dst/',
+  'history -c', 'node -e "require(\'fs\').rmSync(\'probes\')"',
+  'python -c "import shutil; shutil.rmtree(\'probes\')"', 'powershell -enc SQB0AGUA',
+  'certutil -urlcache -split -f 127.0.0.1/a.exe a.exe', 'type payload.txt > run.bat',
+  'copy payload.txt run.bat', 'bash -c "echo hi"', 'java -jar tool.jar',
+  'npx tsx scripts/dev.ts', 'po%PATH:~0,5%wer /s', 'dir .. /b',
+  'echo escape > ..\\escape_cmd.txt', 'node C:\\Windows\\system.ini',
+  `type ${OUTSIDE}`, `del C:\\Users\\me\\Documents\\GitHub\\x\\a.txt`, 'move a.txt b.txt',
+  'dotnet ef database update', 'echo x | mysql app', 'Get-CimInstance Win32_Service | Remove-CimInstance',
+  'ifconfig eth0 down', 'resolvconf -u', 'defaults write com.apple.Finder AppleShowAllFiles true',
+  'Set-Service -Name Spooler -StartupType Disabled',
+  // 换了 API 名字等于没登记：这几条是本轮从参考项目语料里补进来的形态
+  'Limit-EventLog -LogName System -BackupRetentionCount 0',
+  'softwareupdate --remove 1234',
+  'cipher /e secret.txt',
+  'vssadmin list shadowstorage',
+  'wevtutil cl Application',
+  'Set-Disk -Number 0 -IsOffline $true',
+  'New-Object IO.FileStream("a.txt", 3)',
+  'git config core.pager "sh -c evil"',
+  'cat .git/HEAD',
+  // —— POSIX 写法 ——
+  'rm -f report.txt', 'kill -9 1234',
+  'echo escape > ../escape_cmd.txt', 'ls -la ..', 'node /etc/hosts',
+  'cp a.txt b.txt', 'ln -s /etc/passwd link',
+  'truncate -s 0 big.log', 'mount /dev/sdb1 /mnt/usb', 'passwd bob',
+  'ssh host.example.com uptime', 'chattr +i important.txt',
+  // 删除构建产物也是删除：按设计落危险档（auto 档交给模型审阅，不会被直接执行）
+  'rm -rf node_modules', 'rm -rf ./dist'
+]
 
 // —— 第十三轮：同一个破坏动作换了「子命令/产品名」就等于没登记。这些在参考项目的
 //    core.git / package_managers / secrets / platform / backup / system 包里各有独立规则，
@@ -257,21 +261,18 @@ check('硬禁理由只在该拒时非空',
 // 4. 不打扰：正常开发写法
 // ============================================================================
 
-const SILENT = isWin
-  ? ['echo hi', 'python --version', 'dir', 'ls -l', 'node --version', 'npm run typecheck',
-    'npm ci', 'npm run dist:setup', 'git status', 'git log --oneline -5',
-    'git diff HEAD~1..HEAD', 'git diff HEAD^..HEAD', 'git log v1.0..v2.0',
-    'npm run format', 'prettier --write src', 'git log --format=%h', 'dir src\\components',
-    'type .\\a.md', 'python ./build.py', 'node build.js', 'echo ok > log.txt',
-    'xcopy src dst /s /e', 'mkdir -p out', 'touch a.txt', 'rg -n TODO src',
-    'tar cf out.tar src', 'tar tzvf a.tar.gz',
-    'node scripts/build.mjs',
-    `node ${path.join(WS, 'build.js')}`]
-  : ['echo hi', 'python --version', 'dir', 'ls -l', 'node --version', 'npm run typecheck',
-    'npm ci', 'git status', 'git log --oneline -5', 'git diff HEAD~1..HEAD',
-    'rm -rf node_modules', 'rm -rf ./dist', 'mkdir -p out', 'touch a.txt',
-    'echo hi > log.txt', 'npm run format', 'rg -n TODO src',
-    'tar cf out.tar src', 'tar tzvf a.tar.gz', 'cat README.md']
+// 与 RISKY 同理：两套方言都跑。`rm -rf node_modules` 这类删除已按设计归入危险档，不在这里。
+const SILENT = [
+  'echo hi', 'python --version', 'dir', 'ls -l', 'node --version', 'npm run typecheck',
+  'npm ci', 'npm run dist:setup', 'git status', 'git log --oneline -5',
+  'git diff HEAD~1..HEAD', 'git diff HEAD^..HEAD', 'git log v1.0..v2.0',
+  'npm run format', 'prettier --write src', 'git log --format=%h', 'dir src\\components',
+  'type .\\a.md', 'python ./build.py', 'node build.js', 'echo ok > log.txt',
+  'xcopy src dst /s /e', 'mkdir -p out', 'touch a.txt', 'rg -n TODO src',
+  'tar cf out.tar src', 'tar tzvf a.tar.gz',
+  'node scripts/build.mjs', 'cat README.md', 'echo hi > log.txt',
+  `node ${path.join(WS, 'build.js')}`
+]
 
 // 第十三轮的新规则只认「破坏动词 + 目标」，下面这些同名词出现在读形态/预览形态里，不该被打扰
 SILENT.push(
@@ -279,7 +280,7 @@ SILENT.push(
   'doppler secrets get DATABASE_URL', 'gh repo view owner/repo',
   'gh release view v1', 'gh issue list --search "delete"',
   'git switch -c feature/x', 'git branch --show-current',
-  'apt list --installed', 'dpkg -l', 'rclone sync /src remote:bucket --dry-run',
+  'apt list --installed', 'dpkg -l', 'rclone sync src remote:bucket --dry-run',
   'kafka-topics --list', 'nats stream ls', 'diskutil list'
 )
 
@@ -304,6 +305,45 @@ check('URL 不被当成绝对路径（curl -O 的越界理由不该来自冒号�
   !CommandGuard.assess('curl -O https://x.example/y.zip', WS).reasons.some((r) => r.includes('工作区之外')))
 check('盘根写法（单个反斜杠开头）算越界', isWin ?
   CommandGuard.assess('type \\data\\a.txt', WS).risky : true)
+
+// —— 4.6 Android/Linux：POSIX 绝对路径边界 ——
+// 旧实现对 POSIX 用的是一张「系统目录前缀」白名单，且要求「目录名 + 分隔符」。
+// Android 实测：`ls /etc`（一级）、`ls /system`、`ls /sdcard`、`ls -l /proc/self/exe`
+// 全部静默执行；`touch /sdcard/x`、`tar czf /sdcard/x.tar .`、`bash /sdcard/evil.sh`
+// 也一样。这一节按「读 / 写 / 执行」三类钉住覆盖面。
+const POSIX_OUTSIDE = [
+  'ls /etc', 'ls /sys', 'ls /system', 'ls -l /system/bin', 'ls /proc', 'ls -l /proc/self/exe',
+  'ls /sdcard', 'ls -l /sdcard/Android', 'ls /storage/emulated/0', 'ls /data/local/tmp',
+  'ls /vendor', 'ls /apex', 'ls /', 'cd /sdcard && ls', 'find / -name x',
+  'touch /sdcard/x', 'echo x > /sdcard/y', 'tar czf /sdcard/x.tar .', 'cp a.txt /sdcard/',
+  'bash /sdcard/evil.sh', 'sh /data/local/tmp/x.sh', 'python3 /sdcard/a.py',
+  'python3 build.py --out=/sdcard/out', 'ffmpeg -i a.mp4 -y /sdcard/out.mp4'
+]
+const outsideSilent = POSIX_OUTSIDE.filter((c) => {
+  const v = CommandGuard.assess(c, WS)
+  return !(v.risky || v.forbidden) ||
+    !v.reasons.some((r) => r.includes('工作区之外'))
+})
+check(`POSIX 越界路径（读 / 写 / 执行）：${POSIX_OUTSIDE.length} 条全部判危险且写明理由`,
+  outsideSilent.length === 0, outsideSilent.join(' | '))
+
+// 反向：I/O 通道、正则字面量、工作区内的绝对路径都不该被打扰（否则正常命令天天弹卡）
+const POSIX_QUIET = [
+  'echo hi', 'npm run build 2>/dev/null', 'echo hi > /dev/null',
+  'awk \'/error/ {print}\' app.log', 'sed -n \'/start/p\' README.md',
+  'grep -n \'/api/\' README.md', 'rg -n TODO src',
+  `node ${WS.replace(/[\\/]+$/, '')}/build.js`,
+  'xcopy src dst /s /e'
+]
+const quietBad = POSIX_QUIET.filter((c) => {
+  const v = CommandGuard.assess(c, WS)
+  return v.forbidden || v.risky
+})
+check(`POSIX 边界的降噪口子：${POSIX_QUIET.length} 条正常写法仍然静默`,
+  quietBad.length === 0, quietBad.join(' | '))
+check('POSIX 越界路径的审计口径与 Windows 一致（同一句「工作区之外」）',
+  CommandGuard.assess('ls /sdcard', WS).reasons.some((r) => r.includes('工作区之外')))
+
 
 // ============================================================================
 // 5. 脚本同审：命令文本干净、危险在文件里

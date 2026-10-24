@@ -3389,9 +3389,12 @@ check(
   FORBIDDEN_CMDS.every(([c]) => CommandGuard.assess(c, cmdRoot).forbidden),
   FORBIDDEN_CMDS.filter(([c]) => !CommandGuard.assess(c, cmdRoot).forbidden).map(([c]) => c).join(' | ')
 )
-const RISKY_CMDS = isWin
-  ? ['del report.txt', 'git push origin main', 'curl -O https://x.example/y.zip', 'npm install -g typescript', 'taskkill /im node.exe /f']
-  : ['rm -f report.txt', 'git push origin main', 'curl -O https://x.example/y.zip', 'npm install -g typescript', 'kill -9 1234']
+// 判定层不分平台：两套方言一起断言，避免「在 Windows 上只跑 Windows 语料」把 POSIX 漏检藏起来
+const RISKY_CMDS = [
+  'del report.txt', 'git push origin main', 'curl -O https://x.example/y.zip',
+  'npm install -g typescript', 'taskkill /im node.exe /f',
+  'rm -f report.txt', 'kill -9 1234'
+]
 check(
   '常见但有外溢的命令判为危险（危险档要批准）',
   RISKY_CMDS.every((c) => CommandGuard.assess(c, cmdRoot).risky),
@@ -3410,6 +3413,36 @@ check(
 check(
   '工作区之外的绝对路径判为危险',
   CommandGuard.assess(isWin ? 'node C:\\Windows\\system.ini' : 'node /etc/hosts', cmdRoot).risky
+)
+// Android 侧的结构性缺口：POSIX 边界原先是一张「系统目录前缀」白名单 + 要求「目录名 + 分隔符」，
+// 于是 /etc（一级）、/system、/sdcard、/proc、/data、/vendor、/apex 全部漏检 —— 读外部存储、
+// 写外部存储、执行工作区外的脚本都不留审批标记。这一组按「读 / 写 / 执行」钉死覆盖面。
+const POSIX_OUTSIDE_CMDS = [
+  'ls /etc', 'ls /system', 'ls -l /system/bin', 'ls /proc', 'ls -l /proc/self/exe',
+  'ls /sdcard', 'ls -l /sdcard/Android', 'ls /storage/emulated/0', 'ls /data/local/tmp',
+  'ls /vendor', 'ls /apex', 'ls /', 'cd /sdcard && ls',
+  'touch /sdcard/x', 'echo x > /sdcard/y', 'tar czf /sdcard/x.tar .', 'bash /sdcard/evil.sh'
+]
+check(
+  'POSIX 越界路径（读/写/执行）全部判危险并写明「工作区之外」',
+  POSIX_OUTSIDE_CMDS.every((c) => {
+    const v = CommandGuard.assess(c, cmdRoot)
+    return v.risky && v.reasons.some((r) => r.includes('工作区之外'))
+  }),
+  POSIX_OUTSIDE_CMDS.filter((c) => {
+    const v = CommandGuard.assess(c, cmdRoot)
+    return !v.risky || !v.reasons.some((r) => r.includes('工作区之外'))
+  }).join(' | ')
+)
+check(
+  'POSIX 边界的降噪：/dev/null、awk/sed 正则、cmd 开关、工作区内绝对路径不被打扰',
+  ['echo hi > /dev/null', 'npm run build 2>/dev/null',
+    "awk '/error/ {print}' app.log", "sed -n '/start/p' README.md",
+    'xcopy src dst /s /e',
+    `node ${cmdRoot.replace(/[\\/]+$/, '')}/build.js`].every((c) => {
+    const v = CommandGuard.assess(c, cmdRoot)
+    return !v.forbidden && !v.risky
+  })
 )
 // 真实测试里翻车的一条：绝对路径正则会拦下 C:\Windows，却看不见相对上跳 —— 同一个出圈效果
 // 不能因为写法不同就一路绿灯（B4/B5：echo 写到 ..\ 落进父目录、dir .. 直接列父目录）
@@ -4080,13 +4113,13 @@ check(
     'doppler secrets get DATABASE_URL', 'gh release view v1', 'gh repo view owner/repo',
     'gh release delete --help', 'az account show', 'git switch -c feature/x',
     'git branch --show-current', 'apt list --installed', 'dpkg -l',
-    'rclone sync /src remote:bucket --dry-run', 'kafka-topics --list',
+    'rclone sync src remote:bucket --dry-run', 'kafka-topics --list',
     'nats stream ls', 'diskutil list'].every((c) => !hit4(c)),
   ['vault status', 'vault kv get secret/x', 'op item get "DB Password"',
     'doppler secrets get DATABASE_URL', 'gh release view v1', 'gh repo view owner/repo',
     'gh release delete --help', 'az account show', 'git switch -c feature/x',
     'git branch --show-current', 'apt list --installed', 'dpkg -l',
-    'rclone sync /src remote:bucket --dry-run', 'kafka-topics --list',
+    'rclone sync src remote:bucket --dry-run', 'kafka-topics --list',
     'nats stream ls', 'diskutil list'].filter(hit4).join(' | ')
 )
 
@@ -4228,6 +4261,32 @@ check(
 check(
   '用户点「拒绝」→ 命令没有执行，并把理由送回模型',
   denied.result.ok === false && denied.result.output.includes('命令未执行') && denied.result.output.includes('用户明确拒绝')
+)
+
+// 越界路径的端到端：Windows 上 `type C:\Windows\win.ini` 一直会弹卡，而 POSIX/Android 侧的
+// `ls /sdcard` 此前静默直通。判定表补了规则不等于用户真的会被问到，这里按真实链路再跑一遍。
+const outsideCmd = isWin ? 'type C:\\Windows\\win.ini' : 'ls /sdcard'
+events.length = 0
+const outsideRunPromise = CommandService.run(convCmd.id, cmdRoot, { command: outsideCmd }, null)
+const outsideAsk = await waitForEvent((e) => e.type === 'ask:user')
+if (outsideAsk !== null) {
+  await inv('work:answer', {
+    conversationId: convCmd.id,
+    requestId: outsideAsk.requestId,
+    canceled: false,
+    selections: ['拒绝'],
+    note: ''
+  })
+}
+const outsideRun = await outsideRunPromise
+check(
+  '越界路径真的走到人面前（审批卡写明「工作区之外」）',
+  outsideAsk !== null && outsideAsk.question.includes('工作区之外'),
+  outsideAsk === null ? '(没有审批卡)' : outsideAsk.question.slice(0, 80)
+)
+check(
+  '拒绝后越界读取没有执行（fail-closed）',
+  outsideRun.ok === false && outsideRun.output.includes('命令未执行')
 )
 
 const skippedAsk = await askOnce({ canceled: true })

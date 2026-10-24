@@ -678,6 +678,13 @@ export class CommandGuard {
     }
     let outside: string = CommandGuard.firstOverSources(boundary,
       (t: string): string => CommandGuard.firstPathOutsideWorkspace(t, root))
+    if (outside === '') {
+      // 白名单式的前缀检查只认得部分系统目录，且要求「目录名 + 分隔符」（`/etc/x` 中、
+      // `/etc` 漏）。Android 的 /system、/sdcard、/proc、/data 全在表外，于是读外部存储、
+      // 写外部存储、执行工作区外的脚本都不留标记。这里再跑一遍反向边界：只要是绝对
+      // POSIX 路径且不在工作区根下，就算越界。
+      outside = CommandGuard.firstPosixPathOutside(trimmed, root, script)
+    }
     if (outside !== '') {
       verdict.risky = true
       CommandGuard.pushReason(verdict, '触及工作区之外的路径 ' + outside)
@@ -1308,6 +1315,12 @@ export class CommandGuard {
       tokenRe.lastIndex = start
       let tokenMatch: RegExpExecArray | null = tokenRe.exec(text)
       let token: string = tokenMatch !== null ? tokenMatch[0] : match[0]
+      // /dev/null、/dev/stdout 这类只是 I/O 通道，写进去不留任何东西，不该为此找人批准
+      if (CommandGuard.POSIX_IO_SINK_RE.test(token)) {
+        re.lastIndex = match.index + 1
+        match = re.exec(text)
+        continue
+      }
       if (normRoot === '') {
         return token
       }
@@ -1317,6 +1330,147 @@ export class CommandGuard {
         continue
       }
       return token
+    }
+    return ''
+  }
+
+  // ===== POSIX 绝对路径边界（Android/Linux） =====
+  //
+  // 原先这里只有一张「系统目录前缀」白名单（ABS_PATH_RE）：
+  //   /(?:etc|usr|var|...|Windows)[/]
+  // 它有两个结构性缺陷，在 Android 上同时暴露：
+  //   1. 白名单永远差一截 —— Android 真正能读到的外部根是 /system、/vendor、/product、
+  //      /odm、/apex、/data、/sdcard、/storage、/proc…，一个都不在表里；
+  //   2. 匹配要求「目录名 + 分隔符」，所以一级形态（`ls /etc`、`cd /sdcard`）根本进不来，
+  //      而 `ls -l /etc/hosts` 却能被看见 —— 于是同一个前缀「一级漏、二级中」。
+  // 实测：`ls /sdcard`、`ls /system`、`ls -l /proc/self/exe`、`touch /sdcard/x`、
+  // `tar cf /sdcard/x.tar .`、`bash /sdcard/evil.sh` 全部静默执行，读外部存储、写外部存储、
+  // 跑工作区外的脚本都不留任何审批标记，事后无法从返回里审计。
+  //
+  // 所以这一层改成**反向判断**：token 只要是绝对路径，就默认在工作区之外，只有落在
+  // 工作区根下才豁免。白名单只剩「引号里的正则字面量」和「I/O 通道」两个降噪口子。
+  // 与 ABS_PATH_RE 那种「猜哪些目录危险」相比，漏判面从「所有没登记的根」收敛到
+  // 「引号里且首段不是真实根名的写法」。
+
+  // 纯 I/O 通道：写/读这些路径不产生持久副作用
+  private static readonly POSIX_IO_SINK_RE: RegExp =
+    /^\/(?:dev\/(?:null|zero|stdin|stdout|stderr|tty|fd\/\d+)|proc\/self\/fd\/\d+)(?:\/|$)/i
+
+  // 引号里的 `/foo/p` 是 awk/sed/grep 的正则地址，不是路径；首段是这些真实根名时仍按路径算
+  private static readonly POSIX_ROOT_HINT: RegExp =
+    /^(?:etc|usr|var|opt|bin|sbin|boot|sys|dev|home|root|tmp|mnt|media|run|srv|proc|system|vendor|product|odm|oem|apex|data|sdcard|storage|metadata|acct|config)$/i
+
+  /** POSIX 归一：合并重复分隔符、消掉 . 与 ..（只做文本折叠，不解析符号链接） */
+  private static normalizePosixPath(text: string): string {
+    let parts: string[] = text.replace(/\\/g, '/').split('/')
+    let out: string[] = []
+    for (let i: number = 0; i < parts.length; i++) {
+      let part: string = parts[i]
+      if (part === '' || part === '.') {
+        continue
+      }
+      if (part === '..') {
+        if (out.length > 0) {
+          out.pop()
+        }
+        continue
+      }
+      out.push(part)
+    }
+    return '/' + out.join('/')
+  }
+
+  /** 原文里被引号包住的区间（用于把引号里的正则字面量和真实路径分开） */
+  private static quotedRanges(text: string): number[][] {
+    let out: number[][] = []
+    let i: number = 0
+    while (i < text.length) {
+      let quote: string = text.charAt(i)
+      if (quote !== "'" && quote !== '"') {
+        i++
+        continue
+      }
+      let j: number = i + 1
+      while (j < text.length && text.charAt(j) !== quote) {
+        if (text.charAt(j) === '\\') {
+          j++
+        }
+        j++
+      }
+      if (j >= text.length) {
+        break
+      }
+      out.push([i + 1, j])
+      i = j + 1
+    }
+    return out
+  }
+
+  /**
+   * 找出命令里第一个「绝对 POSIX 路径且不在工作区内」的 token；没有则返回空串。
+   * 只读原文：路径 token 在原文里就以 `/` 开头，还原文不会凭空多出路径。
+   */
+  private static firstPosixPathOutside(text: string, root: string, script: boolean = false): string {
+    let normRoot: string = root === '' ? '' : CommandGuard.normalizePosixPath(root)
+    let ranges: number[][] = CommandGuard.quotedRanges(text)
+    let isQuoted = (start: number, end: number): boolean => {
+      for (let i: number = 0; i < ranges.length; i++) {
+        if (start >= ranges[i][0] && end <= ranges[i][1]) {
+          return true
+        }
+      }
+      return false
+    }
+    let re: RegExp = new RegExp(CommandGuard.TOKEN_RE.source, 'g')
+    let match: RegExpExecArray | null = re.exec(text)
+    while (match !== null) {
+      let start: number = match.index
+      let end: number = start + match[0].length
+      let raw: string = match[0]
+      // 路径挂在参数值上：--out=/sdcard/x、gcc -I/usr/include
+      let eq: number = raw.lastIndexOf('=')
+      if (raw.charAt(0) !== '/' && eq >= 0) {
+        raw = raw.substring(eq + 1)
+      }
+      let attached: RegExpExecArray | null = /^-[A-Za-z]{1,3}(\/.*)$/.exec(raw)
+      if (attached !== null) {
+        raw = attached[1]
+      }
+      // `//server/share` 是 UNC，由 firstUncPathOutside 报，避免同一段路径被报两次；
+      // 但 `cd //sdcard` 里的 `//` 在 POSIX 上就是根（不是 UNC），仍然要按路径判
+      if (raw.charAt(0) !== '/' || (raw.charAt(1) === '/' && /^\/\/[^/]+\//.test(raw))) {
+        match = re.exec(text)
+        continue
+      }
+      raw = raw.replace(/^\/{2,}/, '/')
+      // `xcopy src dst /s /e`、`dir /b` 里的 `/s` 是 cmd 开关，不是根目录下的单字母目录；
+      // 真实存在的单字母根目录（`ls /x`）极罕见，两害相权放过这一种，免得正常 Windows 命令被打扰
+      if (/^\/[A-Za-z]$/.test(raw)) {
+        match = re.exec(text)
+        continue
+      }
+      if (CommandGuard.POSIX_IO_SINK_RE.test(raw)) {
+        match = re.exec(text)
+        continue
+      }
+      let first: string = raw.replace(/^\/+/, '').split('/')[0]
+      // 脚本里的 `/\d+/g`、`/[a-z]+/i` 是正则字面量，不是路径（脚本正文没有 shell 引号可用）
+      if (script && !CommandGuard.POSIX_ROOT_HINT.test(first) &&
+        (/\\/.test(raw) || /^\/[^/]+\/[gimsuy]*$/.test(raw))) {
+        match = re.exec(text)
+        continue
+      }
+      // 引号里的 `/x/`、`/error/p` 是 sed/awk/grep 的正则地址；首段是真实根名才当路径
+      if (isQuoted(start, end) && !CommandGuard.POSIX_ROOT_HINT.test(first)) {
+        match = re.exec(text)
+        continue
+      }
+      let norm: string = CommandGuard.normalizePosixPath(raw)
+      if (normRoot !== '' && (norm === normRoot || norm.startsWith(normRoot + '/'))) {
+        match = re.exec(text)
+        continue
+      }
+      return raw
     }
     return ''
   }
