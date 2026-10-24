@@ -608,6 +608,40 @@ check(
     mod.ApiPresets.opencodeGoProfile().apiConfig.models.length === 1 &&
     mod.ApiPresets.opencodeGoProfile().apiConfig.models[0] === 'deepseek-v4.1-flash'
 )
+
+// 上一版 APK 已经把预置方案播种进用户数据：升级到本版时必须重置预置模型，
+// 同时保住用户填好的 Key —— 否则用户升级后还要重新填一次。
+const v1Deepseek = mod.ApiPresets.deepseekProfile()
+v1Deepseek.apiConfig.apiKey = 'sk-preset-deepseek'
+v1Deepseek.apiConfig.model = 'deepseek-v4-pro'
+v1Deepseek.apiConfig.models = ['deepseek-flash', 'deepseek-v4-pro']
+const v1Opencode = mod.ApiProfile.create('Opencode Go')
+v1Opencode.id = 'preset-opencode-go'
+v1Opencode.apiConfig.provider = 'anthropic-messages'
+v1Opencode.apiConfig.baseUrl = 'https://opencode.ai/inference/go'
+v1Opencode.apiConfig.apiKey = 'oc_sk_preset'
+v1Opencode.apiConfig.model = 'qwen3.8-max'
+v1Opencode.apiConfig.models = ['qwen3.8-max', 'claude-haiku-5-5']
+const reseeded = mod.ApiProfileSeeder.seed([v1Deepseek, v1Opencode], 'preset-opencode-go')
+const reseededDeepseek = reseeded.profiles.find((p) => p.id === 'preset-deepseek')
+const reseededOpencode = reseeded.profiles.find((p) => p.id === 'preset-opencode-go')
+check(
+  '升级播种：Deepseek 只留 deepseek-flash，Key 不丢',
+  reseededDeepseek.apiConfig.models.length === 1 &&
+    reseededDeepseek.apiConfig.models[0] === 'deepseek-flash' &&
+    reseededDeepseek.apiConfig.model === 'deepseek-flash' &&
+    reseededDeepseek.apiConfig.apiKey === 'sk-preset-deepseek',
+  `${reseededDeepseek.apiConfig.model} / ${reseededDeepseek.apiConfig.models.join(',')}`
+)
+check(
+  '升级播种：Opencode Go 只留 deepseek-v4.1-flash + Chat Completions，Key 不丢',
+  reseededOpencode.apiConfig.provider === 'openai-completions' &&
+    reseededOpencode.apiConfig.models.length === 1 &&
+    reseededOpencode.apiConfig.models[0] === 'deepseek-v4.1-flash' &&
+    reseededOpencode.apiConfig.model === 'deepseek-v4.1-flash' &&
+    reseededOpencode.apiConfig.apiKey === 'oc_sk_preset' &&
+    reseeded.currentId === 'preset-opencode-go'
+)
 check(
   '非 DeepSeek 的旧方案保留在预置方案之后',
   seededProfiles.profiles.some((p) => p.id === 'old-other' && p.apiConfig.apiKey === 'sk-local')

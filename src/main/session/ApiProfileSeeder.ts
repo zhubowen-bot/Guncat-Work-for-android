@@ -30,7 +30,9 @@ export class ApiProfileSeeder {
     let deepseek: ApiProfile = ApiPresets.deepseekProfile();
     let opencode: ApiProfile = ApiPresets.opencodeGoProfile();
 
-    let deepseekOld: ApiProfile[] = [];
+    let deepseekPresetOld: ApiProfile | null = null;
+    let opencodePresetOld: ApiProfile | null = null;
+    let deepseekLegacy: ApiProfile[] = [];
     let others: ApiProfile[] = [];
     let empties: ApiProfile[] = [];
     let realProfiles: number = 0;
@@ -45,9 +47,14 @@ export class ApiProfileSeeder {
         continue;
       }
       realProfiles++;
-      if (ApiPresets.isDeepSeekBaseUrl(profile.apiConfig.baseUrl)) {
-        deepseekOld.push(profile);
-      } else if (profile.id !== ApiPresets.DEEPSEEK_ID && profile.id !== ApiPresets.OPENCODE_GO_ID) {
+      if (profile.id === ApiPresets.DEEPSEEK_ID) {
+        // 上一版播种出来的 Deepseek：保留 Key / 参数，但模型清单按本版预置重置
+        deepseekPresetOld = profile;
+      } else if (profile.id === ApiPresets.OPENCODE_GO_ID) {
+        opencodePresetOld = profile;
+      } else if (ApiPresets.isDeepSeekBaseUrl(profile.apiConfig.baseUrl)) {
+        deepseekLegacy.push(profile);
+      } else {
         others.push(profile);
       }
     }
@@ -55,8 +62,16 @@ export class ApiProfileSeeder {
     // 全新安装 / 旧配置全是空壳：不保留空方案，直接给两套可填 Key 的预置
     let keepOthers: ApiProfile[] = realProfiles === 0 ? [] : others.concat(empties);
 
-    if (deepseekOld.length > 0) {
-      ApiProfileSeeder.mergeDeepSeek(deepseek, deepseekOld, currentId);
+    if (deepseekPresetOld !== null) {
+      ApiProfileSeeder.copyConnection(deepseek, deepseekPresetOld);
+    }
+    if (deepseekLegacy.length > 0) {
+      ApiProfileSeeder.mergeDeepSeek(deepseek, deepseekLegacy, currentId);
+    }
+    if (opencodePresetOld !== null) {
+      // 上一版 Opencode Go 预置带过多个模型（Anthropic 协议）；本版只留
+      // deepseek-v4.1-flash + Chat Completions，但用户填好的 Key 必须留下来。
+      ApiProfileSeeder.copyConnection(opencode, opencodePresetOld);
     }
 
     let profiles: ApiProfile[] = [deepseek, opencode];
@@ -66,19 +81,25 @@ export class ApiProfileSeeder {
 
     let nextId: string = currentId;
     let currentMerged: boolean = false;
-    for (let i: number = 0; i < deepseekOld.length; i++) {
-      if (deepseekOld[i].id === currentId) {
+    for (let i: number = 0; i < deepseekLegacy.length; i++) {
+      if (deepseekLegacy[i].id === currentId) {
         currentMerged = true;
       }
     }
+    if (deepseekPresetOld !== null && deepseekPresetOld.id === currentId) {
+      currentMerged = true;
+    }
     if (currentMerged) {
       nextId = deepseek.id;
+    }
+    if (opencodePresetOld !== null && opencodePresetOld.id === currentId) {
+      nextId = opencode.id;
     }
     if (!ApiProfileSeeder.hasId(profiles, nextId)) {
       nextId = realProfiles === 0 ? deepseek.id : (keepOthers.length > 0 ? keepOthers[0].id : deepseek.id);
     }
 
-    return { profiles: profiles, currentId: nextId, merged: deepseekOld.length };
+    return { profiles: profiles, currentId: nextId, merged: deepseekLegacy.length };
   }
 
   /** 空白方案：没有任何接入信息，播种时可以安全丢弃 */
@@ -86,6 +107,33 @@ export class ApiProfileSeeder {
     let config: ApiConfig = profile.apiConfig;
     return config.baseUrl.trim() === '' && config.apiKey.trim() === '' &&
       config.model.trim() === '' && config.models.length === 0;
+  }
+
+  /**
+   * 把旧预置方案里「用户已经填好的连接信息」搬到新预置上。
+   * 刻意不搬 provider / baseUrl / 模型清单：这些正是本版要统一的规则，
+   * 搬过去等于新版预置没有生效。Key、采样参数与多模态配置属于用户数据，必须保留。
+   */
+  private static copyConnection(target: ApiProfile, old: ApiProfile): void {
+    let config: ApiConfig = old.apiConfig;
+    if (config.apiKey.trim() !== '') {
+      target.apiConfig.apiKey = config.apiKey;
+    }
+    if (config.temperature !== null) {
+      target.apiConfig.temperature = config.temperature;
+    }
+    if (config.topP !== null) {
+      target.apiConfig.topP = config.topP;
+    }
+    if (config.maxTokens !== null) {
+      target.apiConfig.maxTokens = config.maxTokens;
+    }
+    if (config.extraBody.trim() !== '') {
+      target.apiConfig.extraBody = config.extraBody;
+    }
+    if (old.multimodalConfig.apiKey.trim() !== '') {
+      target.multimodalConfig = old.multimodalConfig;
+    }
   }
 
   private static mergeDeepSeek(target: ApiProfile, old: ApiProfile[], currentId: string): void {

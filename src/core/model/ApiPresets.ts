@@ -71,6 +71,12 @@ export class ApiPresets {
     return /^https?:\/\/api\.deepseek\.com(?::\d+)?(\/|$)/i.test(url);
   }
 
+  /** 是否 OpenCode 推理网关（Go 套餐与按量付费都在这个前缀下） */
+  static isOpenCodeBaseUrl(baseUrl: string): boolean {
+    let url: string = baseUrl.trim();
+    return /^https?:\/\/opencode\.ai\/inference(?:\/|$)/i.test(url);
+  }
+
   private static configFor(provider: string, baseUrl: string, model: string, models: string[]): ApiConfig {
     let config: ApiConfig = new ApiConfig();
     config.provider = provider;
