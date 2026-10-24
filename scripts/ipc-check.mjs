@@ -3393,12 +3393,12 @@ const RISKY_CMDS = isWin
   ? ['del report.txt', 'git push origin main', 'curl -O https://x.example/y.zip', 'npm install -g typescript', 'taskkill /im node.exe /f']
   : ['rm -f report.txt', 'git push origin main', 'curl -O https://x.example/y.zip', 'npm install -g typescript', 'kill -9 1234']
 check(
-  '常见但有外溢的命令判为危险（默认档要批准）',
+  '常见但有外溢的命令判为危险（危险档要批准）',
   RISKY_CMDS.every((c) => CommandGuard.assess(c, cmdRoot).risky),
   RISKY_CMDS.filter((c) => !CommandGuard.assess(c, cmdRoot).risky).join(' | ')
 )
 check(
-  '无害命令判为既非硬禁也非危险（默认档不打扰用户）',
+  '无害命令判为既非硬禁也非危险（危险档不打扰用户）',
   ['echo hi', 'python --version', 'dir', 'ls -l'].every(
     (c) => !CommandGuard.assess(c, cmdRoot).forbidden && !CommandGuard.assess(c, cmdRoot).risky
   )
@@ -3919,9 +3919,10 @@ check(
   CommandGuard.PERMISSIONS.join(',') === 'ask,ask-risk,auto,full-access'
 )
 check(
-  '旧数据/未设置的空档位落到默认档（不是 auto，也不是 full-access）',
-  CommandGuard.normalizePermission('') === CommandGuard.PERMISSION_ASK_RISK &&
-    CommandGuard.normalizePermission('乱写的') === CommandGuard.PERMISSION_ASK_RISK
+  '旧数据/未设置的空档位落到默认档（自动审批，不是完全权限）',
+  CommandGuard.normalizePermission('') === CommandGuard.PERMISSION_AUTO &&
+    CommandGuard.normalizePermission('乱写的') === CommandGuard.PERMISSION_AUTO &&
+    CommandGuard.normalizePermission('睿智档') === CommandGuard.PERMISSION_AUTO
 )
 check(
   '老存档的 auto 按语义搬到 full-access，搬过一次就不再动（用户后来选的 auto 是新语义，不能被再搬一次）',
@@ -4134,8 +4135,8 @@ const neverSet = JSON.parse(convFile).find(
   (c) => c.commandPermission === '' || c.commandPermission === undefined
 )
 check(
-  '没设置过的会话落到默认档（旧数据不会悄悄变成 auto）',
-  neverSet !== undefined && CommandService.permissionFor(neverSet.id) === CommandGuard.PERMISSION_ASK_RISK
+  '没设置过的会话落到默认档（自动审批：危险命令先过模型审阅）',
+  neverSet !== undefined && CommandService.permissionFor(neverSet.id) === CommandGuard.PERMISSION_AUTO
 )
 
 const echoResult = await CommandService.run(convCmd.id, cmdRoot, { command: 'echo hi' }, null)
@@ -4193,7 +4194,7 @@ check(
   timedRun.output.slice(0, 120)
 )
 
-// —— 审批链路：默认档下危险命令要人批准，且没人批准就是不执行 ——
+// —— 审批链路：危险命令需批准档下要人批准，且没人批准就是不执行 ——
 await inv('workspace:setCommandPermission', convCmd.id, CommandGuard.PERMISSION_ASK_RISK)
 const riskyCmd = isWin ? 'del nothing-here.txt' : 'rm -f nothing-here.txt'
 
@@ -4216,7 +4217,7 @@ async function askOnce(answer) {
 
 const denied = await askOnce({ selections: ['拒绝'] })
 check(
-  '危险命令在默认档下弹出审批卡（问题里写清目录、风险与命令原文）',
+  '危险命令在「危险命令需批准」档下弹出审批卡（问题里写清目录、风险与命令原文）',
   denied.askEvent !== null &&
     denied.askEvent.question.includes('需要你批准') &&
     denied.askEvent.question.includes(riskyCmd) &&
@@ -4551,7 +4552,7 @@ check(
 events.length = 0
 const benignScript = await CommandService.run(convCmd.id, cmdRoot, { command: 'node guard-audit/safe.js' }, null)
 check(
-  '内容干净的脚本不打扰用户（默认档直接执行，同审不是「见脚本就拦」）',
+  '内容干净的脚本不打扰用户（危险档直接执行，同审不是「见脚本就拦」）',
   benignScript.ok === true && benignScript.output.includes('audit-safe-ok') &&
     !events.some((e) => e.type === 'ask:user'),
   benignScript.output.slice(0, 160)
@@ -4959,7 +4960,7 @@ fs.rmSync(auditDir, { recursive: true, force: true })
 
 // —— 后台任务 ——
 // 这一段验的是「任务注册表 + 增量读 + 杀树」，跟审批无关，所以切到完全权限档：
-// `node -e` 现在是危险项（解释器内联代码读不出真实意图），留在默认档会卡在审批上等不到答案。
+// `node -e` 现在是危险项（解释器内联代码读不出真实意图），留在需要审批的档位会卡在审批上等不到答案。
 await inv('workspace:setCommandPermission', convCmd.id, CommandGuard.PERMISSION_FULL_ACCESS)
 const bgRun = await CommandService.run(
   convCmd.id,
@@ -5022,7 +5023,7 @@ check(
   '删除会话会带走它的后台进程与档位（不留孤儿进程）',
   leakId !== '' &&
     CommandService.listJobs(convLeak.id).output.includes('没有后台任务') &&
-    CommandService.permissionFor(convLeak.id) === CommandGuard.PERMISSION_ASK_RISK
+    CommandService.permissionFor(convLeak.id) === CommandGuard.PERMISSION_AUTO
 )
 const stillRunning = CommandService.listJobs(convCmd.id)
 CommandService.killAllJobs()

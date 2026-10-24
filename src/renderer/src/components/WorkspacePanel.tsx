@@ -22,14 +22,12 @@ import {
   IconChevronRight,
   IconClose,
   IconCode,
-  IconDot,
   IconDownload,
   IconFile,
   IconFolder,
   IconImage,
   IconPdf,
   IconPlus,
-  IconRefresh,
   IconShare,
   IconTrash,
   IconVideo,
@@ -338,7 +336,6 @@ export function WorkspacePanel() {
   const active = useStore((s) => s.active)
   const running = useStore((s) => s.running)
   const deleteEntry = useStore((s) => s.deleteWorkspaceEntry)
-  const clear = useStore((s) => s.clearWorkspace)
   const openTransfer = useStore((s) => s.openTransfer)
   const runTransfer = useStore((s) => s.runTransfer)
   const openFolder = useStore((s) => s.openWorkspaceFolder)
@@ -651,13 +648,9 @@ export function WorkspacePanel() {
     <aside className="workspace">
       <div className="workspace__head">
         <span className="workspace__glyph">
-          <IconFolder size={15} />
+          <IconFolder size={17} />
         </span>
         <strong>工作区</strong>
-        <span className="workspace__live" title="会话工作区变化会实时刷新">
-          <IconDot size={9} />
-          实时
-        </span>
         {/* 「上传」就是用户一直在找的那个入口（原版 WorkspaceBar.buildHeaderButton('上传')） */}
         <button
           className="btn btn--ghost btn--sm workspace__upload"
@@ -669,18 +662,7 @@ export function WorkspacePanel() {
           上传
         </button>
         <button
-          className="icon-btn"
-          disabled={activeId === null}
-          title="刷新"
-          onClick={() => {
-            void loadWorkspace()
-            void refreshTree()
-          }}
-        >
-          <IconRefresh size={15} />
-        </button>
-        <button
-          className="icon-btn"
+          className="icon-btn desktop-only"
           disabled={activeId === null}
           title="在文件管理器中打开"
           onClick={() => void openFolder()}
@@ -700,36 +682,6 @@ export function WorkspacePanel() {
         </button>
       </div>
 
-      {/* 工作区根路径行：让人一眼知道文件到底落在哪 —— 默认沙箱 or 自选目录。
-          「打开…」把任意文件夹接进来作本会话工作区（工具链/面板/导出全局跟随）。 */}
-      {rootInfo !== null ? (
-        <div className="workspace__root" title={rootInfo.root}>
-          <span className={`workspace__root-path${rootInfo.exists ? '' : ' workspace__root-path--stale'}`}>
-            {rootInfo.exists
-              ? `位置：${rootLabel(rootInfo)}`
-              : `位置：${rootLabel(rootInfo)}（目录已失效）`}
-          </span>
-          <button
-            className="filecard__action"
-            disabled={running}
-            title={running ? '任务执行中，稍后再切换' : '打开任意文件夹作为本会话的工作区'}
-            onClick={() => void switchRoot()}
-          >
-            打开…
-          </button>
-          {rootInfo.isCustom ? (
-            <button
-              className="filecard__action"
-              disabled={running}
-              title="恢复为应用托管的沙箱目录（不会删除你目录里的文件）"
-              onClick={() => void restoreSandbox()}
-            >
-              恢复沙箱
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-
       {/* 命令审批档位（见 COMMAND_PERMISSIONS 的说明）：智能体能跑命令了，
           「哪些要先问你」这一行必须摆在用户看得见的位置。 */}
       {rootInfo !== null ? (
@@ -746,6 +698,37 @@ export function WorkspacePanel() {
             options={COMMAND_PERMISSIONS.map((p) => ({ value: p.value, label: p.label, hint: p.hint }))}
             onChange={(value) => void applyPermission(value)}
           />
+        </div>
+      ) : null}
+
+      {/* 工作区根路径行：让人一眼知道文件到底落在哪 —— 默认沙箱 or 自选目录。
+          放在「命令审批」下面：先回答「谁能跑命令」，再说明「文件在哪」。
+          切换目录只对桌面端有意义（Android 只有应用沙箱），按钮因此 desktop-only。 */}
+      {rootInfo !== null ? (
+        <div className="workspace__root" title={rootInfo.root}>
+          <span className={`workspace__root-path${rootInfo.exists ? '' : ' workspace__root-path--stale'}`}>
+            {rootInfo.exists
+              ? `位置：${rootLabel(rootInfo)}`
+              : `位置：${rootLabel(rootInfo)}（目录已失效）`}
+          </span>
+          <button
+            className="filecard__action desktop-only"
+            disabled={running}
+            title={running ? '任务执行中，稍后再切换' : '打开任意文件夹作为本会话的工作区'}
+            onClick={() => void switchRoot()}
+          >
+            打开…
+          </button>
+          {rootInfo.isCustom ? (
+            <button
+              className="filecard__action desktop-only"
+              disabled={running}
+              title="恢复为应用托管的沙箱目录（不会删除你目录里的文件）"
+              onClick={() => void restoreSandbox()}
+            >
+              恢复沙箱
+            </button>
+          ) : null}
         </div>
       ) : null}
 
@@ -837,19 +820,6 @@ export function WorkspacePanel() {
         )}
       </div>
 
-      {workspace.length > 0 && rootInfo?.isCustom !== true ? (
-        <div className="workspace__foot">
-          <button
-            className="btn btn--ghost btn--block btn--danger"
-            disabled={running}
-            onClick={() => void clear()}
-          >
-            <IconTrash size={14} />
-            清空工作区
-          </button>
-        </div>
-      ) : null}
-
       {/* 底部统计行（原版 WorkspaceBar 左下角）：会话工作时间 / tok/s / 缓存命中 */}
       <WorkFooterStats
         elapsedSec={workElapsedSec}
@@ -880,19 +850,19 @@ function rootLabel(info: WorkspaceInfoDto): string {
  */
 export const COMMAND_PERMISSIONS: { value: string; label: string; hint: string }[] = [
   {
+    value: 'auto',
+    label: '自动审批',
+    hint: '默认档。危险命令先交给模型审阅一轮：它判定安全的直接执行（结果里写明是自动审阅放行），判危险的仍然弹卡请你批准；审阅失败一律按危险处理'
+  },
+  {
     value: 'ask-risk',
     label: '危险命令需批准',
-    hint: '默认档。删除文件、改系统配置或服务、安装全局包、git push、从网络下载等有风险命令会先请你批准，其余直接执行'
+    hint: '删除文件、改系统配置或服务、安装全局包、git push、从网络下载等有风险命令会先请你批准，其余直接执行'
   },
   {
     value: 'ask',
     label: '每条都批准',
     hint: '每条命令执行前都要你批准，包括看起来无害的'
-  },
-  {
-    value: 'auto',
-    label: '自动审批',
-    hint: '危险命令先交给模型审阅一轮：它判定安全的直接执行（结果里写明是自动审阅放行），判危险的仍然弹卡请你批准；审阅失败一律按危险处理'
   },
   {
     value: 'full-access',

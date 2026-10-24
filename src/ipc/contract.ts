@@ -546,8 +546,8 @@ export interface WorkspaceInfoDto {
   /** 目录当前是否仍存在（自定义目录被移动/删除时为 false，界面要如实提示） */
   exists: boolean
   /**
-   * 本会话的命令审批档位：'ask' 每条都问 | 'ask-risk' 危险才问（默认）|
-   * 'auto' 自动审批（危险命令先交模型审阅，它拦下或没结论仍弹卡）| 'full-access' 完全权限（不审不问）。
+   * 本会话的命令审批档位：'ask' 每条都问 | 'ask-risk' 危险才问 |
+   * 'auto' 自动审批（默认：危险命令先交模型审阅，拦下或没结论仍弹卡）| 'full-access' 完全权限（不审不问）。
    * 由 run_command 工具消费（见 core/service/CommandService 与 core/service/ApprovalReviewService），
    * 界面在面板里给一个选择行。
    * 四档都改不动 CommandGuard 的硬禁表 —— 毁灭性操作在任何档位下直接拒绝，连批准的机会都没有。

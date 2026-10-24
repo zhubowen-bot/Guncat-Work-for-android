@@ -320,6 +320,31 @@ try {
   await page.click('.mobile-workspace-btn')
   await page.waitForTimeout(400)
   check('顶栏工作区按钮打开工作区', await page.locator('.workspace').isVisible())
+  check(
+    '工作区顶栏已精简：「实时」与刷新按钮都已移除（面板自己会刷）',
+    (await page.locator('.workspace__live').count()) === 0 &&
+      (await page.locator('.workspace__head .icon-btn[title="刷新"]').count()) === 0
+  )
+  check('不再提供「清空工作区」误触按钮', (await page.locator('.workspace__foot').count()) === 0)
+  const panelRows = await page.evaluate(() =>
+    [...document.querySelectorAll('.workspace__perm, .workspace__root, .workspace__instr')].map(
+      (row) => row.className.split(' ')[0]
+    )
+  )
+  check(
+    '位置行排在命令审批之后、项目指令之前',
+    panelRows.join(',') === 'workspace__perm,workspace__root,workspace__instr',
+    panelRows.join(',')
+  )
+  const permLabel = await page.locator('.workspace__perm .workspace__perm-label').evaluate((el) => ({
+    height: Math.round(el.getBoundingClientRect().height),
+    text: (el.textContent ?? '').trim()
+  }))
+  check(
+    '「命令审批」四个字单行显示（不再把「批」挤到第二行）',
+    permLabel.text === '命令审批' && permLabel.height < 26,
+    JSON.stringify(permLabel)
+  )
   const stacking = await page.evaluate(() => {
     const probe = document.createElement('div')
     probe.className = 'preview-overlay'
@@ -349,8 +374,8 @@ try {
     return convId
   })
   if (seeded !== '') {
-    await page.click('.workspace__head .icon-btn[title="刷新"]')
-    await page.waitForTimeout(600)
+    // 面板每 3 秒兜底刷新一次（顶栏的「刷新」按钮已按真机反馈移除）
+    await page.waitForTimeout(3400)
   }
   const rowActionCount = await page.locator('.file-item__act').count()
   check('工作区文件行有下载/分享入口', rowActionCount >= 2, `${rowActionCount} 个`)
@@ -390,8 +415,7 @@ try {
     return conversations[0].id
   })
   if (binarySeeded !== '') {
-    await page.click('.workspace__head .icon-btn[title="刷新"]')
-    await page.waitForTimeout(500)
+    await page.waitForTimeout(3400)
     await page.locator('.file-item__name', { hasText: 'binary.bin' }).click()
     await page.waitForSelector('.preview__info-actions', { timeout: 3000 })
     const infoLayout = await page.locator('.preview__info-actions').evaluate((el) => {

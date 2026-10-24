@@ -672,7 +672,7 @@ check('面板头部有「上传」按钮', wsHtml.includes('workspace__upload') 
 check('空工作区里也有一个显眼的上传入口', wsHtml.includes('workspace__empty-btn'))
 check('空态把「怎么加文件」说清楚（不再是只有拖拽这条隐形路径）', decode(wsHtml).includes('拖进窗口'))
 check(
-  '导出/分享 / 打开文件夹 / 刷新 三个入口都还在（导出改走「先选位置或分享」的弹层）',
+  '导出/分享 / 打开文件夹 入口都还在（导出改走「先选位置或分享」的弹层；位置行已挪到审批行下方）',
   wsHtml.includes('导出或分享工作区')
 )
 
@@ -684,8 +684,10 @@ check(
     permRows.guardPermissions.every((v) => permRows.rows.some((r) => r.value === v))
 )
 check(
-  '默认档是「危险命令需批准」，且排在第一个（新用户开箱不会是全自助）',
-  permRows.rows[0].value === 'ask-risk' && permRows.rows[0].label.includes('危险')
+  '默认档是「自动审批」，且排在第一个（模型先审，判危险仍然找人）',
+  permRows.rows[0].value === 'auto' &&
+    permRows.rows[0].label.includes('自动审批') &&
+    permRows.rows[0].hint.includes('默认档')
 )
 check(
   '「完全权限」那一档把话说清楚：毁灭性操作仍然会被拒（不能让人以为开了就什么都跑得动）',

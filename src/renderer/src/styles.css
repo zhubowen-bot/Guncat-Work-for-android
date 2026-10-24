@@ -2503,28 +2503,16 @@ select {
 .workspace__head {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 6px;
   padding: 8px 8px 8px 14px;
   border-bottom: 1px solid var(--divider);
 }
 
 .workspace__head strong {
   flex: 1;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-}
-
-.workspace__live {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--text-faint);
-  margin-right: 2px;
-}
-
-.workspace__live svg {
-  color: var(--ok);
+  letter-spacing: 0.2px;
 }
 
 .workspace__root {
@@ -2560,11 +2548,23 @@ select {
 }
 
 .workspace__perm-label {
+  flex: none;
+  white-space: nowrap;
   color: var(--text-faint);
 }
 
+/*
+ * 档位下拉：靠右、按内容宽度收窄。
+ * 之前它是 flex:1 撑满，标签「命令审批」被挤成两行；现在标签不换行、按钮靠右收一点。
+ */
+.workspace__perm .picker {
+  flex: 0 1 auto;
+  width: auto;
+  max-width: 62%;
+  margin-left: auto;
+}
+
 .workspace__perm-select {
-  flex: 1;
   min-width: 0;
   padding: 3px 6px;
   border-radius: 8px;
@@ -3132,11 +3132,6 @@ select {
   width: 100%;
   justify-content: center;
   white-space: nowrap;
-}
-
-.workspace__foot {
-  border-top: 1px solid var(--divider);
-  padding: 8px;
 }
 
 /* ===== 提示条 ===== */

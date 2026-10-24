@@ -12,8 +12,8 @@ export class Conversation {
   mode: string = 'chat';
   // 自定义工作区绝对路径; 空串 = 默认沙箱目录(filesDir/workspaces/<id>)
   workspacePath: string = '';
-  // run_command 的审批档位: 'ask' 每条都问 | 'ask-risk' 危险才问(默认) |
-  // 'auto' 自动审批(危险命令先过模型) | 'full-access' 完全权限(不审不问, 硬禁仍生效)
+  // run_command 的审批档位: 'ask' 每条都问 | 'ask-risk' 危险才问 |
+  // 'auto' 自动审批(默认: 危险命令先过模型) | 'full-access' 完全权限(不审不问, 硬禁仍生效)
   // 空串 = 未设置, 按默认档处理(与 workspacePath 一样要过 JSON 往返, 否则重启就丢)
   commandPermission: string = '';
   // 'auto' 在老版本里的含义是「危险命令也不问人」(= 现在的 'full-access')。老存档里的 auto

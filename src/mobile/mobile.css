@@ -324,10 +324,11 @@ body.platform-android code {
 
   .workspace__head {
     padding: 6px 8px 6px 12px;
+    gap: 8px;
   }
 
   .workspace__head strong {
-    font-size: 15px;
+    font-size: 16px;
   }
 
   .workspace__list {

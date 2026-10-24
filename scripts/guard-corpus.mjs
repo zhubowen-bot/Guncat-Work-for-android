@@ -160,7 +160,7 @@ const FORBIDDEN = [
 tier('1. 必拦-硬禁（不给审批入口）', FORBIDDEN, 'forbidden')
 
 // ============================================================================
-// 2. 必拦-危险（默认档要批准，但不许静默）
+// 2. 必拦-危险（危险档要批准，但不许静默）
 // ============================================================================
 
 const RISKY = isWin
@@ -225,7 +225,7 @@ RISKY.push(
   '(Get-Item probes).Delete($true)'
 )
 
-const riskyBad = tier('2. 必拦-危险（默认档要批准）', RISKY, 'risky')
+const riskyBad = tier('2. 必拦-危险（危险档要批准）', RISKY, 'risky')
 // 「危险」档允许被更严的判定接住（硬禁也算批准不了），所以上面只要求 risky；
 // 这里补一条真正的口径：不允许有任何一条变成静默
 check('危险档没有一条落到「静默执行」', riskyBad.every((b) => !b.includes('[静默]')),
@@ -237,7 +237,7 @@ const riskyV = CommandGuard.assess('del report.txt', WS)
 const plainV = CommandGuard.assess('echo hi', WS)
 const hardV = CommandGuard.assess('format C:', WS)
 check('ask 档连无害命令也要批准', CommandGuard.needsApproval(plainV, 'ask'))
-check('ask-risk（默认）只批危险命令',
+check('ask-risk 只批危险命令',
   CommandGuard.needsApproval(riskyV, 'ask-risk') && !CommandGuard.needsApproval(plainV, 'ask-risk'))
 check('auto 档危险命令先过模型审阅', CommandGuard.usesModelReview('auto') &&
   CommandGuard.needsApproval(riskyV, 'auto'))
@@ -248,8 +248,8 @@ check('full-access 不审也不问，但硬禁理由照旧（由执行层拒绝�
   !CommandGuard.needsApproval(hardV, 'full-access') &&
   !CommandGuard.usesModelReview('full-access') &&
   CommandGuard.forbiddenReason(hardV) !== '')
-check('未知档位退回默认档', CommandGuard.normalizePermission('yolo') === 'ask-risk')
-check('空档位（旧数据）退回默认档', CommandGuard.normalizePermission('') === 'ask-risk')
+check('未知档位退回默认档（自动审批）', CommandGuard.normalizePermission('yolo') === 'auto')
+check('空档位（旧数据）退回默认档（自动审批）', CommandGuard.normalizePermission('') === 'auto')
 check('硬禁理由只在该拒时非空',
   CommandGuard.forbiddenReason(hardV) !== '' && CommandGuard.forbiddenReason(riskyV) === '')
 

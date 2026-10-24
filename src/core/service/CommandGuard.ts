@@ -6,7 +6,8 @@
 //     fork 炸弹…）。这一档**不给审批入口**，直接拒绝并说明理由 ——
 //     「用户手滑点了允许」本身就是一种必须防住的失败模式。
 //   risky（需批准）：有破坏性但常常是正当需求（删文件、装包、git push、curl 下载…）。
-//     默认档位下这类命令要走 AskUserBridge 人工批准，其余命令直接执行。
+//     默认档（auto）先把这类命令交给另一个模型审阅：它放行才静默执行，拦下或审不出结论
+//     仍然走 AskUserBridge 请人批准；其余档位则直接找人，无害命令直接执行。
 //
 // 取向：**宁可多问一次，不可漏判一次**（漏判的代价是用户的数据）；
 // 但硬禁表保持克制 —— 只放真正不可逆的系统级操作，否则「什么都禁」等于没有安全。
@@ -46,8 +47,8 @@ export class CommandGuard {
   // 只有 full-access 是真的把判断整个关掉。老版本里 'auto' 的含义是「危险命令也不问人」，
   // 那是完全权限而不是自动审批，语义已经搬到 'full-access'（见 SessionManager 的一次性迁移）。
   static readonly PERMISSION_ASK: string = 'ask'          // 每条命令都要人批准
-  static readonly PERMISSION_ASK_RISK: string = 'ask-risk' // 默认: 危险命令要人批准
-  static readonly PERMISSION_AUTO: string = 'auto'        // 自动审批: 危险命令先过模型, 拦下了才找人
+  static readonly PERMISSION_ASK_RISK: string = 'ask-risk' // 危险命令直接找人批准
+  static readonly PERMISSION_AUTO: string = 'auto'        // 默认: 自动审批, 危险命令先过模型, 拦下了才找人
   static readonly PERMISSION_FULL_ACCESS: string = 'full-access' // 完全权限: 不审不问, 只剩硬禁兜底
   static readonly PERMISSIONS: string[] = [
     CommandGuard.PERMISSION_ASK, CommandGuard.PERMISSION_ASK_RISK,
@@ -957,10 +958,16 @@ export class CommandGuard {
     return permission === CommandGuard.PERMISSION_AUTO
   }
 
-  /** 会话档位取值（旧数据/未设置都是空串 → 默认档「危险需批准」） */
+  /**
+   * 会话档位取值（旧数据/未设置都是空串 → 默认档「自动审批」）。
+   *
+   * 默认档从 ask-risk 改成 auto：危险命令先交给另一个模型审一轮，
+   * 它放行才静默执行、拦下或审不出结论仍然弹卡请人批准（fail-closed）。
+   * 用户想要「每条都问我」可以自己切回 ask-risk / ask，硬禁表在任何档位下都拒绝。
+   */
   static normalizePermission(permission: string): string {
     return CommandGuard.PERMISSIONS.indexOf(permission) !== -1 ? permission :
-      CommandGuard.PERMISSION_ASK_RISK
+      CommandGuard.PERMISSION_AUTO
   }
 
   static forbiddenReason(verdict: GuardVerdict): string {
