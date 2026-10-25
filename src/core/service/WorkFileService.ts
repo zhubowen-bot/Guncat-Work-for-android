@@ -1737,7 +1737,7 @@ export class WorkFileService {
         'page_count', WorkFileService.strProp('本次渲染页数, 默认 10, 最大 50')),
       ['path']));
     defs.push(WorkFileService.makeTool('view_image',
-      '查看工作区中的图片, 图片会作为多模态消息发送给你的视觉能力。调用前明确你要从图中提取什么(全部文字/表格数据/布局/图表含义), 并说明输出格式。文件不存在、扩展名不符或内容不是有效图片都会返回 ERROR(不会静默成功)。',
+      '查看工作区中的图片, 图片会作为多模态消息发送给你的视觉能力。图片超过 1MB 时必须先用 run_command 压缩出小于 1MB 的副本(最长边 ≤1600px、JPEG 质量 80)再查看——直接读大图容易超时卡死; 原图保留不要覆盖。调用前明确你要从图中提取什么(全部文字/表格数据/布局/图表含义), 并说明输出格式。文件不存在、扩展名不符或内容不是有效图片都会返回 ERROR(不会静默成功)。',
       WorkFileService.props1('path', WorkFileService.strProp('图片文件相对路径(png/jpg/jpeg/webp/gif/bmp)')),
       ['path']));
     defs.push(WorkFileService.makeTool('todo_write',

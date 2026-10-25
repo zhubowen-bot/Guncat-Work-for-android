@@ -68,7 +68,7 @@ export class PromptBuilder {
     lines.push('- search_files(query, path?, glob?)：在文本文件与 Office 文档（.docx/.xlsx/.pptx 自动抽取文字层）中大小写不敏感子串搜索，返回"文件:行号: 内容"，最多 50 处匹配。glob 可选按文件名过滤（* 与 ?，多个模式逗号分隔，如 "*.md"）——素材搜索（找图片/表格文件）时先加 glob 缩小范围。适合在大量内容（含长 Word/Excel/PPT）中定位关键信息；定位后用 read_file 传 offset 精读该段。');
     lines.push('- search_pdf(path, query)：在 PDF 文字层搜索关键词（大小写不敏感），返回"页码: 上下文摘录"，最多 50 处。搜索 PDF 内容必须用它（search_files 读不了 PDF）；命中后用 parse_document 传 page=N 精读对应页。');
     lines.push('- pdf_to_images(path, page?, page_count?)：把 PDF 页面渲染成图片存入工作区 pdf_images/<文件名>/ 目录（每页一个 p001.jpg），返回文件列表。扫描件/纯图片 PDF 的专用入口——parse_document 提示是扫描件或读不出文字时，用它转图后逐张 view_image 查看；需要更多页按提示传 page 继续下一批。');
-    lines.push('- view_image(path)：把工作区图片（png/jpg/jpeg/webp/gif/bmp，不超过 8MB）送入你的多模态视觉，图片会作为你的下一条消息出现。调用前明确提取目标（全部文字/表格数据/布局/图表含义）与输出结构。文件不存在、内容不是有效图片时会返回 ERROR，不存在静默成功。');
+    lines.push('- view_image(path)：把工作区图片（png/jpg/jpeg/webp/gif/bmp，不超过 8MB）送入你的多模态视觉，图片会作为你的下一条消息出现。调用前明确提取目标（全部文字/表格数据/布局/图表含义）与输出结构。**超过 1MB 的图片必须先压缩再查看**：直接读大图容易超时卡死——先用 run_command 把副本缩小（最长边 ≤1600px、JPEG 质量 80）并确认小于 1MB，再 view_image 压缩后的副本；原图保留不动，不要覆盖。文件不存在、内容不是有效图片时会返回 ERROR，不存在静默成功。');
     lines.push('**联网搜索记录**');
     lines.push('- record_search(query, summary, sources?)：把一次联网搜索的记录保存到工作区 .searches.md。**关键**：联网搜索由服务端执行，不会在对话历史中留下任何工具调用记录——你每次借助联网搜索获得信息后，必须立即调用本工具，传入搜索关键词、关键结论摘要与主要来源 URL（多个用换行分隔），否则后续轮次（包括你自己）都无法追溯这次搜索、还会重复搜索。任务收口前可 read_file 通读 .searches.md 汇总所有来源。');
     lines.push('- local_web_search(query)：**本机兜底搜索**（本机直连搜索引擎，占本机网络与自配密钥）。需要联网时优先让服务端搜索执行；仅当服务端搜索不可用/报错/无结果、用户明确要求本机搜索、**或本轮没有开启服务端联网搜索**（此时它是唯一通道）才调用。同一问题不要两种搜索各查一遍。结果会自动登记到 .searches.md。');
