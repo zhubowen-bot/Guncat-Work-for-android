@@ -29,6 +29,7 @@ import { ToolDefAdapter } from '../common/ToolDefAdapter';
 import { SSEProtocolAdapter, SSEParseContext } from '../common/SSEProtocolAdapter';
 import { RetryPolicy } from '../common/RetryPolicy';
 import { RetryAfterParser } from '../common/RetryAfterParser';
+import { connectTimeoutForBody, describeTransportError } from '../common/HttpTimeouts';
 import { LoopError } from '../common/LoopError';
 import { GuncatUiPrompt } from '../common/GuncatUiPrompt';
 import { GuncatUiLang, GuncatUiFences, UiNode } from '../common/GuncatUiLang';
@@ -234,6 +235,38 @@ export class AgentLoopService {
     return count;
   }
 
+  /**
+   * 请求超时后把内联图片从循环历史里摘掉，只留一句说明。
+   *
+   * 为什么必须这么做（用户报障）：view_image 之后那张图会作为 user 多模态消息留在
+   * messages 里；一旦请求在传输阶段超时，runTurnWithRetry 会把**同一份 base64 图片**
+   * 重复发送 5 次，每次都卡在同样的超时上。用户手动停止再发「继续」之所以能恢复，
+   * 是因为 imageDataUrl 本来就不持久化，重新加载历史时图片已经被丢掉了。
+   * 这里让自动重试走同一条生路：第一次传输失败后就把图片摘掉，并告诉模型
+   * 「图没送到，需要就重新 view_image」。
+   *
+   * 只改内存里的循环历史；imageDataUrl 从不落盘，因此不影响会话记录。
+   * 返回摘掉的图片条数。
+   */
+  static dropInlineImages(messages: LoopMessage[], note: string): number {
+    let count: number = 0;
+    for (let i: number = 0; i < messages.length; i++) {
+      let m: LoopMessage = messages[i];
+      if (m.role !== 'user' || m.imageDataUrl === '') {
+        continue;
+      }
+      m.content = (m.content === '' ? '' : m.content + '\n') + note;
+      m.imageDataUrl = '';
+      count++;
+    }
+    return count;
+  }
+
+  // 重试时图片被摘掉后补进上下文的说明（不要写得像用户的新指令）
+  private static readonly IMAGE_RETRY_DROP_NOTE: string =
+    '【视觉输入未送达】上一张图片的请求在传输阶段超时，这张图片已从重试上下文中移除，' +
+    '以免继续卡住。工作区原图仍在；如仍需查看，请先确认图片已压到 1MB 以内，' +
+    '再重新调用 view_image。';
 
   // 活跃请求注册表: 支持多实例并发请求(主循环 + 子代理/聊天模式可能同时存在),
   // abort() 统一中断所有活跃请求, 避免单一静态引用在并发时打错目标。
@@ -493,7 +526,9 @@ export class AgentLoopService {
           method: http.RequestMethod.POST,
           header: headers,
           extraData: bodyStr,
-          connectTimeout: 30000,
+          // 图片 base64 会把请求体撑到 10MB+；固定 30s 会在手机慢速上传途中把请求掐断，
+          // 报错是 "The user aborted a request"，重试仍带同一张图 → 连卡五次。
+          connectTimeout: connectTimeoutForBody(bodyStr),
           readTimeout: 300000,
           usingProtocol: http.HttpProtocol.HTTP1_1
         }).then((code: number) => {
@@ -550,7 +585,7 @@ export class AgentLoopService {
           if (!settled) {
             settled = true;
             // 网络层异常(连接失败/超时/DNS 等)归类为 transport, 可自动重试
-            let msg: string = err.message !== undefined ? err.message : '网络请求失败';
+            let msg: string = describeTransportError(err);
             reject(new LoopError(msg, 0, 'transport'));
           }
         });
@@ -651,8 +686,19 @@ export class AgentLoopService {
       if (!rd.shouldRetry) {
         throw failed;
       }
+      // 图片请求在传输阶段失败后，重试前先把图片摘掉：同一份 base64 再发一次大概率
+      // 仍卡在同一处；摘掉后至少能拿到模型回应，并让它按需重新 view_image。
+      // 只对 transport / empty 生效 —— 429/5xx 与图片内容无关，不该牺牲视觉上下文。
+      let reason: string = failed.message;
+      if (failed.kind === 'transport' || failed.kind === 'empty') {
+        let dropped: number = AgentLoopService.dropInlineImages(
+          messages, AgentLoopService.IMAGE_RETRY_DROP_NOTE);
+        if (dropped > 0) {
+          reason += '（已移除 ' + dropped.toString() + ' 张超时图片后重试）';
+        }
+      }
       attempt++;
-      callbacks.onRetry(attempt, failed.message);
+      callbacks.onRetry(attempt, reason);
       await AgentLoopService.retryBackoffMs(rd.delayMs, abortSignal);
       if (abortSignal.aborted) {
         throw failed;

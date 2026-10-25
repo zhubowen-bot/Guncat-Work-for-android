@@ -19,6 +19,7 @@ import { ToolCallAccumulator, collectCompletionsToolDelta, collectResponsesToolI
 import { LOCAL_SEARCH_TOOL_NAME, LOCAL_SEARCH_TOOL_DESC_CHAT, LOCAL_SEARCH_TOOL_DESC_CHAT_FALLBACK,
   LOCAL_SEARCH_QUERY_PROP_DESC } from './LocalWebSearch';
 import { HarnessTools } from './HarnessTools';
+import { connectTimeoutForBody, describeTransportError } from '../common/HttpTimeouts';
 
 export class StreamAccumulator {
   buffer: ArrayBuffer = new ArrayBuffer(0);
@@ -1273,7 +1274,9 @@ export class ChatService {
           method: http.RequestMethod.POST,
           header: headers,
           extraData: bodyStr,
-          connectTimeout: 30000,
+          // 与工作模式同口径：附件 base64 可能让请求体很大，固定 30s 会在上传途中
+          // 被 AbortController 掐断（"The user aborted a request"）。
+          connectTimeout: connectTimeoutForBody(bodyStr),
           readTimeout: 180000,
           usingProtocol: http.HttpProtocol.HTTP1_1
         }).then((code: number) => {
@@ -1332,7 +1335,7 @@ export class ChatService {
         aborted = true;
       } else {
         if (failedMsg === '' && err.message !== undefined) {
-          failedMsg = err.message;
+          failedMsg = describeTransportError(err);
         }
         if (failedMsg === '') {
           failedMsg = '请求失败';

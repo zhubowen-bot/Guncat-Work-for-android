@@ -82,6 +82,11 @@ export class Constants {
   static readonly WORK_TODO_FILE: string = '.todo.json';
   // view_image 工具可读取的图片字节上限
   static readonly WORK_VIEW_IMAGE_MAX_BYTES: number = 8 * 1024 * 1024;
+  // 送进多模态请求的内联图片上限：超过就自动缩到最长边 1600px 再按 JPEG 重编码。
+  // 为什么必须压：大图 base64 后请求体可达 10MB+，一旦超时，runTurnWithRetry 会把
+  // 同一份图片重复发 5 次，全部卡在传输上（用户报障：image 工具之后一直重试连不上）。
+  static readonly WORK_VIEW_IMAGE_INLINE_MAX_BYTES: number = 1024 * 1024;
+  static readonly WORK_VIEW_IMAGE_INLINE_MAX_EDGE: number = 1600;
   // 单次任务最多工具调用轮数(防失控保险: 防止工具调用死循环持续消耗, 正常长任务触不到)
   static readonly WORK_MAX_STEPS: number = 200;
   // read_file 单次读取上限(字节), 超出截断并提示

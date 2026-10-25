@@ -30,6 +30,7 @@ export { ContextBudget } from '@core/common/ContextBudget'
 export { Constants } from '@core/common/Constants'
 // 运行时快照断言要直接引用生产侧的识别前缀，避免测试里再抄一份字面量导致两边悄悄漂移
 export { AgentLoopService } from '@core/service/AgentLoopService'
+export { connectTimeoutForBody, describeTransportError } from '@core/common/HttpTimeouts'
 export { sanitizeTableHtml } from '@main/sanitizeHtml'
 // 终端能力：判定与执行都是纯本地逻辑，直接引用生产侧实现做断言（不在测试里另抄一份规则表）
 export { CommandGuard } from '@core/service/CommandGuard'
@@ -6110,6 +6111,58 @@ check(
 )
 
 console.log(`\n界面消息切分验证：通过 ${passed - passedBeforeUiSplit} 项`)
+
+// ===== 27. view_image 超时重试：同一张 base64 不能反复重发 =====
+//
+// 用户报障：上一轮调了 view_image（图片作为下一条多模态消息送达）后请求超时，
+// 自动重试连续五次都卡在同一处；手动打断再发「继续」反而能继续 —— 因为图片
+// 不持久化，重载历史后已经没了。这里钉住自动重试也走同一条生路。
+const passedBeforeImageRetry = passed
+console.log('\n27. view_image 超时重试与图片摘除')
+
+const imageRetryMessages = [
+  { role: 'user', content: '【视觉输入】工具 view_image 读取了工作区图片: a.png。', imageDataUrl: 'data:image/png;base64,AAAA' },
+  { role: 'assistant', content: '我看一下。', imageDataUrl: '' },
+  { role: 'user', content: '继续', imageDataUrl: '' }
+]
+const droppedFirst = mod.AgentLoopService.dropInlineImages(
+  imageRetryMessages,
+  '【视觉输入未送达】测试用说明'
+)
+check(
+  '超时重试会摘掉内联图片并补一条说明',
+  droppedFirst === 1 &&
+    imageRetryMessages[0].imageDataUrl === '' &&
+    imageRetryMessages[0].content.includes('【视觉输入未送达】测试用说明') &&
+    imageRetryMessages[1].imageDataUrl === '' &&
+    imageRetryMessages[2].content === '继续'
+)
+check(
+  '图片摘除是幂等的（第二次没有图可摘）',
+  mod.AgentLoopService.dropInlineImages(imageRetryMessages, 'x') === 0
+)
+check(
+  '内联图片上限固定为 1MB / 最长边 1600px',
+  mod.Constants.WORK_VIEW_IMAGE_INLINE_MAX_BYTES === 1024 * 1024 &&
+    mod.Constants.WORK_VIEW_IMAGE_INLINE_MAX_EDGE === 1600
+)
+check(
+  '小请求维持 30s 建连超时（不改变普通对话）',
+  mod.connectTimeoutForBody('x'.repeat(1024)) === 30_000
+)
+check(
+  '大请求按体积放大上传预算（10MB 图片不会在上传途中被 30s 掐断）',
+  mod.connectTimeoutForBody('x'.repeat(10 * 1024 * 1024)) > 30_000 &&
+    mod.connectTimeoutForBody('x'.repeat(10 * 1024 * 1024)) <= 180_000
+)
+const abortText = mod.describeTransportError(
+  Object.assign(new Error('The user aborted a request.'), { name: 'AbortError' })
+)
+check(
+  'AbortError 不再冒充「用户中止」，而是报传输超时',
+  abortText.includes('传输阶段超时') && !abortText.includes('user aborted')
+)
+console.log(`\n图片超时重试验证：通过 ${passed - passedBeforeImageRetry} 项`)
 
 // 后台命令的进程刚刚被杀，Windows 上还压着「目录被占用」的句柄，立刻整树删除会 EPERM。
 function rmrfRetry(target, tries = 8) {

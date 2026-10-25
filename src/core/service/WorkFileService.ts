@@ -15,7 +15,7 @@ import { WorkSkillService } from './WorkSkillService';
 import { HarnessTools } from './HarnessTools';
 import { arrayBufferToBase64 } from '../common/Utils';
 import { ImageProbe, ImageProbeResult } from '../common/ImageProbe';
-import { isNativeDecoderAvailable, decodeImageSize } from '@kit.ImageKit';
+import { image, isNativeDecoderAvailable, decodeImageSize } from '@kit.ImageKit';
 import { ToolRegistry } from '../common/ToolRegistry';
 import { Constants } from '../common/Constants';
 import { FileObservation } from '../common/FileObservation';
@@ -957,13 +957,110 @@ export class WorkFileService {
     }
     // 实际格式以字节内容为准，不信任扩展名（见上面的 ImageProbe）
     let mime: string = probe.mime;
+    // 大图不能原样内联：base64 会把请求体再放大 1/3，多模态接口在传输/处理阶段
+    // 一旦超时，请求级重试会把同一张图重复发 5 次。这里先压到 1MB / 1600px 以内，
+    // 原图保持不动（后续 write_pptx / write_docx 仍可引用原图）。
+    let inlineBuffer: ArrayBuffer = buffer;
+    let inlineMime: string = mime;
+    let inlineBytes: number = stat.size;
+    let compressedNote: string = '';
+    if (stat.size > Constants.WORK_VIEW_IMAGE_INLINE_MAX_BYTES ||
+      width > Constants.WORK_VIEW_IMAGE_INLINE_MAX_EDGE ||
+      height > Constants.WORK_VIEW_IMAGE_INLINE_MAX_EDGE) {
+      let packed: ArrayBuffer | null = await WorkFileService.compressInlineImage(buffer);
+      if (packed !== null && packed.byteLength > 0 && packed.byteLength < buffer.byteLength) {
+        inlineBuffer = packed;
+        inlineMime = 'image/jpeg';
+        inlineBytes = packed.byteLength;
+        compressedNote = '，已自动压缩为 JPEG ' +
+          WorkFileService.formatSize(inlineBytes) + ' 用于视觉输入（原图未修改）';
+      }
+    }
     let r: ToolExecResult = new ToolExecResult();
     r.ok = true;
     r.output = '图片已加载: ' + rel + ' (' + width.toString() + '×' + height.toString() +
       ', ' + mime + ', ' + WorkFileService.formatSize(stat.size) +
-      ')。图像内容会作为下一条多模态消息送达，请直接分析图中元素。';
-    r.imageDataUrl = 'data:' + mime + ';base64,' + arrayBufferToBase64(buffer);
+      compressedNote + ')。图像内容会作为下一条多模态消息送达，请直接分析图中元素。';
+    r.imageDataUrl = 'data:' + inlineMime + ';base64,' + arrayBufferToBase64(inlineBuffer);
     return r;
+  }
+
+  /**
+   * 把要内联进多模态请求的图片压到 1MB / 1600px 以内。
+   *
+   * 只影响「送给模型的副本」，工作区原图不动。逐级降档（1600/82 → 1280/72 → 1024/62），
+   * 任一步落到 1MB 以内就返回；平台没有解码器或解码失败时返回 null，调用方沿用原图。
+   */
+  private static async compressInlineImage(buffer: ArrayBuffer): Promise<ArrayBuffer | null> {
+    let src: image.ImageSource | null = null;
+    let packer: image.ImagePacker | null = null;
+    try {
+      src = image.createImageSource(buffer);
+      let info: image.ImageInfo = await src.getImageInfo();
+      let sourceW: number = info.size.width;
+      let sourceH: number = info.size.height;
+      if (sourceW <= 0 || sourceH <= 0) {
+        return null;
+      }
+      // [最长边, JPEG 质量]：大图先按提示词的口径压到 1600px；仍超 1MB 就继续降档
+      let steps: number[][] = [
+        [Constants.WORK_VIEW_IMAGE_INLINE_MAX_EDGE, 82],
+        [1280, 72],
+        [1024, 62]
+      ];
+      let smallest: ArrayBuffer | null = null;
+      for (let i: number = 0; i < steps.length; i++) {
+        let edge: number = steps[i][0];
+        let quality: number = steps[i][1];
+        let scale: number = Math.min(1, edge / Math.max(sourceW, sourceH));
+        let width: number = Math.max(1, Math.round(sourceW * scale));
+        let height: number = Math.max(1, Math.round(sourceH * scale));
+        let pixel: image.PixelMap | null = null;
+        try {
+          pixel = await src.createPixelMap({ desiredSize: { width, height } });
+          if (packer === null) {
+            packer = image.createImagePacker();
+          }
+          let packed: ArrayBuffer = await packer.packToData(pixel, {
+            format: 'image/jpeg',
+            quality
+          });
+          if (smallest === null || packed.byteLength < smallest.byteLength) {
+            smallest = packed;
+          }
+          if (packed.byteLength <= Constants.WORK_VIEW_IMAGE_INLINE_MAX_BYTES) {
+            return packed;
+          }
+        } finally {
+          try {
+            if (pixel !== null) {
+              pixel.release();
+            }
+          } catch (e) {
+            // ignore
+          }
+        }
+      }
+      // 三档都还超 1MB（极端长图）时，至少返回三档里最小的那张
+      return smallest;
+    } catch (e) {
+      return null;
+    } finally {
+      try {
+        if (packer !== null) {
+          packer.release();
+        }
+      } catch (e) {
+        // ignore
+      }
+      try {
+        if (src !== null) {
+          src.release();
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
   }
 
   // todo_write: 校验并保存任务清单到工作区 .todo.json, 返回渲染后的清单文本
@@ -1737,7 +1834,7 @@ export class WorkFileService {
         'page_count', WorkFileService.strProp('本次渲染页数, 默认 10, 最大 50')),
       ['path']));
     defs.push(WorkFileService.makeTool('view_image',
-      '查看工作区中的图片, 图片会作为多模态消息发送给你的视觉能力。图片超过 1MB 时必须先用 run_command 压缩出小于 1MB 的副本(最长边 ≤1600px、JPEG 质量 80)再查看——直接读大图容易超时卡死; 原图保留不要覆盖。调用前明确你要从图中提取什么(全部文字/表格数据/布局/图表含义), 并说明输出格式。文件不存在、扩展名不符或内容不是有效图片都会返回 ERROR(不会静默成功)。',
+      '查看工作区中的图片, 图片会作为多模态消息发送给你的视觉能力。超过 1MB 或最长边超过 1600px 的图片会先自动压到 1MB 以内(JPEG)再送入视觉, 原图不动; 若压缩后仍传输超时, 自动重试会移除这张图并提示你重新查看, 需要细节时先裁切/压缩目标区域再调用。调用前明确你要从图中提取什么(全部文字/表格数据/布局/图表含义), 并说明输出格式。文件不存在、扩展名不符或内容不是有效图片都会返回 ERROR(不会静默成功)。',
       WorkFileService.props1('path', WorkFileService.strProp('图片文件相对路径(png/jpg/jpeg/webp/gif/bmp)')),
       ['path']));
     defs.push(WorkFileService.makeTool('todo_write',

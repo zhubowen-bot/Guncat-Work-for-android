@@ -160,7 +160,9 @@ export namespace http {
       const readTimeout: number = options?.readTimeout ?? 0
       const connectTimeout: number = options?.connectTimeout ?? 0
       this.readTimeoutMs = readTimeout
-      // 连接超时只覆盖「还没拿到响应头」这一段，拿到头就撤掉
+      // 连接超时在 fetch 实现下覆盖的是「请求开始 → 拿到响应头」，
+      // 上传请求体也在这段里，不只是 TCP 建连。大请求体（图片 base64）必须由
+      // 调用方用 connectTimeoutForBody 放大预算，否则会在上传途中被 abort。
       if (connectTimeout > 0) {
         this.connectTimer = setTimeout(() => controller.abort(), connectTimeout)
         this.connectTimer.unref?.()
