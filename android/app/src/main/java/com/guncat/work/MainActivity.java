@@ -18,8 +18,10 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.provider.MediaStore;
 import android.provider.OpenableColumns;
+import android.provider.Settings;
 import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
@@ -91,6 +93,10 @@ public class MainActivity extends Activity {
     private String token;
     private int serverPort;
     private long lastBackAt = 0L;
+    /** 当前是否有任务在跑：决定退后台后是否继续强制 WebView 计时器与前台服务 */
+    private boolean backgroundTaskActive = false;
+    /** 电池优化白名单只在本进程里申请一次，用户拒绝后不反复弹 */
+    private boolean batteryPromptShown = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -174,6 +180,50 @@ public class MainActivity extends Activity {
     private boolean isSystemNight() {
         return (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
                 == Configuration.UI_MODE_NIGHT_YES;
+    }
+
+    /**
+     * 退到后台/熄屏后，WebView 的计时器默认可能被系统节流。
+     * 有任务在跑时反复 resumeTimers，保证 SSE 解析、重试计时、工具轮询都继续走。
+     */
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (webView != null) {
+            webView.resumeTimers();
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (webView != null && backgroundTaskActive) {
+            webView.resumeTimers();
+        }
+    }
+
+    /**
+     * 申请「忽略电池优化」。这是熄屏/Doze 下继续联网的关键：
+     * 前台服务能把进程提到前台优先级，但 Doze 仍可能掐断网络；
+     * 进入系统白名单后网络与唤醒锁才不会被系统省电策略回收。
+     * 用户拒绝也不影响前台服务与唤醒锁继续工作。
+     */
+    private void requestBatteryOptimizationExemption() {
+        if (batteryPromptShown) {
+            return;
+        }
+        batteryPromptShown = true;
+        try {
+            PowerManager power = (PowerManager) getSystemService(POWER_SERVICE);
+            if (power == null || power.isIgnoringBatteryOptimizations(getPackageName())) {
+                return;
+            }
+            Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+            intent.setData(Uri.parse("package:" + getPackageName()));
+            startActivity(intent);
+        } catch (Exception ignored) {
+            // 个别 ROM 没有这个系统页面：不阻断任务，只放弃白名单
+        }
     }
 
     @Override
@@ -279,9 +329,20 @@ public class MainActivity extends Activity {
     }
 
     private void requestAudioPermission() {
+        ArrayList<String> wanted = new ArrayList<>();
         if (Build.VERSION.SDK_INT >= 23
                 && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_AUDIO_PERMISSION);
+            wanted.add(Manifest.permission.RECORD_AUDIO);
+        }
+        // Android 13+：后台任务的通知也是保活的一部分，与录音权限一起申请，
+        // 免得用户在设置里找不到入口、通知被系统静默隐藏。
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+            wanted.add(Manifest.permission.POST_NOTIFICATIONS);
+        }
+        if (!wanted.isEmpty()) {
+            requestPermissions(wanted.toArray(new String[0]), REQ_AUDIO_PERMISSION);
         }
     }
 
@@ -388,6 +449,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        BackgroundTaskService.setTaskRunning(this, false);
         releaseSpeech();
         if (shellManager != null) {
             shellManager.shutdown();
@@ -880,6 +942,45 @@ public class MainActivity extends Activity {
                 @Override
                 public void run() {
                     Toast.makeText(MainActivity.this, message, Toast.LENGTH_SHORT).show();
+                }
+            });
+        }
+
+        /**
+         * 任务运行态（true=开始执行，false=回合结束）。
+         *
+         * 由渲染层在 running 翻转时调用。true 时拉起前台服务、拿唤醒锁/Wi-Fi 锁、
+         * 把 WebView 渲染进程优先级提到 IMPORTANT，并申请电池优化白名单；
+         * false 时全部释放。所有系统调用都切回 UI 线程。
+         */
+        @JavascriptInterface
+        public void setTaskRunning(final boolean running) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    backgroundTaskActive = running;
+                    try {
+                        BackgroundTaskService.setTaskRunning(MainActivity.this, running);
+                    } catch (Exception e) {
+                        Toast.makeText(MainActivity.this,
+                                "后台任务保活启动失败：" + e.getMessage(),
+                                Toast.LENGTH_LONG).show();
+                    }
+                    if (webView != null) {
+                        // 有任务时告诉系统「这个 WebView 的渲染进程很重要」，
+                        // 不要因为 Activity 不可见就冻结它（熄屏/后台仍要跑 JS 流式收包）。
+                        webView.setRendererPriorityPolicy(
+                                running
+                                        ? WebView.RENDERER_PRIORITY_IMPORTANT
+                                        : WebView.RENDERER_PRIORITY_BOUND,
+                                false);
+                        if (running) {
+                            webView.resumeTimers();
+                        }
+                    }
+                    if (running) {
+                        requestBatteryOptimizationExemption();
+                    }
                 }
             });
         }

@@ -42,4 +42,6 @@ termux-packages 仓库中找到对应 `packages/<包名>/build.sh` 及其源码�
 
 - Termux 是 Termux 社区的项目名称；本项目只是复用其公开的 bootstrap 与包构建产物，
   与 Termux 官方没有隶属关系。
+- 后台任务保活只使用 Android 系统 API（`Service` / `Notification` / `PowerManager` /
+  `WifiManager`），没有引入第三方保活、推送或唤醒库。
 - 内置终端只随 APK 分发，不单独售卖；APK 与源码同样受 GPL-3.0 约束。

@@ -17,6 +17,10 @@
 │   │     ├── 内置 Termux 用户态（abcd/bin/bash，Python/pip/Git）            │
 │   │     ├── /system/bin/sh 兜底（mksh + toybox）                      │
 │   │     └── 工作区落盘：memfs ↔ files/guncat-data/files/workspaces          │
+│   ├── BackgroundTaskService（任务期间的前台服务）                      │
+│   │     ├── 常驻通知（前台服务优先级，防 cached 冻结）                    │
+│   │     ├── PARTIAL_WAKE_LOCK（熄屏后 CPU 继续调度）                     │
+│   │     └── WIFI_MODE_FULL_HIGH_PERF（熄屏不关 Wi-Fi 射频）             │
 │   ├── TextToSpeech / MediaStore / ACTION_VIEW / ACTION_SEND          │
 │   └── onShowFileChooser → HTML <input type=file>                     │
 └──────────────────────────────────────────────────────────────────────┘
@@ -243,6 +247,28 @@ WebView 原生桥的环境里跑通工作模式。
 （`ls /etc`）因为要求「目录名 + 分隔符」一直漏检。只留两个降噪口子：`/dev/null` 这类纯
 I/O 通道，以及引号里、首段不是真实根名的 `/x/` 正则字面量（`awk '/error/'`、`sed '/start/p'`）。
 
+### 4.9 后台任务保活（前台服务 + 唤醒锁 + 电池白名单）
+
+**问题**：全部业务都在 WebView 里跑。Activity 被切到后台后，应用变成 cached 进程，
+系统可以随时冻结或回收：SSE 流式回答断在半路、内置终端子进程被杀、对话状态丢失。
+
+**做法**（`BackgroundTaskService.java` + `src/mobile/native/background.ts`）：
+
+| 层 | 动作 |
+| --- | --- |
+| 渲染层 | `background.ts` 订阅 store 的 `running`，翻转时调用原生桥 `setTaskRunning(boolean)` |
+| 原生桥 | `MainActivity.NativeBridge.setTaskRunning`：拉起/停止服务；任务期间把 WebView 渲染进程设为 `RENDERER_PRIORITY_IMPORTANT` 并持续 `resumeTimers()` |
+| 前台服务 | `startForeground` 常驻通知「任务正在后台执行」，把进程提到前台服务优先级，避开 cached / App Standby 冻结 |
+| 唤醒锁 | `PARTIAL_WAKE_LOCK`：熄屏后 CPU 仍可调度；`WIFI_MODE_FULL_HIGH_PERF`：熄屏不关 Wi-Fi 射频。两者都在任务结束时释放 |
+| 电池白名单 | 首次开始任务时申请「忽略电池优化」（`ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`），避免 Doze 掐网络；用户拒绝不阻断任务 |
+| 权限 | 清单声明 `FOREGROUND_SERVICE`、`WAKE_LOCK`、`ACCESS_WIFI_STATE`、`CHANGE_WIFI_STATE`、`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`；Android 13+ 启动时与录音权限一起申请通知权限 |
+
+刻意**不**做的事：服务不 `START_STICKY` 自重启（WebView 已随 Activity 销毁，重启只会留下
+「任务在跑」的假通知）；也不申请开机自启或后台拉起 Activity —— 能保住当前进程就够了。
+
+厂商 ROM（MIUI/EMUI/ColorOS 等）仍可能无视 Android 标准后台策略，需要在系统设置里
+额外允许「自启动 / 后台运行 / 省电策略：无限制」；应用内无法绕过这一层。
+
 ## 5. `run_js`
 
 桌面版用 `node:vm` 的 `timeout` 硬中断；Android 版用 Blob Worker：
@@ -360,7 +386,7 @@ python scripts/add-termux-packages.py
 | APK 体积 / 磁盘 | APK 约 211MB；首次解压约占 560MB 私有空间 |
 | `pkg install` | 新装 deb 的路径仍写死 `com.termux`，当前未做逐包改写；内置 Python/pip/Git 可用，其他工具需后续适配 |
 | 工作区镜像 | 单文件 32MB / 单次 64MB；更大的单文件、超大目录（如完整 `node_modules`）不会完整落地 |
-| 后台执行 | WebView 退后台可能被冻结；没有前台服务与常驻通知 |
+| 后台执行 | 任务期间有前台服务 + 唤醒锁 + Wi-Fi 锁 + 电池优化白名单；但厂商 ROM 的自启动/省电策略仍需用户手动放行 |
 | 自定义工作区 | 只支持应用沙箱；导出/分享走 ZIP |
 | 分享 | 一律走系统分享面板（可发到微信）；文件经 `content://`（FileShareProvider）交给目标应用 |
 | 数据迁移 | 桌面版数据目录与 Android IndexedDB 不互通；没有导入通道 |
@@ -382,6 +408,9 @@ python scripts/add-termux-packages.py
   （模拟老 WebView），确认这两条兼容路径都由 App 自己补上；
 - 工作区：文件行「下载 / 分享 / 删除」三个动作在触屏上常显；
   「导出」先弹去向选择（保存到手机 / 系统分享面板），不再点一下就直接写下载目录；
+- 后台保活：静态断言清单声明前台服务/唤醒锁/Wi-Fi 锁权限、`BackgroundTaskService` 与
+  `foregroundServiceType="dataSync"` 存在；服务源码确实持有 `PARTIAL_WAKE_LOCK` 与
+  `WIFI_MODE_FULL_HIGH_PERF`，渲染层按 `running` 调用 `setTaskRunning`；
 - `npm run typecheck`（node/web/mobile）。
 
 真机验证建议：安装 APK 后依次测

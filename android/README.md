@@ -9,6 +9,7 @@ app/src/main/
 ├── assets/termux/            内置 Termux bootstrap（构建产物，勿手改）
 ├── java/com/guncat/work/
 │   ├── MainActivity.java        WebView、文件选择、TTS、下载/分享、返回键
+│   ├── BackgroundTaskService.java 任务期间前台保活（通知 + 唤醒锁 + Wi-Fi 锁）
 │   ├── GuncatServer.java        静态资源 + /__fetch 流式反向代理
 │   ├── TermuxBootstrap.java     首次解压内置用户态（zip + SYMLINKS.txt）
 │   └── ShellManager.java        bash / 系统 sh 执行 + 工作区落盘

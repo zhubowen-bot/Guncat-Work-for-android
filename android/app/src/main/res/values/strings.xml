@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Guncat Work</string>
+    <string name="bg_task_channel_name">后台任务</string>
+    <string name="bg_task_channel_desc">任务执行期间保持网络、命令与对话连接</string>
+    <string name="bg_task_title">任务正在后台执行</string>
+    <string name="bg_task_text">网络、命令与对话保持连接；点按返回应用</string>
 </resources>

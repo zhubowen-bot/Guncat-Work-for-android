@@ -49,6 +49,7 @@ POSIX 用户态，因此做了以下替换（详见 [docs/ANDROID.md](docs/ANDRO
 | Electron `nativeImage` | 浏览器 `createImageBitmap` + canvas（缩放、缩略图、SVG 栅格化） |
 | Electron `shell.openPath` | MediaStore 写入下载目录后交给系统 `ACTION_VIEW` / `ACTION_SEND` |
 | Node `fetch` 直连模型 API | **应用内 127.0.0.1 同源反向代理**：绕开 WebView 的 CORS，逐块 flush，SSE 流式不中断 |
+| 主进程常驻 | **前台保活服务**：任务运行期间拉起常驻通知，持有唤醒锁 / Wi-Fi 高性能锁并申请电池白名单，退后台或熄屏后 WebView、命令与流式对话继续跑 |
 | Web Speech TTS | Android 原生 `TextToSpeech`；语音输入仍是 MediaRecorder + 服务商转写接口 |
 | 桌面三栏布局 | **手机布局**：全屏对话 + 左侧会话抽屉 + 输入框上方胶囊 + 全屏工作区/设置，安全区与 44px 触控目标 |
 
@@ -169,7 +170,7 @@ targetSdk ≥ 29 的应用执行私有目录里的文件（Termux 官方也一�
 | PDF 解析 / 搜索 / 页面转图 | ✅ PDF.js（主线程 fake worker + canvas，不依赖 Web Worker）；中文 CMap、标准字体、wasm 随包 |
 | 自定义工作区目录 | ⚠️ 不支持：使用应用沙箱工作区，可用 ZIP 导出 |
 | 文件管理器「定位」 | ⚠️ 改为保存/分享到系统下载目录 |
-| 后台长任务 | ⚠️ WebView 退到后台可能被系统冻结，长任务请保持前台 |
+| 后台长任务 | ✅ 任务运行期间自动拉起前台保活服务：常驻通知 + `PARTIAL_WAKE_LOCK` + Wi-Fi 高性能锁 + 电池优化白名单，退后台/熄屏仍可联网、跑命令、收发流式回答 |
 
 ## 项目结构
 
@@ -189,6 +190,7 @@ android/
 ├── app/src/main/assets/termux/  # 内置 Termux bootstrap（构建产物，勿手改）
 ├── app/src/main/java/com/guncat/work/
 │   ├── MainActivity.java        # WebView + 文件选择 + TTS + 下载/分享
+│   ├── BackgroundTaskService.java # 任务期间前台服务（通知/唤醒锁/Wi-Fi 锁）
 │   ├── GuncatServer.java        # 本机静态服务 + 流式反向代理
 │   ├── TermuxBootstrap.java     # 首次解压内置 Termux 用户态 + 路径/符号链接
 │   └── ShellManager.java        # 命令执行（内置 bash / 系统 sh）+ 工作区落盘
@@ -226,7 +228,8 @@ npm run typecheck:mobile
    这不是「懒得升级」，降到更低或升到 29+ 都会直接不能执行。
 2. 内置终端首次启动要解压约 560MB，占用应用私有空间；APK 因此约 211MB。
 3. `pkg install` 安装的新包仍带 Termux 原路径，当前未做逐包路径修复；内置的 Python/Git 可直接用。
-4. 应用退到后台后，长任务可能被系统暂停；没有前台服务/通知来维持执行。
+4. 后台保活依赖系统「忽略电池优化」与通知权限：任务开始时应用会主动申请，用户拒绝后会退回普通后台优先级；
+   部分厂商 ROM（MIUI / EMUI / ColorOS 等）还需在系统设置里手动允许「自启动 / 后台运行」，应用内无法绕过。
 5. 暂不支持自定义工作区目录与系统「打开方式」接收文件。
 6. PDF 只做**读取**：解析/搜索/转图可用，不提供创建、编辑、合并、加水印、填表与 OCR 文字层。
 

@@ -10,6 +10,7 @@ import fs from './shims/fs'
 import { hydrateFs } from './shims/fs'
 import { installBundledResources } from './resources'
 import { installFetchProxy } from './native/net'
+import { installBackgroundTaskKeepAlive } from './native/background'
 import { pickFilesFromDevice } from './native/picker'
 import { createMobileHost } from './host'
 import { runShell } from './platform/shell'
@@ -115,6 +116,8 @@ export async function bootMobile(): Promise<void> {
     }
   }
   await session.bootstrap()
+  // 任务执行期间把进程提到前台服务优先级，退后台/熄屏仍能联网、跑命令、收流式回答
+  installBackgroundTaskKeepAlive()
   // 后台预热 PDF 引擎：首次打开 PDF 时不再等两个 chunk 下载/解析。
   // 失败只记日志，不阻塞启动；真正失败的原因会在第一次工具调用时返回。
   preloadPdfJs()

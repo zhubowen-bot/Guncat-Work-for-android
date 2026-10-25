@@ -27,6 +27,12 @@ export interface AndroidBridge {
   asrStart(): string
   asrStop(): void
   armCameraCapture(): void
+  /**
+   * 任务运行态：true 时原生外壳拉起前台服务、唤醒锁与 Wi-Fi 锁，
+   * 让退后台/熄屏后的网络流式请求、内置终端与对话继续执行；false 时释放。
+   * 老版本 APK 没有这个方法，调用方按可选处理。
+   */
+  setTaskRunning?(running: boolean): void
 }
 
 declare global {

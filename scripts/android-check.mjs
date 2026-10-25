@@ -122,6 +122,45 @@ function check(name, ok, detail = '') {
   if (!ok) failures.push(name)
 }
 
+// ===== 后台保活：清单与服务实现的静态断言 =====
+// 这些不是浏览器能验证的：前台服务、唤醒锁、Wi-Fi 锁都只有在真机才会生效，
+// 所以至少在每次冒烟时把「权限/服务声明被谁删了」拦在打包之前。
+{
+  const manifest = fs.readFileSync(
+    path.join(ROOT, 'android/app/src/main/AndroidManifest.xml'),
+    'utf8'
+  )
+  check(
+    '清单声明前台服务',
+    /android:name="\.BackgroundTaskService"/.test(manifest) &&
+      /android:foregroundServiceType="dataSync"/.test(manifest)
+  )
+  check(
+    '清单声明保活权限',
+    ['FOREGROUND_SERVICE', 'WAKE_LOCK', 'ACCESS_WIFI_STATE', 'CHANGE_WIFI_STATE'].every((name) =>
+      manifest.includes(`android.permission.${name}`)
+    )
+  )
+
+  const service = fs.readFileSync(
+    path.join(ROOT, 'android/app/src/main/java/com/guncat/work/BackgroundTaskService.java'),
+    'utf8'
+  )
+  check(
+    '保活服务持有唤醒锁与 Wi-Fi 锁',
+    service.includes('PARTIAL_WAKE_LOCK') && service.includes('WIFI_MODE_FULL_HIGH_PERF')
+  )
+
+  const keepAlive = fs.readFileSync(
+    path.join(ROOT, 'src/mobile/native/background.ts'),
+    'utf8'
+  )
+  check(
+    '渲染层按 running 驱动保活',
+    keepAlive.includes('setTaskRunning') && keepAlive.includes('useStore.subscribe')
+  )
+}
+
 function staticServer() {
   return http.createServer((req, res) => {
     let url = decodeURIComponent((req.url ?? '/').split('?')[0])
@@ -207,6 +246,10 @@ async function findBrowser() {
 const executablePath = await findBrowser()
 if (executablePath === null) {
   console.log('未找到 Edge/Chrome，跳过 Android 浏览器冒烟')
+  if (failures.length > 0) {
+    console.error(`\nAndroid 静态检查失败 ${failures.length} 项：${failures.join('、')}`)
+    process.exit(1)
+  }
   process.exit(0)
 }
 
