@@ -11,6 +11,7 @@ import { SpeechBar } from './components/SpeechBar'
 import { agentById, isVirtualAgentId } from './conversations'
 import { AgentGlyph } from './components/AgentGlyph'
 import { EmptyState } from './components/EmptyState'
+import { ModeSwitch } from './components/ModeSwitch'
 import { WorkArtifactsCard } from './components/WorkArtifactsCard'
 import { TableOcrDialog } from './components/TableOcrDialog'
 import { ImageLightbox } from './components/ImageLightbox'
@@ -402,7 +403,11 @@ export default function App() {
         <div className="timeline" ref={scrollRef}>
           <div className="timeline__inner">
             {active === null || active.messages.length === 0 ? (
-              <EmptyState mode={mode} engine={engine} />
+              <>
+                <EmptyState mode={mode} engine={engine} />
+                {/* 新建会话页的形态胶囊：交互 / 工作一键切换（聊天形态不显示） */}
+                <ModeSwitch />
+              </>
             ) : (
               <>
                 <Timeline

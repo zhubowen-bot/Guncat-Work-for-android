@@ -1058,6 +1058,70 @@ select {
   color: var(--text-faint);
 }
 
+/* ===== 新建会话页的形态胶囊（交互模式 / 工作模式） =====
+   外观对齐设计稿：浅灰轨道、当前档位白底浮起、无描边。
+   只出现在空态，随内容居中；窄屏下按容器收窄，不横向溢出。 */
+.mode-switch {
+  display: flex;
+  gap: 2px;
+  width: 256px;
+  max-width: calc(100% - 48px);
+  margin: 26px auto 0;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--bg-sunken);
+}
+
+.mode-switch__item {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 38px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 0.16s ease,
+    color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.mode-switch__item[data-active='true'] {
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-weight: 500;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.12),
+    0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.mode-switch__item:hover:not([data-active='true']) {
+  color: var(--text);
+}
+
+.mode-switch__item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 560px) {
+  .mode-switch {
+    width: 232px;
+    margin-top: 20px;
+  }
+
+  .mode-switch__item {
+    height: 36px;
+    font-size: 13.5px;
+  }
+}
+
 /* ===== 消息（聊天模式） ===== */
 
 .msg {
