@@ -30,9 +30,11 @@ export interface AndroidBridge {
   /**
    * 任务运行态：true 时原生外壳拉起前台服务、唤醒锁与 Wi-Fi 锁，
    * 让退后台/熄屏后的网络流式请求、内置终端与对话继续执行；false 时释放。
+   * callbackId 非空时，原生在 startForeground 完成后回调
+   * `window.__guncatTaskKeepAliveReady(callbackId)`，调用方据此等通知真正出现再发请求。
    * 老版本 APK 没有这个方法，调用方按可选处理。
    */
-  setTaskRunning?(running: boolean): void
+  setTaskRunning?(running: boolean, callbackId?: string): void
 }
 
 declare global {
@@ -41,6 +43,7 @@ declare global {
     __GUNCAT_NATIVE__?: { token?: string; version?: string }
     __guncatAsrResult?: (id: string, json: string) => void
     __guncatExportResult?: (id: string, json: string) => void
+    __guncatTaskKeepAliveReady?: (id: string) => void
   }
 }
 

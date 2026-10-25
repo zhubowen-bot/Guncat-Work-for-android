@@ -140,6 +140,32 @@ public class MainActivity extends Activity {
         keepAliveHandler.removeCallbacks(keepAliveTick);
     }
 
+    /**
+     * 等 startForeground 真正生效后再回调 JS。
+     *
+     * 启动竞态：用户刚发任务就立刻切后台，通知/前台服务可能还在启动路上，
+     * 系统会先把连接掐掉。JS 侧在发第一个请求前等这个回执，确保「通知出现 → 再发请求」。
+     */
+    private void notifyTaskServiceReady(final String callbackId, final int attemptsLeft) {
+        if (callbackId == null || callbackId.isEmpty()) {
+            return;
+        }
+        if (!BackgroundTaskService.isForeground() && attemptsLeft > 0) {
+            keepAliveHandler.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    notifyTaskServiceReady(callbackId, attemptsLeft - 1);
+                }
+            }, 50);
+            return;
+        }
+        if (webView != null) {
+            String script = "window.__guncatTaskKeepAliveReady&&window.__guncatTaskKeepAliveReady("
+                    + JSONObject.quote(callbackId) + ")";
+            webView.evaluateJavascript(script, null);
+        }
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -1003,7 +1029,7 @@ public class MainActivity extends Activity {
          * false 时全部释放。所有系统调用都切回 UI 线程。
          */
         @JavascriptInterface
-        public void setTaskRunning(final boolean running) {
+        public void setTaskRunning(final boolean running, final String callbackId) {
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
@@ -1031,6 +1057,8 @@ public class MainActivity extends Activity {
                         }
                     }
                     if (running) {
+                        // 先回执再弹电池优化页：别让系统对话框耽误 JS 发第一个请求
+                        notifyTaskServiceReady(callbackId, 20);
                         requestBatteryOptimizationExemption();
                     }
                 }

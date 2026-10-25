@@ -161,6 +161,13 @@ function check(name, ok, detail = '') {
     '渲染层按 running 驱动保活',
     keepAlive.includes('setTaskRunning') && keepAlive.includes('useStore.subscribe')
   )
+  check(
+    '首个请求前等待保活回执（启动竞态）',
+    keepAlive.includes('__guncatTaskKeepAliveReady') &&
+      fs
+        .readFileSync(path.join(ROOT, 'src/mobile/host/index.ts'), 'utf8')
+        .includes('whenBackgroundTaskReady')
+  )
 }
 
 function staticServer() {

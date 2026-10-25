@@ -44,6 +44,7 @@ import { image } from '@core/platform/kit/ImageKit'
 import { sanitizeTableHtml } from '@main/sanitizeHtml'
 import { transcribeAudio } from '@main/asr'
 import { pickFilesFromDevice } from '../native/picker'
+import { whenBackgroundTaskReady } from '../native/background'
 import { nativeAsrStart, nativeAsrStatus, nativeAsrStop } from '../native/asr'
 import { openBytes, saveBytesToUserLocation, shareBytesTo, toast, bytesToBase64, ttsSpeak, ttsStop, ttsSupported } from '../native/bridge'
 
@@ -275,17 +276,28 @@ export function createMobileHost(): MobileHost {
     },
 
     chat: {
-      send: (request: ChatSendRequest): Promise<void> => session.sendChat(request),
+      send: async (request: ChatSendRequest): Promise<void> => {
+        // 先等前台服务与常驻通知真的起来，再发第一个请求：否则「刚进应用就发、
+        // 立刻切后台」会赶在通知出现之前被系统掐断连接（用户报障的启动竞态）。
+        await whenBackgroundTaskReady()
+        return session.sendChat(request)
+      },
       abort: async (conversationId: string): Promise<void> => {
         session.abort(conversationId)
       },
-      regenerate: (request: ChatRegenerateRequest): Promise<void> => session.regenerateChat(request),
+      regenerate: async (request: ChatRegenerateRequest): Promise<void> => {
+        await whenBackgroundTaskReady()
+        return session.regenerateChat(request)
+      },
       patchMessage: (conversationId: string, messageId: string, content: string): Promise<void> =>
         session.patchMessageContent(conversationId, messageId, content)
     },
 
     work: {
-      run: (request: WorkRunRequest): Promise<void> => session.runWork(request),
+      run: async (request: WorkRunRequest): Promise<void> => {
+        await whenBackgroundTaskReady()
+        return session.runWork(request)
+      },
       abort: async (conversationId: string): Promise<void> => {
         session.abort(conversationId)
       },

@@ -256,7 +256,8 @@ I/O 通道，以及引号里、首段不是真实根名的 `/x/` 正则字面量
 
 | 层 | 动作 |
 | --- | --- |
-| 渲染层 | `background.ts` 订阅 store 的 `running`，翻转时调用原生桥 `setTaskRunning(boolean)` |
+| 渲染层 | `background.ts` 订阅 store 的 `running`，翻转时调用原生桥 `setTaskRunning(boolean, callbackId)` |
+| 启动回执 | 原生在 `startForeground` 生效后回调 `window.__guncatTaskKeepAliveReady(id)`；mobile host 在发第一个请求前 await 这个回执，消除「刚进应用就发、立刻切后台」时通知还没出现的竞态（最多等 1.5s，超时放行） |
 | 原生桥 | `MainActivity.NativeBridge.setTaskRunning`：拉起/停止服务；任务期间把 WebView 渲染进程设为 `RENDERER_PRIORITY_IMPORTANT` 并持续 `resumeTimers()` |
 | 后台心跳 | Activity 不可见但任务仍在跑时，每 2.5s 重新设置渲染优先级、`onResume()` / `resumeTimers()` 并执行一次空 JS，避免 WebView 在切后台的下一帧把页面降级、把正在上传/等 SSE 的连接掐掉 |
 | 前台服务 | `startForeground` 常驻通知「任务正在后台执行」，把进程提到前台服务优先级，避开 cached / App Standby 冻结 |

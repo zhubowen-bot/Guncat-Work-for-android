@@ -33,6 +33,12 @@ public class BackgroundTaskService extends Service {
 
     private PowerManager.WakeLock wakeLock;
     private WifiManager.WifiLock wifiLock;
+    /** startForeground 是否已经真正生效：JS 侧据此判断「通知出现了，可以发请求了」 */
+    private static volatile boolean foreground = false;
+
+    public static boolean isForeground() {
+        return foreground;
+    }
 
     /** JS 任务运行态的唯一入口：true 拉起，false 停止。 */
     public static void setTaskRunning(Context context, boolean running) {
@@ -58,6 +64,7 @@ public class BackgroundTaskService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         startForeground(NOTIFICATION_ID, buildNotification());
+        foreground = true;
         acquireLocks();
         // START_NOT_STICKY：服务重启时 WebView 已经不存在，重新拉起只会留一条
         // 「任务在跑」的假通知。任务本身靠前台优先级+唤醒锁保活，不靠重启。
@@ -66,6 +73,7 @@ public class BackgroundTaskService extends Service {
 
     @Override
     public void onDestroy() {
+        foreground = false;
         releaseLocks();
         stopForeground(true);
         super.onDestroy();

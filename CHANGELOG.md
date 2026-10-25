@@ -24,6 +24,9 @@
   之前配好的 `RetryPolicy` 实际上从未生效。现在保留原始分类。
   同时重试次数 3 → 5，`Retry-After` 不再被 8s 的指数退避封顶截断（最多等 60s），
   408 / 409 / 425 也纳入可重试范围。
+- **启动瞬间切后台不再漏通知**：`setTaskRunning(true, callbackId)` 在 `startForeground`
+  真正生效后回调 JS，mobile host 等这个回执再发第一个请求；之前「刚进应用就发任务、
+  立刻按 Home」会赶在常驻通知出现之前被系统掐断连接，跑两步后再切反而正常。
 - **后台切走不再立刻断流**：任务期间 Activity 不可见时启动保活心跳（每 2.5s 重新
   `setRendererPriorityPolicy(IMPORTANT)`、`onResume()` / `resumeTimers()` 并执行空 JS），
   Wi-Fi 锁改用 API 29+ 的 `WIFI_MODE_FULL_LOW_LATENCY`（旧版退回 HIGH_PERF），
