@@ -95,8 +95,50 @@ public class MainActivity extends Activity {
     private long lastBackAt = 0L;
     /** 当前是否有任务在跑：决定退后台后是否继续强制 WebView 计时器与前台服务 */
     private boolean backgroundTaskActive = false;
+    /** Activity 是否处于 resumed；null 之外的生命周期只靠定时器保活 */
+    private boolean activityResumed = false;
     /** 电池优化白名单只在本进程里申请一次，用户拒绝后不反复弹 */
     private boolean batteryPromptShown = false;
+    private final Handler keepAliveHandler = new Handler(Looper.getMainLooper());
+
+    /**
+     * 后台保活心跳。
+     *
+     * 仅靠 resumeTimers() 不够：部分 WebView 在 Activity 不可见后会把页面/渲染进程
+     * 降级，正在上传或等待 SSE 的连接会被立刻掐掉（用户报障：一切后台就断，重试后
+     * 又能续上）。这里在前台服务之外再加一道「主动唤醒」：只要任务还在跑且 Activity
+     * 不可见，就周期性把 WebView 的计时器与渲染优先级重新顶起来，并执行一次空 JS
+     * 让渲染进程的任务队列保持可调度。
+     */
+    private final Runnable keepAliveTick = new Runnable() {
+        @Override
+        public void run() {
+            if (!backgroundTaskActive || activityResumed || webView == null) {
+                return;
+            }
+            try {
+                webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false);
+                webView.onResume();
+                webView.resumeTimers();
+                webView.evaluateJavascript("void 0", null);
+            } catch (Exception ignored) {
+                // WebView 正在销毁等情况：下一拍再试
+            }
+            keepAliveHandler.postDelayed(this, 2500);
+        }
+    };
+
+    private void startKeepAliveTicker() {
+        if (!backgroundTaskActive || activityResumed) {
+            return;
+        }
+        keepAliveHandler.removeCallbacks(keepAliveTick);
+        keepAliveHandler.postDelayed(keepAliveTick, 800);
+    }
+
+    private void stopKeepAliveTicker() {
+        keepAliveHandler.removeCallbacks(keepAliveTick);
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -189,6 +231,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        activityResumed = true;
+        stopKeepAliveTicker();
         if (webView != null) {
             webView.resumeTimers();
         }
@@ -197,8 +241,12 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        activityResumed = false;
         if (webView != null && backgroundTaskActive) {
+            // 先立刻补一次，再把后续交给心跳：有些机型在 onPause 的下一帧才冻结页面
+            webView.onResume();
             webView.resumeTimers();
+            startKeepAliveTicker();
         }
     }
 
@@ -449,6 +497,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        stopKeepAliveTicker();
         BackgroundTaskService.setTaskRunning(this, false);
         releaseSpeech();
         if (shellManager != null) {
@@ -976,6 +1025,9 @@ public class MainActivity extends Activity {
                                 false);
                         if (running) {
                             webView.resumeTimers();
+                            startKeepAliveTicker();
+                        } else {
+                            stopKeepAliveTicker();
                         }
                     }
                     if (running) {

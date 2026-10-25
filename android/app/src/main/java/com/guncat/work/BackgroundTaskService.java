@@ -131,8 +131,12 @@ public class BackgroundTaskService extends Service {
             WifiManager wifi = (WifiManager) getApplicationContext()
                     .getSystemService(Context.WIFI_SERVICE);
             if (wifi != null) {
-                wifiLock = wifi.createWifiLock(
-                        WifiManager.WIFI_MODE_FULL_HIGH_PERF, "Guncat:BackgroundTask");
+                // API 29+ 用 LOW_LATENCY：这是给「屏幕熄灭后仍要持续传输」的场景准备的；
+                // 旧的 FULL_HIGH_PERF 在部分新 ROM 上会被省电策略忽略。
+                int mode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                        ? WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+                        : WifiManager.WIFI_MODE_FULL_HIGH_PERF;
+                wifiLock = wifi.createWifiLock(mode, "Guncat:BackgroundTask");
                 wifiLock.setReferenceCounted(false);
             }
         }

@@ -24,6 +24,10 @@
   之前配好的 `RetryPolicy` 实际上从未生效。现在保留原始分类。
   同时重试次数 3 → 5，`Retry-After` 不再被 8s 的指数退避封顶截断（最多等 60s），
   408 / 409 / 425 也纳入可重试范围。
+- **后台切走不再立刻断流**：任务期间 Activity 不可见时启动保活心跳（每 2.5s 重新
+  `setRendererPriorityPolicy(IMPORTANT)`、`onResume()` / `resumeTimers()` 并执行空 JS），
+  Wi-Fi 锁改用 API 29+ 的 `WIFI_MODE_FULL_LOW_LATENCY`（旧版退回 HIGH_PERF），
+  避免 WebView 在切后台的下一帧把正在上传或等待 SSE 的连接掐掉。
 - **重试前清掉半截输出**：接上 `onRetry`，把上一次尝试已流出的正文、思考与未完成的工具行
   清空并提示“请求中断，正在自动重试（n/5）”，避免重试成功后出现“旧半截 + 新全文”的重复。
 - **图片请求超时后不再死循环重试同一张图**：view_image 的大图先自动压到 1MB / 1600px 以内再内联；

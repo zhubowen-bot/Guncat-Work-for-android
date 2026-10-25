@@ -148,7 +148,9 @@ function check(name, ok, detail = '') {
   )
   check(
     '保活服务持有唤醒锁与 Wi-Fi 锁',
-    service.includes('PARTIAL_WAKE_LOCK') && service.includes('WIFI_MODE_FULL_HIGH_PERF')
+    service.includes('PARTIAL_WAKE_LOCK') &&
+      service.includes('WIFI_MODE_FULL_HIGH_PERF') &&
+      service.includes('WIFI_MODE_FULL_LOW_LATENCY')
   )
 
   const keepAlive = fs.readFileSync(

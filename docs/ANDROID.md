@@ -258,8 +258,9 @@ I/O 通道，以及引号里、首段不是真实根名的 `/x/` 正则字面量
 | --- | --- |
 | 渲染层 | `background.ts` 订阅 store 的 `running`，翻转时调用原生桥 `setTaskRunning(boolean)` |
 | 原生桥 | `MainActivity.NativeBridge.setTaskRunning`：拉起/停止服务；任务期间把 WebView 渲染进程设为 `RENDERER_PRIORITY_IMPORTANT` 并持续 `resumeTimers()` |
+| 后台心跳 | Activity 不可见但任务仍在跑时，每 2.5s 重新设置渲染优先级、`onResume()` / `resumeTimers()` 并执行一次空 JS，避免 WebView 在切后台的下一帧把页面降级、把正在上传/等 SSE 的连接掐掉 |
 | 前台服务 | `startForeground` 常驻通知「任务正在后台执行」，把进程提到前台服务优先级，避开 cached / App Standby 冻结 |
-| 唤醒锁 | `PARTIAL_WAKE_LOCK`：熄屏后 CPU 仍可调度；`WIFI_MODE_FULL_HIGH_PERF`：熄屏不关 Wi-Fi 射频。两者都在任务结束时释放 |
+| 唤醒锁 | `PARTIAL_WAKE_LOCK`：熄屏后 CPU 仍可调度；`WIFI_MODE_FULL_LOW_LATENCY`（API 29+，旧版退回 `WIFI_MODE_FULL_HIGH_PERF`）：熄屏不关 Wi-Fi 射频。两者都在任务结束时释放 |
 | 电池白名单 | 首次开始任务时申请「忽略电池优化」（`ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`），避免 Doze 掐网络；用户拒绝不阻断任务 |
 | 权限 | 清单声明 `FOREGROUND_SERVICE`、`WAKE_LOCK`、`ACCESS_WIFI_STATE`、`CHANGE_WIFI_STATE`、`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`；Android 13+ 启动时与录音权限一起申请通知权限 |
 
