@@ -168,6 +168,18 @@ function check(name, ok, detail = '') {
         .readFileSync(path.join(ROOT, 'src/mobile/host/index.ts'), 'utf8')
         .includes('whenBackgroundTaskReady')
   )
+
+  // 屏幕常亮只靠窗口标志，没有 JS/桥参与：改回「靠设置项」或误删这一行时，
+  // 用户会重新遇到「放着不动就熄屏、任务断在半路」。
+  const mainActivity = fs.readFileSync(
+    path.join(ROOT, 'android/app/src/main/java/com/guncat/work/MainActivity.java'),
+    'utf8'
+  )
+  check(
+    '应用前台保持屏幕常亮',
+    mainActivity.includes('FLAG_KEEP_SCREEN_ON') &&
+      mainActivity.includes('getWindow().addFlags')
+  )
 }
 
 function staticServer() {

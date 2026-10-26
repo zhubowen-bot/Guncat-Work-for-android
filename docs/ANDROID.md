@@ -263,6 +263,7 @@ I/O 通道，以及引号里、首段不是真实根名的 `/x/` 正则字面量
 | 前台服务 | `startForeground` 常驻通知「任务正在后台执行」，把进程提到前台服务优先级，避开 cached / App Standby 冻结 |
 | 唤醒锁 | `PARTIAL_WAKE_LOCK`：熄屏后 CPU 仍可调度；`WIFI_MODE_FULL_LOW_LATENCY`（API 29+，旧版退回 `WIFI_MODE_FULL_HIGH_PERF`）：熄屏不关 Wi-Fi 射频。两者都在任务结束时释放 |
 | 电池白名单 | 首次开始任务时申请「忽略电池优化」（`ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`），避免 Doze 掐网络；用户拒绝不阻断任务 |
+| 屏幕常亮 | `MainActivity.onCreate` 给窗口加 `FLAG_KEEP_SCREEN_ON`：应用在前台时不自动熄屏，避免「放着不动 → 熄屏 → 部分 ROM 降频/冻结 WebView → 长任务断在半路」。该标志只对可见窗口生效，切后台/锁屏后不阻止系统熄屏，后台续跑仍靠前台服务与唤醒锁 |
 | 权限 | 清单声明 `FOREGROUND_SERVICE`、`WAKE_LOCK`、`ACCESS_WIFI_STATE`、`CHANGE_WIFI_STATE`、`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`；Android 13+ 启动时与录音权限一起申请通知权限 |
 
 刻意**不**做的事：服务不 `START_STICKY` 自重启（WebView 已随 Activity 销毁，重启只会留下

@@ -49,7 +49,7 @@ POSIX 用户态，因此做了以下替换（详见 [docs/ANDROID.md](docs/ANDRO
 | Electron `nativeImage` | 浏览器 `createImageBitmap` + canvas（缩放、缩略图、SVG 栅格化） |
 | Electron `shell.openPath` | MediaStore 写入下载目录后交给系统 `ACTION_VIEW` / `ACTION_SEND` |
 | Node `fetch` 直连模型 API | **应用内 127.0.0.1 同源反向代理**：绕开 WebView 的 CORS，逐块 flush，SSE 流式不中断 |
-| 主进程常驻 | **前台保活服务**：任务运行期间拉起常驻通知，持有唤醒锁 / Wi-Fi 高性能锁并申请电池白名单，退后台或熄屏后 WebView、命令与流式对话继续跑 |
+| 主进程常驻 | **前台保活服务**：任务运行期间拉起常驻通知，持有唤醒锁 / Wi-Fi 高性能锁并申请电池白名单，退后台或熄屏后 WebView、命令与流式对话继续跑；应用在前台时窗口持有 `FLAG_KEEP_SCREEN_ON`，放着不动也不会自动熄屏 |
 | Web Speech TTS | Android 原生 `TextToSpeech`；语音输入仍是 MediaRecorder + 服务商转写接口 |
 | 桌面三栏布局 | **手机布局**：全屏对话 + 左侧会话抽屉 + 输入框上方胶囊 + 全屏工作区/设置，安全区与 44px 触控目标 |
 
@@ -170,7 +170,7 @@ targetSdk ≥ 29 的应用执行私有目录里的文件（Termux 官方也一�
 | PDF 解析 / 搜索 / 页面转图 | ✅ PDF.js（主线程 fake worker + canvas，不依赖 Web Worker）；中文 CMap、标准字体、wasm 随包 |
 | 自定义工作区目录 | ⚠️ 不支持：使用应用沙箱工作区，可用 ZIP 导出 |
 | 文件管理器「定位」 | ⚠️ 改为保存/分享到系统下载目录 |
-| 后台长任务 | ✅ 任务运行期间自动拉起前台保活服务：常驻通知 + `PARTIAL_WAKE_LOCK` + Wi-Fi 高性能锁 + 电池优化白名单，退后台/熄屏仍可联网、跑命令、收发流式回答 |
+| 后台长任务 | ✅ 任务运行期间自动拉起前台保活服务：常驻通知 + `PARTIAL_WAKE_LOCK` + Wi-Fi 高性能锁 + 电池优化白名单，退后台/熄屏仍可联网、跑命令、收发流式回答；应用在前台时屏幕常亮（`FLAG_KEEP_SCREEN_ON`），不会放着不动就熄屏 |
 
 ## 项目结构
 

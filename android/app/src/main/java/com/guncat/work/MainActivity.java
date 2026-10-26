@@ -170,6 +170,11 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         applySystemBars();
+        // 应用在前台时保持屏幕常亮：熄屏后部分 ROM 会降频/冻结 WebView 渲染进程，
+        // 正在跑的长任务（流式回答、命令、上传）就断在半路。
+        // FLAG_KEEP_SCREEN_ON 只对可见窗口生效 —— 切后台/锁屏后不再拦系统熄屏，
+        // 后台续跑由 BackgroundTaskService 的前台服务与唤醒锁负责。
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
         token = randomToken();
         server = new GuncatServer(new GuncatServer.AssetLookup() {

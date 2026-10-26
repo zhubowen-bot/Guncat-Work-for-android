@@ -14,6 +14,9 @@
 
 ### 修复：长任务中断与自动重试
 
+- **应用在前台不再自动熄屏**：`MainActivity.onCreate` 给窗口加 `FLAG_KEEP_SCREEN_ON`。
+  之前手机放着不动触发系统息屏后，部分 ROM 会降频/冻结 WebView，流式回答或命令就断在
+  半路；现在只要应用在前台屏幕就保持常亮，切后台/锁屏后仍由前台保活服务与唤醒锁接管。
 - **长任务不再「安静地停住」**：三种协议都识别流终止事件（Completions 的 `finish_reason`、
   Anthropic 的 `message_stop` / `stop_reason`、Responses 的 `response.completed` / `[DONE]`）。
   以前只要 HTTP 是 200、`dataEnd` 一到就 resolve —— 连接被网络/代理掐断时，半截正文会被当成
