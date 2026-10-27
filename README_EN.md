@@ -107,13 +107,21 @@ behavior. The APK is the source of truth for full capability.
 - **Built-in terminal (default)**: an arm64 Termux userland ships inside the APK — `bash`,
   coreutils, `grep` `sed` `awk` `find` `xargs` `tar` `curl`, `apt`, plus a real toolchain:
   **Node 26 + npm 11, ffmpeg, jq, sqlite3, ssh/scp, rsync, make, rg, fd, dig/nslookup,
-  htop, wget, zip**, **Python 3.14 + pip + numpy/scipy/pillow/lxml**, and **Git**.
-  On first launch the ~205MB bootstrap is extracted into app-private storage; afterwards commands
-  run directly. Real pipes, redirections, globbing, command substitution, loops/functions,
-  `&&`/`||`, exit codes and background jobs all work.
-- Not bundled: `pandoc`, ImageMagick, `gcc/clang`, pandas, matplotlib — each is a 30–80MB deb
-  (100–200MB installed) and the Termux repo has no arm64 pandas/matplotlib builds. Pure-Python
-  packages can be added with the bundled `pip`.
+  htop, wget, zip, Git**, and **Python 3.14 + pip**.
+  On first launch the ~254MB bootstrap (about 700MB extracted) is unpacked into app-private
+  storage; afterwards commands run directly. Real pipes, redirections, globbing, command
+  substitution, loops/functions, `&&`/`||`, exit codes and background jobs all work.
+- **Python third-party packages are preinstalled to match the HarmonyOS build**: `numpy`,
+  `scipy`, `pandas`, `matplotlib`, `Pillow`, `lxml`, `openpyxl`, `python-docx`, `python-pptx`,
+  `requests`, `beautifulsoup4`, `sympy`, `xlrd`, `XlsxWriter`, `PyYAML`, `reportlab`, `pypdf`,
+  `qrcode`, `jinja2`, `markdown`, `tqdm`, `psutil`, `pycryptodomex` (plus a `Crypto` alias) —
+  no network needed. `matplotlib` auto-registers a system CJK font through `sitecustomize`, so
+  Chinese titles render. The full list lives in `scripts/python-preset-packages.txt` (pure
+  Python) plus `scripts/termux-toolchain-packages.txt` and `scripts/termux-tur-packages.txt`
+  (native extensions).
+- Not bundled: `pandoc`, ImageMagick, `gcc/clang` (each 30–80MB as a deb, 100–200MB installed).
+  On the Python side only `regex` is still missing (pure C extension, no arm64 Termux build);
+  any other pure-Python package can still be added with the bundled `pip`.
 - Before each command the session workspace is mirrored from memfs to app-private storage
   (`.../files/guncat-data/files/workspaces/<conversation>`), and new/modified/deleted files are synced
   back afterwards — so `ls`, `grep -r`, `tar` and `git status` see the same files as the UI.
@@ -121,7 +129,7 @@ behavior. The APK is the source of truth for full capability.
   failure), the app can use `/system/bin/sh` (mksh + toybox) without the tools above.
 - Settings → “Terminal (Shell)” switches backends, shows extraction progress and can reinstall.
 
-The APK grows to ~211MB and `targetSdk` is pinned to **28**: Android 10+ forbids apps targeting
+The APK grows to ~247MB and `targetSdk` is pinned to **28**: Android 10+ forbids apps targeting
 29+ from executing files in app-private storage (Termux itself has always used 28). This is a hard
 requirement for the built-in terminal.
 
@@ -178,7 +186,7 @@ redirections; the JS fallback used by the browser preview and its 127 hint for m
 1. The built-in terminal is **arm64-only**; other ABIs fall back to the system shell. `targetSdk`
    is pinned to 28 (apps targeting 29+ cannot execute app-private files), which is why the app is
    sideload-only.
-2. First launch extracts ~560MB; the APK is ~211MB.
+2. First launch extracts ~700MB; the APK is ~247MB.
 3. `pkg install` packages still contain Termux's original paths and are not rewritten yet; the
    bundled Python/pip/Git work out of the box.
 4. Background execution is not guaranteed (no foreground service).

@@ -15,7 +15,7 @@ description: 专门设计、生成和修改可直接在浏览器中打开的 HTM
 
 ## 关键步骤
 
-> 本环境**无终端/Python 工具**：不执行任何命令、不做本地/云电脑环境判定、不运行截图或内嵌脚本。产物一律用 `write_file` 直接写出。
+> 本环境有终端与 Python（Android 内置终端随包；桌面端视机器而定），但**没有浏览器自动化/截图工具**：不运行 embed/shot 脚本、不做在线发布；产物一律用 `write_file` 直接写出。
 
 **建目录**：每个任务在工作区根目录下新建语义化目录（如 `sales-dashboard/`），HTML 放在目录里，图片素材放进 `assets/`。迭代已有任务时进原目录改，不另起。
 
@@ -148,4 +148,4 @@ description: 专门设计、生成和修改可直接在浏览器中打开的 HTM
 
 ---
 
-> 本项目适配：本环境无 Python/终端/浏览器工具，不执行 embed/shot 脚本、不做在线发布；交付用 `write_file` 写出 `.html` 并告知文件路径，素材用 `download_file` 下载到 `assets/`，配图用 `write_svg`。原文的 HTML 编写规范、视觉与防 slop 红线保留。
+> 本项目适配：本环境有 Python/终端（Android 随包；桌面端视机器而定），但没有浏览器自动化/截图工具，不执行 embed/shot 脚本、不做在线发布；交付用 `write_file` 写出 `.html` 并告知文件路径，素材用 `download_file` 下载到 `assets/`，配图用 `write_svg`。原文的 HTML 编写规范、视觉与防 slop 红线保留。

@@ -96,4 +96,4 @@ agent_created: true
 
 ---
 
-> 本项目适配（不替代原文）：论文 PDF 用 `parse_document`/`pdf_to_images` 读取，LaTeX/Markdown/DOCX 用 `read_file`/`parse_document` 读取；修改 DOCX 论文用 `load_skill("docx")` + `read_docx`/`edit_docx`，修改 Markdown/LaTeX 用 `edit`/`write_file`；交付用 `write_file`（Markdown）或 `load_skill("docx")` + `write_docx`（Word），意见清单表/修改日志可用 `load_skill("xlsx")` + `write_xlsx`。本环境无终端/脚本，不执行任何外部命令。原文的审稿意见分类、A/B/C/D 判定与回复模板全部保留。
+> 本项目适配（不替代原文）：论文 PDF 用 `parse_document`/`pdf_to_images` 读取，LaTeX/Markdown/DOCX 用 `read_file`/`parse_document` 读取；修改 DOCX 论文用 `load_skill("docx")` + `read_docx`/`edit_docx`，修改 Markdown/LaTeX 用 `edit`/`write_file`；交付用 `write_file`（Markdown）或 `load_skill("docx")` + `write_docx`（Word），意见清单表/修改日志可用 `load_skill("xlsx")` + `write_xlsx`。本技能不依赖外部脚本（原技能脚本未随包），全部走内置工具；确需核对文件时可用内置终端，但不执行原技能脚本。原文的审稿意见分类、A/B/C/D 判定与回复模板全部保留。

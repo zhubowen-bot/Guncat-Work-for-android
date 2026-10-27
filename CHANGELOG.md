@@ -10,7 +10,41 @@
 ## Android 版（0.2.1-android）
 
 把 `run_command` 从「JS 模拟的 POSIX 子集」换成**随 APK 内置的真实 Linux 用户态**，
-不需要用户安装 Termux。产物 `release/Guncat-Work-0.2.1-android.apk`（arm64，约 211MB）。
+不需要用户安装 Termux。产物 `release/Guncat-Work-0.2.1-android.apk`（arm64，约 247MB）。
+
+### 新增：随包 Python 三方库（对齐鸿蒙版）
+
+对齐鸿蒙版，把 Python 三方库预置进内置终端。
+
+- **原生扩展**：pandas 3.0.6（TUR）、matplotlib 3.11.2、contourpy、kiwisolver、psutil、
+  pycryptodomex（Termux 主仓库），与已有的 numpy 2.5 / scipy 1.18 / Pillow 13 / lxml 6.1
+  一起解压进 `lib/python3.14/site-packages/`，设备上不联网即可 `import`。
+- **纯 Python 包**：requests、urllib3、charset-normalizer、certifi、idna、beautifulsoup4、
+  soupsieve、cssselect、openpyxl、python-docx、python-pptx、XlsxWriter、xlrd、pypdf、
+  reportlab、markdown、sympy、mpmath、python-dateutil、pytz、tzdata、tabulate、tqdm、
+  qrcode、pypng、fontTools、cycler、packaging、pyparsing、jinja2、MarkupSafe、PyYAML、
+  watchdog、six、typing_extensions。清单固定在 `scripts/python-preset-packages.txt`。
+- **辅助模块**：从鸿蒙版移植 `guncat_fonts`（matplotlib / Pillow 中文）、`guncat_net`
+  （分层网络自检）、`guncat_mp`（不依赖 `/dev/shm` 的 fork 并行 map）；新增
+  `sitecustomize.py`，在 import matplotlib 时自动注册系统 Noto CJK 字体；
+  另加 `Crypto` → `Cryptodome` 兼容层。
+- **技能与提示词同步**：`PromptBuilder` 不再断言「没有 matplotlib」（Android 直接告知已预置，
+  桌面端改为先探测）；`resources/skills/` 里十余处「本环境无终端/Python/Git」的旧适配说明
+  已按实际能力改写——Android 内置终端有 bash/Python/Git，确需时可用；浏览器自动化、
+  在线发布、PDF 编辑等确实没有的能力保持如实说明。
+- **没有对齐的只有 `regex`**：纯 C 扩展，Termux 主仓库与 TUR 都没有 arm64 包，
+  设备上也没有随包编译器。
+
+### 构建与体积
+
+- `scripts/fetch-termux-bootstrap.py` 增加 TUR 仓库支持（pandas），下载后按 SHA256 校验；
+  `scripts/add-termux-packages.py` 合并主仓库 + TUR 清单。
+- 新增 `scripts/add-python-preset.py`：按版本从 PyPI 取 `py3-none-any` wheel（PyYAML /
+  MarkupSafe / watchdog 没有轮子，从 sdist 只复制纯 Python 实现），并生成 `bin/` 下的
+  console scripts（isympy、qr、fonttools/ttx、watchdog、tabulate 等）。
+- bootstrap 从约 205MB 增到约 254MB（解压约 700MB）；`TermuxBootstrap.VERSION` 升到
+  `2026.10.18-r1+tools3`，升级安装会重新解压一次（用户自己 `pip install` 的包会丢，
+  与之前版本升级行为一致）。
 
 ### 修复：长任务中断与自动重试
 
@@ -60,7 +94,9 @@
 
 - **物理实验/数学类数据图先用 Python 真算再画，不许手写 SVG 冒充**：函数图像、拟合曲线、
   散点回归、误差棒要用 `run_command` 跑 Python，基于原始数据做最小二乘/回归，再由脚本按
-  算出的坐标输出 SVG/PNG；环境里**没有 matplotlib**，用标准库或已装的 numpy/Pillow 自建绘图。
+  算出的坐标输出 SVG/PNG。提示词不再断言「没有 matplotlib」：Android 已随包预置
+  matplotlib/pandas 并优先使用，桌面端改为先 `import matplotlib` 探测，没有再退回标准库或
+  已装的 numpy/Pillow 自建绘图。
   SVG 只用于示意图、流程图、图标等信息表达。`write_svg` 的说明同步标注了这条边界。
 
 ### PDF 解析（PDF.js）

@@ -26,6 +26,36 @@
 上述生成脚本，便于复现同一份二进制。若需要某个子包的完整源码归档，请按包名在
 termux-packages 仓库中找到对应 `packages/<包名>/build.sh` 及其源码地址。
 
+## 内置 Python 三方库
+
+Python 3.14 环境里预置了一批三方库（与鸿蒙版对齐），来源分三类：
+
+1. **Termux 主仓库的 arm64 构建**：`numpy`、`scipy`、`matplotlib`、`contourpy`、
+   `kiwisolver`、`psutil`、`pycryptodomex`（包名 `Cryptodome`，另附 `Crypto` 兼容层）；
+2. **TUR（Termux User Repository）的 arm64 构建**：`pandas`，见
+   <https://github.com/termux-user-repository/tur> 与 `scripts/termux-tur-packages.txt`；
+3. **PyPI 上的纯 Python 发布物**（把 wheel/sdist 解压进 site-packages，未改源码），
+   清单与版本见 `scripts/python-preset-packages.txt`。
+
+以上均为上游发行版，未修改源码。许可与版本：
+
+| 许可 | 包 |
+| --- | --- |
+| BSD-3-Clause | numpy、scipy、pandas、contourpy、kiwisolver、lxml、xlrd、pypdf、reportlab、markdown、sympy、mpmath、jinja2、MarkupSafe、qrcode、psutil、cycler、cssselect、python-dateutil |
+| MIT | openpyxl、python-docx、python-pptx、PyYAML、urllib3、charset-normalizer、beautifulsoup4、soupsieve、tabulate、fontTools、pyparsing、six、pytz、pypng |
+| Apache-2.0 | requests、watchdog、tzdata |
+| PSF-2.0 | typing_extensions、matplotlib（PSF-based） |
+| BSD-2-Clause | XlsxWriter、packaging |
+| MPL-2.0 | certifi、tqdm |
+| HPND | Pillow |
+| BSD-2 / Public Domain | pycryptodomex |
+随 `<包名>.dist-info/licenses/` 一起解压到
+`/data/data/com.guncat.work/abcd/lib/python3.14/site-packages/` 下；Termux deb 的许可另在
+`share/LICENSES/` 与 `share/doc/<包>/`。
+
+**未包含 `regex`**：它是纯 C 扩展，Termux 主仓库与 TUR 都没有 arm64 构建，设备上也没有
+随包编译器，因此无法在保持包体可控的前提下内置。
+
 ## PDF.js
 
 - 项目：<https://github.com/mozilla/pdf.js>

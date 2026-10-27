@@ -61,11 +61,19 @@ z.close()
 print('base entries', len(entries), 'symlinks', len(symlinks))
 
 manifest = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'termux-toolchain-packages.txt')
-pkgs = [line.strip() for line in open(manifest, encoding='utf-8') if line.strip()]
+tur_manifest = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'termux-tur-packages.txt')
+def read_manifest(path):
+    return [line.strip() for line in open(path, encoding='utf-8')
+            if line.strip() and not line.strip().startswith('#')]
+
+pkgs = read_manifest(manifest) + read_manifest(tur_manifest)
 status=entries.get('var/lib/dpkg/status',b'').decode('utf-8','replace')
 stanzas=[]
 for name in pkgs:
-    members=ar_data(f'.tmp/termux/debs/{name}.deb')
+    deb_path = f'.tmp/termux/debs/{name}.deb'
+    if not os.path.exists(deb_path):
+        raise SystemExit(f'缺少 {deb_path}，请先运行 python scripts/fetch-termux-bootstrap.py')
+    members=ar_data(deb_path)
     control_name = next(k for k in members if k.startswith('control.tar.'))
     data_name = next(k for k in members if k.startswith('data.tar.'))
     ct=tarfile.open(fileobj=io.BytesIO(members[control_name]), mode='r:*')

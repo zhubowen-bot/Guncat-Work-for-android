@@ -39,7 +39,7 @@ import java.util.zip.ZipInputStream;
  */
 final class TermuxBootstrap {
     private static final String TAG = "GuncatBootstrap";
-    static final String VERSION = "2026.10.18-r1+tools2";
+    static final String VERSION = "2026.10.18-r1+tools3";
     private static final String ASSET = "termux/bootstrap-aarch64.zip";
     private static final String MARKER = ".guncat-bootstrap";
 

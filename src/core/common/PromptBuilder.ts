@@ -102,7 +102,10 @@ export class PromptBuilder {
     lines.push('- read_ppt(path)：读回演示文稿的 Deck JSON 源。本应用生成的 .pptx 无损还原；外来 pptx 为近似导入（文本/表格/版面保留，图片与图表数据不保留）。编辑或仿制前先读它。');
     lines.push('- edit_ppt(path, ops)：对已有 .pptx 应用结构化操作后保存（外来 pptx 会先自动备份原文件）。ops 为 JSON 数组：add_slide{slide,index?}/delete_slide{index}/move_slide{from,to}/update_slide{index,slide 部分字段}/replace_text{find,replace}/set_theme{theme}/set_title{title}/set_notes{index,notes}；index 从 1 起。改单页用 update_slide，全局改词用 replace_text，换风格用 set_theme。');
     lines.push('- write_svg(path, svg, width?)：把 SVG 源码保存为矢量文件并自动栅格化出 PNG 预览（<name>_preview.png）。生成图片的主要手段：图标、示意图、流程图、信息图、插画由你手写 SVG 完成（**数据图除外，见下一条**）——先 load_skill("svg") 按规范生成，生成后必须 view_image 预览确认再交付。write_pptx 可直接引用 .svg（自动栅格化），write_docx 引用预览 PNG。真实照片类素材不要画，用 download_file 下载。');
-    lines.push('- **物理实验/数学类数据图：先用 Python 真算，再画；不许手写 SVG 冒充**。函数图像、拟合曲线、散点回归、误差棒这类图必须用 run_command 跑 Python：读原始数据 → 做最小二乘/回归 → 得到拟合参数与逐点坐标，然后由脚本自己输出 SVG/PNG（按坐标画折线、散点、坐标轴刻度与图例）。环境里**没有 matplotlib，不要假设它存在**；用标准库或已装的 numpy/Pillow 自己实现绘图。曲线必须来自真实计算，不能手写一段“看起来像”的 SVG；SVG 只用于示意图、流程图、图标等信息表达。');
+    const plotLibsNote = isAndroidShell()
+      ? '内置终端的 Python 已预置 matplotlib 与 pandas：数据图优先用 matplotlib（无显示环境用 Agg 后端）直接 savefig 出 PNG/SVG，读表优先用 pandas；只有 import 失败时才退回标准库或 numpy/Pillow 自建绘图。'
+      : '环境里**不一定有 matplotlib**：先 `python3 -c "import matplotlib"` 探测；有就用它出图，没有再用标准库或已装的 numpy/Pillow 自己实现绘图。';
+    lines.push('- **物理实验/数学类数据图：先用 Python 真算，再画；不许手写 SVG 冒充**。函数图像、拟合曲线、散点回归、误差棒这类图必须用 run_command 跑 Python：读原始数据 → 做最小二乘/回归 → 得到拟合参数与逐点坐标，然后由脚本自己输出 SVG/PNG（按坐标画折线、散点、坐标轴刻度与图例）。' + plotLibsNote + '曲线必须来自真实计算，不能手写一段“看起来像”的 SVG；SVG 只用于示意图、流程图、图标等信息表达。');
     lines.push('**任务控制、交互与委派**');
     lines.push('- ask_user_question(question, options?, multi_select?)：向用户提问并暂停等待回答（用户也可自由输入补充）。仅当存在影响整体方向的关键缺口（目标格式/范围/口径/删除确认等）且无法用合理默认值时使用；问题要一次问全（含全部选项），不要挤牙膏式追问。**技能强制要求的前置提问（如 ppt/docx/xlsx 技能新建前必须 ask_user_question 确认目的/篇幅/风格/素材等）优先于本默认**——命中该类技能时按技能规定提问，不因“能默认就不问”而跳过。用户取消回答时基于合理假设继续并在总结中标注。');
     lines.push('- schedule_create(message, after_seconds? | every_seconds?)：创建定时提醒（一次性 after_seconds，或循环 every_seconds≥300 秒），到期自动作为消息唤醒你；schedule_list 列出，schedule_delete(id) 取消。用户要求"稍后/定时提醒我"时用它。');

@@ -4,7 +4,7 @@ description: 用于对学术论文类 Word/DOCX 文档进行期刊、学校、�
 Version: 1.1.0
 ---
 
-> 本项目适配（不替代原文）：原技能通过 `python3 scripts/*.py` 直接编辑 OpenXML，本环境无 Python/终端/脚本，`scripts/*.py`、`render_docx.py`、LibreOffice/soffice 均不可执行。移植后保留原格式规范、边界、路由与自检清单作为知识层；执行层改用 `load_skill("docx")` + `read_docx`/`edit_docx`/`write_docx` 手工实现，详见拆分链末尾 `SKILL-5.md` 的“Command（本项目执行说明）”。文中残留的命令/参数字样为原规范上下文，不作为可执行指令。
+> 本项目适配（不替代原文）：原技能通过 `python3 scripts/*.py` 直接编辑 OpenXML；这些 `scripts/*.py`、`render_docx.py`、LibreOffice/soffice **未随包，不要假定它们存在**（本环境有内置终端与 Python：Android 随包提供，桌面端视机器而定）。移植后保留原格式规范、边界、路由与自检清单作为知识层；执行层改用 `load_skill("docx")` + `read_docx`/`edit_docx`/`write_docx` 手工实现，详见拆分链末尾 `SKILL-5.md` 的“Command（本项目执行说明）”。文中残留的命令/参数字样为原规范上下文，不作为可执行指令。
 
 # DOCX Journal Format
 

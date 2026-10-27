@@ -1,0 +1,4 @@
+# TUR（Termux User Repository）里的包，Termux 主仓库没有。
+# 目前只有 pandas：官方仓库因为构建成本长期没有 arm64 包，
+# TUR 持续用与主仓库相同的 Python 3.14 构建。
+python-pandas

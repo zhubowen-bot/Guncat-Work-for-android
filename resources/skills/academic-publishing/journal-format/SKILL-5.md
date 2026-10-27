@@ -2,7 +2,7 @@ Do not default to style-name matching. Target files often use style names that d
 
 ## Command（本项目执行说明）
 
-原实现通过 `python3 scripts/format_docx.py` 及一批 `--参数` 直接编辑 OpenXML。本环境无 Python/终端，`scripts/*.py`、`render_docx.py`、LibreOffice/soffice 均不可用，**请勿尝试运行任何脚本**。执行层改为：
+原实现通过 `python3 scripts/format_docx.py` 及一批 `--参数` 直接编辑 OpenXML。本环境有内置终端与 Python（Android 内置终端随包；桌面端视机器而定），但原技能的 `scripts/*.py`、`render_docx.py`、LibreOffice/soffice **未随包，不要假定它们存在**。执行层改为：
 
 1. 先用 `load_skill("docx")` 读取本项目 `docx` 技能的 Doc JSON 语法、排版规范与专业文书规范。
 2. 用 `read_docx` 读取目标 `.docx`（含模板与待排版稿），用 `docx` 技能的模型/编辑指令定位并修改样式、页边距、标题层级、段落/字体/行距、表格三线、公式制表位、引用编号、上下标、页眉页脚等。

@@ -1,0 +1,55 @@
+# 内置 Python 三方库（对齐鸿蒙版 site-packages.zip / extras.zip 的清单）
+#
+# 格式：<PyPI 名>==<版本>，可选后缀 `|sdist` 表示该包没有 py3-none-any 轮子，
+# 从源码包中只复制纯 Python 实现（跳过可选的 C 加速）。
+# 由 scripts/add-python-preset.py 下载并解压进 bootstrap 的
+# lib/python3.14/site-packages/。原生扩展（numpy/scipy/pandas/matplotlib 等）
+# 走 Termux/TUR 的 .deb，不在这里。
+
+# --- 网络 / HTML ---
+requests==2.34.2
+urllib3==2.8.0
+idna==3.20
+charset-normalizer==3.5.2
+certifi==2026.10.23
+beautifulsoup4==4.15.0
+soupsieve==3.0.4
+cssselect==1.6.0
+
+# --- 办公文档 ---
+openpyxl==3.1.5
+et-xmlfile==2.0.0
+python-docx==1.2.0
+python-pptx==1.0.2
+XlsxWriter==3.3.0
+xlrd==2.0.2
+pypdf==6.21.2
+reportlab==5.1.0
+markdown==3.11.2
+
+# --- 数据 / 科学计算（纯 Python 部分）---
+python-dateutil==3.0.0
+pytz==2026.5
+tzdata==2026.5
+sympy==1.14.0
+mpmath==1.4.1
+tabulate==0.10.0
+tqdm==4.70.1
+qrcode==8.2
+pypng==0.20220715.0
+
+# --- matplotlib 的纯 Python 依赖 ---
+fonttools==4.67.0
+cycler==0.12.1
+packaging==26.3
+pyparsing==3.3.3
+
+# --- 模板 / 文件监视 / 序列化 ---
+jinja2==3.1.6
+MarkupSafe==3.0.4|sdist
+PyYAML==6.0.3|sdist
+watchdog==6.0.0|sdist
+
+# --- 兼容层 ---
+six==1.17.0
+typing_extensions==4.16.0

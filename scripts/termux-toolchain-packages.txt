@@ -1,4 +1,4 @@
-﻿brotli
+brotli
 c-ares
 cmocka
 dnsutils
@@ -95,7 +95,9 @@ libzimg
 libzmq
 littlecms
 make
+matplotlib
 ncurses-ui-libs
+ninja
 nodejs
 npm
 ocl-icd
@@ -104,12 +106,18 @@ openjpeg
 openssh
 openssh-sftp-server
 openssl-tool
+patchelf
 python
+python-contourpy
+python-kiwisolver
 python-lxml
 python-numpy
 python-pillow
 python-pip
+python-psutil
+python-pycryptodomex
 python-scipy
+qhull
 ripgrep
 rsync
 rubberband

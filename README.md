@@ -68,7 +68,7 @@ POSIX 用户态，因此做了以下替换（详见 [docs/ANDROID.md](docs/ANDRO
 ## 快速开始（安装）
 
 1. 从 `release/Guncat-Work-0.2.1-android.apk` 安装（arm64，Android 9+；导出到系统「下载」需 Android 10+；需要允许「安装未知来源应用」）。
-   首次启动会解压内置终端（约 205MB，几十秒到几分钟），状态可在「设置 → 终端命令执行」查看。
+   首次启动会解压内置终端（约 254MB，几十秒到几分钟），状态可在「设置 → 终端命令执行」查看。
 2. 打开后进入「设置 → 接入方式」，填 Base URL、API Key、模型名，保存。
    - 支持 OpenAI Completions（`/chat/completions`）、OpenAI Responses（`/responses`）、
      Anthropic Messages（`/messages`）三种协议，均可直传图片。
@@ -103,12 +103,13 @@ npm run dist:android
 5. `d8` 生成 `classes.dex`
 6. `zipalign` 对齐、`apksigner` 签名
 
-内置终端资源（约 205MB，因体积大不入 git）按需生成：
+内置终端资源（约 254MB，因体积大不入 git）按需生成：
 
 ```bash
-python scripts/fetch-termux-bootstrap.py   # 下载官方 bootstrap + 工具链 deb（需联网）
+python scripts/fetch-termux-bootstrap.py   # 下载官方 bootstrap + Termux/TUR deb（需联网）
 python scripts/prepare-termux-bootstrap.py # 等长改写 com.termux 前缀
-python scripts/add-termux-packages.py      # 合并工具链
+python scripts/add-termux-packages.py      # 合并工具链与原生 Python 包
+python scripts/add-python-preset.py        # 预置纯 Python 三方库（对齐鸿蒙版）
 ```
 
 详见 [docs/ANDROID.md](docs/ANDROID.md)。
@@ -130,12 +131,20 @@ npm run dev:android   # http://127.0.0.1:5174
 - **内置终端（默认）**：APK 里带一套 arm64 的 Termux 用户态 —— `bash`、coreutils、
   `grep` `sed` `awk` `find` `xargs` `tar` `curl`、`apt`，以及一条真实工具链：
   **Node 26 + npm 11、ffmpeg、jq、sqlite3、ssh/scp、rsync、make、rg、fd、dig/nslookup、
-  htop、wget、zip**，**Python 3.14 + pip + numpy/scipy/pillow/lxml**，**Git**。
-  首次启动把 bootstrap（约 205MB 压缩）解压到应用私有目录的 `abcd`，之后直接执行。
+  htop、wget、zip、Git**，以及 **Python 3.14 + pip**。
+  首次启动把 bootstrap（约 254MB 压缩、解压约 700MB）解压到应用私有目录的 `abcd`，之后直接执行。
   真正的管道、重定向、通配符、命令替换、循环/函数、`&&`/`||`、退出码、后台作业都在。
-- 未内置：`pandoc`、ImageMagick、`gcc/clang`、pandas、matplotlib —— 这些 deb 单个就有
-  30–80MB、装完 100–200MB，再塞进 APK 会让包体失控；Termux 仓库也没有 pandas/matplotlib
-  的 arm64 包。纯 Python 包可以直接 `pip install`（pip 已预装）。
+- **Python 三方库已预置，和鸿蒙版对齐**：`numpy`、`scipy`、`pandas`、`matplotlib`、
+  `Pillow`、`lxml`、`openpyxl`、`python-docx`、`python-pptx`、`requests`、
+  `beautifulsoup4`、`sympy`、`xlrd`、`XlsxWriter`、`PyYAML`、`reportlab`、`pypdf`、
+  `qrcode`、`jinja2`、`markdown`、`tqdm`、`psutil`、`pycryptodomex`（含 `Crypto`
+  兼容层）等，装好即可 `import`，不需要联网。matplotlib 会通过 `sitecustomize`
+  自动注册系统中文字体，`plt.title("中文")` 直接可读；完整清单见
+  `scripts/python-preset-packages.txt`（纯 Python）与 `scripts/termux-toolchain-packages.txt`、
+  `scripts/termux-tur-packages.txt`（原生扩展）。
+- 未内置：`pandoc`、ImageMagick、`gcc/clang` —— 这些 deb 单个 30–80MB、装完 100–200MB。
+  Python 侧只剩 `regex` 没有对齐（纯 C 扩展，Termux 没有 arm64 包）；其他纯 Python 包
+  仍可 `pip install`（pip 已预装）。
 - 执行命令前，App 会把当前会话工作区从 memfs 镜像到应用私有目录
   （`/data/data/com.guncat.work/files/guncat-data/files/workspaces/<会话>`），
   命令结束后把新建/修改/删除的文件与目录同步回工作区 —— 所以 `ls`、`grep -r`、`tar`、`git status`
@@ -146,7 +155,7 @@ npm run dev:android   # http://127.0.0.1:5174
   `/system/bin/sh`（mksh + toybox），仍支持管道、重定向和工作区镜像，但没有上面这些工具。
 - 设置页「终端命令执行 (Shell)」可切换后端、查看内置终端安装进度、重新安装。
 
-APK 因此从 7MB 增到约 **211MB**，并把 `targetSdk` 定为 **28**：Android 10+ 禁止
+APK 因此从 7MB 增到约 **247MB**，并把 `targetSdk` 定为 **28**：Android 10+ 禁止
 targetSdk ≥ 29 的应用执行私有目录里的文件（Termux 官方也一直用 28）。这是内置终端的硬前提。
 
 镜像边界：单文件 32MB、单次同步 64MB 封顶（与原生 `fsRead` 的 32MB 上限对齐）；不同步设置/
@@ -226,7 +235,7 @@ npm run typecheck:mobile
 
 1. 内置终端只提供 **arm64**；其他 ABI 只能用系统 Shell。`targetSdk` 固定为 28（执行私有目录文件的系统限制），
    这不是「懒得升级」，降到更低或升到 29+ 都会直接不能执行。
-2. 内置终端首次启动要解压约 560MB，占用应用私有空间；APK 因此约 211MB。
+2. 内置终端首次启动要解压约 700MB，占用应用私有空间；APK 因此约 247MB。
 3. `pkg install` 安装的新包仍带 Termux 原路径，当前未做逐包路径修复；内置的 Python/Git 可直接用。
 4. 后台保活依赖系统「忽略电池优化」与通知权限：任务开始时应用会主动申请，用户拒绝后会退回普通后台优先级；
    部分厂商 ROM（MIUI / EMUI / ColorOS 等）还需在系统设置里手动允许「自启动 / 后台运行」，应用内无法绕过。

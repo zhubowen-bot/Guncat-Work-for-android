@@ -153,7 +153,7 @@ Termux 的二进制里写死了 `/data/data/com.termux/files/usr`（31 字符）
 
 ### 4.3 首次安装（`TermuxBootstrap.java`）
 
-APK 的 `assets/termux/bootstrap-aarch64.zip` 是约 205MB 的压缩包（解压后约 560MB）。
+APK 的 `assets/termux/bootstrap-aarch64.zip` 是约 254MB 的压缩包（解压后约 700MB）。
 `ShellManager` 构造时启动后台解压到 `<app home>/abcd`：
 
 1. 读 `SYMLINKS.txt`（格式 `目标←./链接路径`），先解压全部文件、再统一 `Os.symlink`；
@@ -201,15 +201,30 @@ Android 系统库也解析到前缀同名库（`libjpeg`/`libcrypto`/`libsasl2`�
 链就会报 `cannot locate symbol "tjInitDecompress"`。需要临时覆盖时在命令前写
 `LD_LIBRARY_PATH=... cmd`。
 
-### 4.6 已内置的软件与 `pkg install` 的边界
+### 4.6 已内置的软件、Python 三方库与 `pkg install` 的边界
 
 bootstrap 里预装了：**Node 26 + npm 11、ffmpeg、jq、sqlite3、ssh/scp、rsync、make、rg、fd、
-dig/nslookup、htop、wget、zip、Git 2.56、Python 3.14 + pip + numpy/scipy/pillow/lxml**（含依赖库）。
-基础镜像另有 apt/dpkg。
+dig/nslookup、htop、wget、zip、Git 2.56、Python 3.14 + pip**（含依赖库）。基础镜像另有 apt/dpkg。
 
-未内置的 `pandoc`、ImageMagick、`gcc/clang`、pandas、matplotlib：前四个的 deb 单个 30–80MB、
-装完 100–200MB；pandas/matplotlib 在 Termux 仓库没有 arm64 包。APK 已经 211MB，再加这些会让
-包体和首次解压进一步失控。纯 Python 包可直接 `pip install`。
+Python 三方库按鸿蒙版清单预置，装好即可 `import`，不需要联网：
+
+| 类别 | 包 |
+| --- | --- |
+| 科学计算（Termux / TUR deb） | numpy 2.5、scipy 1.18、pandas 3.0、matplotlib 3.11、contourpy、kiwisolver、Pillow 13 |
+| 文档 / 数据 | openpyxl、python-docx、python-pptx、XlsxWriter、xlrd、pypdf、reportlab、PyYAML、markdown |
+| 网络 / 解析 | requests、urllib3、charset-normalizer、certifi、idna、beautifulsoup4、soupsieve、lxml |
+| 其他 | sympy、mpmath、jinja2、pytz、tzdata、python-dateutil、tabulate、tqdm、qrcode、pypng、watchdog、psutil、pycryptodomex（附 `Crypto` 兼容层）、six、typing_extensions、packaging、pyparsing、cycler、fontTools、cssselect |
+
+原生扩展（pandas / matplotlib 等）来自 Termux 主仓库与 TUR（`scripts/termux-tur-packages.txt`），
+纯 Python 包由 `scripts/add-python-preset.py` 按 `scripts/python-preset-packages.txt` 解压进
+`lib/python3.14/site-packages/`。`sitecustomize.py` 在解释器启动时挂一个 audithook，
+matplotlib 第一次 import 时自动注册系统的 Noto CJK 字体（`guncat_fonts`），中文标题不会变方块。
+
+与鸿蒙版唯一没对齐的是 `regex`：它是纯 C 扩展，Termux 主仓库和 TUR 都没有 arm64 包，
+设备上也没有编译器可以现场构建。
+
+未内置的 `pandoc`、ImageMagick、`gcc/clang`：deb 单个 30–80MB、装完 100–200MB。
+其他纯 Python 包仍可直接 `pip install`。
 
 Termux 仓库的新包仍引用 `/data/data/com.termux/...`，`pkg install` 装出来的文件路径不会自动
 改写；当前**不承诺** `pkg install` 的包可直接运行，需要额外工具应优先用已内置的这批。
@@ -359,25 +374,27 @@ JS 侧 `src/mobile/native/net.ts` 只改写跨域 URL，同源资源请求保持
 - 不用 Gradle：`aapt2` → `javac --release 8` → `d8` → `jar uf` → `zipalign` → `apksigner`；
 - Java 侧 `ShellManager.java` / `TermuxBootstrap.java` 没有第三方依赖，d8 直接能编；
 - `minSdk 28`、**`targetSdk 28`**（执行私有目录文件的系统限制；Termux 同款做法）；
-- `assets/termux/bootstrap-aarch64.zip` 约 205MB，构建时由 `aapt2 -A` 打进 APK；产物 APK 约 211MB；
+- `assets/termux/bootstrap-aarch64.zip` 约 254MB，构建时由 `aapt2 -A` 打进 APK；产物 APK 约 247MB；
 - **版本号与 versionCode 解耦**：`versionName`（`package.json` 的 `version`）是用户侧看到的版本，
   只在功能对齐/正式发布时改，不要随开发构建频繁变动；`versionCode` 由构建时间生成、只增不减，
   与 versionName 无关 —— 版本名回退时也不会被系统当成降级、拒绝覆盖安装；
 - 清单与主题在 `android/app/src/main/`；
 - 签名密钥在 `android/keystore/guncat.jks`（git 忽略）；换钥匙会导致覆盖安装失败。
 
-内置终端资源的生成（约 205MB，因超过 GitHub 单文件限制不入库）：
+内置终端资源的生成（约 254MB，因超过 GitHub 单文件限制不入库）：
 
 ```bash
-# 1. 下载官方 arm64 bootstrap 与全部工具链 deb（清华镜像，可用 TERMUX_MIRROR 覆盖）
+# 1. 下载官方 arm64 bootstrap、工具链 deb 与 TUR 的 pandas（清华镜像 + GitHub Releases）
 python scripts/fetch-termux-bootstrap.py
 # 2. 等长改写 com.termux → com.guncat.work/abcd、abcde
 python scripts/prepare-termux-bootstrap.py
-# 3. 追加工具链（Node/ffmpeg/Python libs/...，清单见 scripts/termux-toolchain-packages.txt）
+# 3. 追加工具链与原生 Python 包（清单见 scripts/termux-toolchain-packages.txt、scripts/termux-tur-packages.txt）
 python scripts/add-termux-packages.py
+# 4. 解压纯 Python 包（清单见 scripts/python-preset-packages.txt）
+python scripts/add-python-preset.py
 ```
 
-`npm run dist:android` 在资源缺失时会直接报错并给出上面三步，不会静默出无终端的包。
+`npm run dist:android` 在资源缺失时会直接报错并给出上面四步，不会静默出无终端的包。
 
 ## 10. 已知限制
 
@@ -386,7 +403,7 @@ python scripts/add-termux-packages.py
 | PDF 能力边界 | 只读：解析/搜索/页面转图可用；不提供创建、编辑、合并、加水印、填表与 OCR 文字层 |
 | 内置终端架构 | 只带 arm64；x86/armv7 设备只能用系统 Shell |
 | `targetSdk 28` | Android 10+ 才允许执行应用私有目录文件，降到 28 是内置终端的硬前提；Play 商店新应用不适用此版本，本应用走 sideload |
-| APK 体积 / 磁盘 | APK 约 211MB；首次解压约占 560MB 私有空间 |
+| APK 体积 / 磁盘 | APK 约 247MB；首次解压约占 700MB 私有空间 |
 | `pkg install` | 新装 deb 的路径仍写死 `com.termux`，当前未做逐包改写；内置 Python/pip/Git 可用，其他工具需后续适配 |
 | 工作区镜像 | 单文件 32MB / 单次 64MB；更大的单文件、超大目录（如完整 `node_modules`）不会完整落地 |
 | 后台执行 | 任务期间有前台服务 + 唤醒锁 + Wi-Fi 锁 + 电池优化白名单；但厂商 ROM 的自启动/省电策略仍需用户手动放行 |
@@ -418,16 +435,20 @@ python scripts/add-termux-packages.py
 
 真机验证建议：安装 APK 后依次测
 
-1. 首启：等待「设置 → 终端命令执行」显示内置终端「已就绪」（首次解压约 560MB）；
+1. 首启：等待「设置 → 终端命令执行」显示内置终端「已就绪」（首次解压约 700MB）；
 2. 基础命令：工作模式 `run_command` 执行
    `pwd; ls -la; echo hi > a.txt; cat a.txt; uname -a`，确认 `a.txt` 出现在工作区面板；
-3. Linux 工具链：`bash --version`、`python3 --version`、`python3 -c "print(1+1)"`、
+3. Python 三方库：
+   `python3 -c "import numpy,scipy,pandas,matplotlib,openpyxl,docx,pptx,requests,bs4,sympy; print(pandas.__version__, matplotlib.__version__)"`；
+   `python3 -c "import matplotlib.pyplot as plt; plt.title('中文'); plt.savefig('t.png')"`
+   确认中文不是方块；`python3 -c "from Crypto.Cipher import AES; print(AES.block_size)"`；
+4. Linux 工具链：`bash --version`、`python3 --version`、`python3 -c "print(1+1)"`、
    `git --version`、`git init && git status`、`grep -rn .`、`tar -czf x.tgz a.txt`；
-4. 工作区回写：`mkdir -p d && echo x > d/f.txt`、`rm a.txt`、`git add/commit`，
+5. 工作区回写：`mkdir -p d && echo x > d/f.txt`、`rm a.txt`、`git add/commit`，
    刷新后工作区与命令结果一致；
-5. 超时/终止：`sleep 60` 会被超时杀掉；后台 `sleep 60` 用 `job_kill` 结束；
-6. 兜底：设置切到系统 Shell，重复第 2 步，确认仍可用（无 Python/pip/Git）；
-7. 导出 Word/ZIP（应弹系统保存位置选择，取消后不应提示成功）；
-8. 单文件「下载」与「分享」、工作区「导出 → 分享」，系统面板里能选到微信；
-9. 复制（文本 / MD / 代码块）应显示「已复制」而不是 `NotAllowedError`；
-   长按选中一小段再复制，剪贴板里应只有那一段。
+6. 超时/终止：`sleep 60` 会被超时杀掉；后台 `sleep 60` 用 `job_kill` 结束；
+7. 兜底：设置切到系统 Shell，重复第 2 步，确认仍可用（无 Python/pip/Git）；
+8. 导出 Word/ZIP（应弹系统保存位置选择，取消后不应提示成功）；
+9. 单文件「下载」与「分享」、工作区「导出 → 分享」，系统面板里能选到微信；
+10. 复制（文本 / MD / 代码块）应显示「已复制」而不是 `NotAllowedError`；
+    长按选中一小段再复制，剪贴板里应只有那一段。
