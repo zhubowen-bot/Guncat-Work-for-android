@@ -56,6 +56,20 @@ function installViewportHeight(): void {
   window.visualViewport?.addEventListener('scroll', apply)
 }
 
+/**
+ * 旧版本的选图暂存目录是 `/guncat/data/intake`，选一次图就在 memfs（IndexedDB）里
+ * 永久留一份原图副本：没有删除入口，删会话也不会回收 —— 一个相册 150 张照片就是
+ * 200MB+ 的 `app_*_webview/...indexeddb.blob`。暂存已改到 `temp/`（启动即清），
+ * 这里把老版本留下的那棵树清一次；它只是暂存，没有任何代码再读它。
+ */
+function purgeLegacyIntakeDir(): void {
+  try {
+    fs.rmSync('/guncat/data/intake', { recursive: true, force: true })
+  } catch {
+    // 清理失败不阻塞启动：版本没变时下一轮启动还会再试
+  }
+}
+
 export async function bootMobile(): Promise<void> {
   // 系统提示与 run_command 描述按 Android 的 bash 写，而不是 Windows cmd
   setShellPlatform('android')
@@ -67,6 +81,7 @@ export async function bootMobile(): Promise<void> {
   installBundledResources()
   initAppPaths({ dataRoot: DATA_ROOT, resourcesRoot: RESOURCES_ROOT })
   clearTempDir()
+  purgeLegacyIntakeDir()
   bindSafeStorage(null)
   installFetchProxy()
   // PDF 工具（parse_document / search_pdf / pdf_to_images）走 PDF.js；

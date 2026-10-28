@@ -3,6 +3,7 @@
 // 既有链路（FileService / intakePaths）处理 —— 与桌面端「选择后拿到路径」的语义一致。
 import fs from 'node:fs'
 import path from 'node:path'
+import { makeTempDir } from '@core/platform/appPaths'
 
 export interface PickOptions {
   extensions?: string[]
@@ -29,15 +30,21 @@ function sanitizeName(name: string): string {
   return base === '' ? 'file' : base
 }
 
-let seq = 0
-
-/** 把系统选择器返回的 File 读进 /guncat/data/intake/...，返回应用内路径。 */
+/**
+ * 把系统选择器返回的 File 读进应用的**临时**目录（`/guncat/data/temp/...`），返回应用内路径。
+ *
+ * 为什么落在 temp 而不是数据目录：这只是一份「把一次性 File 折成路径」的暂存副本，
+ * 上游（intakePaths / 附件预解析 / 发送）读完之后就不再需要它了。放在 temp 下有两个好处：
+ *   · 每次启动 clearTempDir() 会整目录清掉，选过的原图不会在 IndexedDB 里永久留一份
+ *     （旧实现落在数据目录下，一个相册 150 张照片就是 200MB+，删会话也不回收）；
+ *   · 「暂存」和「用户数据/工作区」在磁盘上分开，排查体积时不会混在一起。
+ */
 async function importSelected(files: File[]): Promise<string[]> {
   if (files.length === 0) {
     return []
   }
-  const dir = `/guncat/data/intake/${Date.now()}_${seq++}`
-  fs.mkdirSync(dir, { recursive: true })
+  // 每次选择一个独立子目录：多选同名文件不会互相覆盖，也方便整目录回收
+  const dir = makeTempDir('intake')
   const out: string[] = []
   for (const file of files) {
     const target = path.posix.join(dir, sanitizeName(file.name))

@@ -182,6 +182,23 @@ function check(name, ok, detail = '') {
   )
 }
 
+// ===== 选图暂存：不能再落进永久目录 =====
+// `/guncat/data/intake` 曾经是「选完文件就永久留一份原图」的目录：没有删除入口，
+// 删会话/清工作区都不回收。一个相册 150 张原图 ≈ 200MB+ 的 IndexedDB blob，
+// 用户看到的是「会话删了、工作区空了，体积还在」。暂存已改到 temp/（启动即清）。
+{
+  const picker = fs.readFileSync(path.join(ROOT, 'src/mobile/native/picker.ts'), 'utf8')
+  check(
+    '选图暂存落在 temp/（启动即清）',
+    picker.includes('makeTempDir(') && !picker.includes('guncat/data/intake')
+  )
+  const boot = fs.readFileSync(path.join(ROOT, 'src/mobile/boot.ts'), 'utf8')
+  check(
+    '启动时清理历史 intake 副本',
+    boot.includes('purgeLegacyIntakeDir') && boot.includes("'/guncat/data/intake'")
+  )
+}
+
 function staticServer() {
   return http.createServer((req, res) => {
     let url = decodeURIComponent((req.url ?? '/').split('?')[0])

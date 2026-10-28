@@ -406,6 +406,7 @@ python scripts/add-python-preset.py
 | APK 体积 / 磁盘 | APK 约 247MB；首次解压约占 700MB 私有空间 |
 | `pkg install` | 新装 deb 的路径仍写死 `com.termux`，当前未做逐包改写；内置 Python/pip/Git 可用，其他工具需后续适配 |
 | 工作区镜像 | 单文件 32MB / 单次 64MB；更大的单文件、超大目录（如完整 `node_modules`）不会完整落地 |
+| 选图暂存 | WebView 只给 `File`、core 只认路径，选择器因此先把字节落到 `/guncat/data/temp/intake_*`；这只是「折路径」的暂存副本，启动时 `clearTempDir()` 整目录清掉，**不要**改回数据目录（早先落在 `/guncat/data/intake` 时，选过的原图会在 IndexedDB 里永久留一份，删会话也不回收） |
 | 后台执行 | 任务期间有前台服务 + 唤醒锁 + Wi-Fi 锁 + 电池优化白名单；但厂商 ROM 的自启动/省电策略仍需用户手动放行 |
 | 自定义工作区 | 只支持应用沙箱；导出/分享走 ZIP |
 | 分享 | 一律走系统分享面板（可发到微信）；文件经 `content://`（FileShareProvider）交给目标应用 |
