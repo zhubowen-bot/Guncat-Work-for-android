@@ -5,6 +5,10 @@
 > 把桌面版 Guncat Work 的 Agent Harness 搬进 Android：**三种对话形态、三协议流式接入、
 > 多轮工具循环与沙箱工作区、交互式界面、Office 直出、可审计的命令执行**，
 > 装成 APK 就能在手机上用。
+> 
+> 鸿蒙版见 [Guncat Work（鸿蒙版）](https://github.com/zhubowen-bot/Guncat-Work-for-hmos)（ArkTS / ArkUI）。
+> 
+> 电脑版见 [Guncat Work（电脑版）](https://github.com/zhubowen-bot/Guncat-Work-for-pc)（Electron 38）。
 
 ![Android](https://img.shields.io/badge/Android-9%2B-3ddc84)
 ![minSdk](https://img.shields.io/badge/minSdk-28-blue)
@@ -16,8 +20,8 @@
 ![skills](https://img.shields.io/badge/%E6%8A%80%E8%83%BD-37-informational)
 [![license](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 
-| 对话 | 会话抽屉 | 工作区 |
-| --- | --- | --- |
+| 对话                                  | 会话抽屉                                    | 工作区                                       |
+| ----------------------------------- | --------------------------------------- | ----------------------------------------- |
 | ![对话](docs/images/android-home.png) | ![会话](docs/images/android-sessions.png) | ![工作区](docs/images/android-workspace.png) |
 
 设置页与工作区在手机上都是全屏页面，不是把桌面弹窗按比例缩小：
@@ -26,11 +30,11 @@
 
 ## 三个形态
 
-| 形态 | 对标 | 在手机上的说明 |
-| --- | --- | --- |
-| ✦ **交互模式** | GPT 的 **Intelligent UI** | 一句话直出可操作界面，控件取值即时重算 |
+| 形态          | 对标                                       | 在手机上的说明                    |
+| ----------- | ---------------------------------------- | -------------------------- |
+| ✦ **交互模式**  | GPT 的 **Intelligent UI**                 | 一句话直出可操作界面，控件取值即时重算        |
 | 🛠 **工作模式** | **DeepSeek Harness**（Codex 式 Agent Loop） | 多轮工具循环 + 每会话独立沙箱工作区 + 内置工具 |
-| 聊天模式 | — | 纯对话，不带沙箱工作区 |
+| 聊天模式        | —                                        | 纯对话，不带沙箱工作区                |
 
 三种形态与桌面版共用同一套业务内核（`src/core/`），差别只在「平台能力」这一层。
 
@@ -39,19 +43,19 @@
 这不是把 Electron 界面套个 WebView 壳。Android 没有 Node 主进程、没有可直接调用的
 POSIX 用户态，因此做了以下替换（详见 [docs/ANDROID.md](docs/ANDROID.md)）：
 
-| 桌面能力 | Android 实现 |
-| --- | --- |
-| Electron 主进程 + preload IPC | **WebView 内宿主**：`SessionManager` 直接跑在页面里，`window.guncat` 接口签名与桌面 preload 完全一致，渲染层不用改 |
-| Node `fs` | **memfs 内存文件系统 + IndexedDB 持久化**：仍保留同步 `fs` 语义，对话、配置、工作区文件都在应用私有存储中，重启不丢 |
-| Node `child_process` | **内置 Termux 用户态**：随 APK 打包 bash、coreutils、grep/sed/awk、tar、curl、**python、git**；首次启动解压到应用私有目录，不依赖外部 Termux。系统 `/system/bin/sh` 作为兜底 |
-| Node `vm` 跑 `run_js` | **Web Worker**：超时或死循环时直接 `terminate()`，是真正可中断的 |
-| Electron `dialog` | HTML 文件选择器（WebView 的 `onShowFileChooser`）+ 原生下载/分享桥 |
-| Electron `nativeImage` | 浏览器 `createImageBitmap` + canvas（缩放、缩略图、SVG 栅格化） |
-| Electron `shell.openPath` | MediaStore 写入下载目录后交给系统 `ACTION_VIEW` / `ACTION_SEND` |
-| Node `fetch` 直连模型 API | **应用内 127.0.0.1 同源反向代理**：绕开 WebView 的 CORS，逐块 flush，SSE 流式不中断 |
-| 主进程常驻 | **前台保活服务**：任务运行期间拉起常驻通知，持有唤醒锁 / Wi-Fi 高性能锁并申请电池白名单，退后台或熄屏后 WebView、命令与流式对话继续跑；应用在前台时窗口持有 `FLAG_KEEP_SCREEN_ON`，放着不动也不会自动熄屏 |
-| Web Speech TTS | Android 原生 `TextToSpeech`；语音输入仍是 MediaRecorder + 服务商转写接口 |
-| 桌面三栏布局 | **手机布局**：全屏对话 + 左侧会话抽屉 + 输入框上方胶囊 + 全屏工作区/设置，安全区与 44px 触控目标 |
+| 桌面能力                       | Android 实现                                                                                                                         |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Electron 主进程 + preload IPC | **WebView 内宿主**：`SessionManager` 直接跑在页面里，`window.guncat` 接口签名与桌面 preload 完全一致，渲染层不用改                                               |
+| Node `fs`                  | **memfs 内存文件系统 + IndexedDB 持久化**：仍保留同步 `fs` 语义，对话、配置、工作区文件都在应用私有存储中，重启不丢                                                           |
+| Node `child_process`       | **内置 Termux 用户态**：随 APK 打包 bash、coreutils、grep/sed/awk、tar、curl、**python、git**；首次启动解压到应用私有目录，不依赖外部 Termux。系统 `/system/bin/sh` 作为兜底 |
+| Node `vm` 跑 `run_js`       | **Web Worker**：超时或死循环时直接 `terminate()`，是真正可中断的                                                                                     |
+| Electron `dialog`          | HTML 文件选择器（WebView 的 `onShowFileChooser`）+ 原生下载/分享桥                                                                                |
+| Electron `nativeImage`     | 浏览器 `createImageBitmap` + canvas（缩放、缩略图、SVG 栅格化）                                                                                   |
+| Electron `shell.openPath`  | MediaStore 写入下载目录后交给系统 `ACTION_VIEW` / `ACTION_SEND`                                                                               |
+| Node `fetch` 直连模型 API      | **应用内 127.0.0.1 同源反向代理**：绕开 WebView 的 CORS，逐块 flush，SSE 流式不中断                                                                      |
+| 主进程常驻                      | **前台保活服务**：任务运行期间拉起常驻通知，持有唤醒锁 / Wi-Fi 高性能锁并申请电池白名单，退后台或熄屏后 WebView、命令与流式对话继续跑；应用在前台时窗口持有 `FLAG_KEEP_SCREEN_ON`，放着不动也不会自动熄屏         |
+| Web Speech TTS             | Android 原生 `TextToSpeech`；语音输入仍是 MediaRecorder + 服务商转写接口                                                                           |
+| 桌面三栏布局                     | **手机布局**：全屏对话 + 左侧会话抽屉 + 输入框上方胶囊 + 全屏工作区/设置，安全区与 44px 触控目标                                                                         |
 
 ### 手机端 UI 的关键改动
 
@@ -163,23 +167,23 @@ targetSdk ≥ 29 的应用执行私有目录里的文件（Termux 官方也一�
 
 ## 能力与差异
 
-| 能力 | Android 状态 |
-| --- | --- |
-| 三协议流式对话 / 深度思考 / 联网搜索 | ✅ |
-| 工作模式 Agent Loop、45 个工具、技能库 | ✅（命令类工具走内置 Linux 终端） |
-| 交互模式界面渲染 | ✅ |
-| Office 生成（docx/xlsx/pptx/svg） | ✅ 保存到系统「下载/Guncat Work」 |
-| 图片查看 / 缩略图 / SVG 栅格化 | ✅ |
-| 聊天附件 + 工作区上传 | ✅ 系统文件选择器 |
-| 表格提取（视觉模型） | ✅ |
-| 朗读 | ✅ 系统 TTS（音色由系统决定） |
-| 语音输入 | ✅ MediaRecorder + 服务商转写（需另配或复用多模态配置） |
-| 内置 Linux 终端（bash / Python / pip / Git） | ✅ 随 APK 打包，arm64；首次启动解压 |
-| 数据持久化 | ✅ IndexedDB（应用私有，卸载即清除） |
-| PDF 解析 / 搜索 / 页面转图 | ✅ PDF.js（主线程 fake worker + canvas，不依赖 Web Worker）；中文 CMap、标准字体、wasm 随包 |
-| 自定义工作区目录 | ⚠️ 不支持：使用应用沙箱工作区，可用 ZIP 导出 |
-| 文件管理器「定位」 | ⚠️ 改为保存/分享到系统下载目录 |
-| 后台长任务 | ✅ 任务运行期间自动拉起前台保活服务：常驻通知 + `PARTIAL_WAKE_LOCK` + Wi-Fi 高性能锁 + 电池优化白名单，退后台/熄屏仍可联网、跑命令、收发流式回答；应用在前台时屏幕常亮（`FLAG_KEEP_SCREEN_ON`），不会放着不动就熄屏 |
+| 能力                                     | Android 状态                                                                                                                             |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| 三协议流式对话 / 深度思考 / 联网搜索                  | ✅                                                                                                                                      |
+| 工作模式 Agent Loop、45 个工具、技能库             | ✅（命令类工具走内置 Linux 终端）                                                                                                                   |
+| 交互模式界面渲染                               | ✅                                                                                                                                      |
+| Office 生成（docx/xlsx/pptx/svg）          | ✅ 保存到系统「下载/Guncat Work」                                                                                                                |
+| 图片查看 / 缩略图 / SVG 栅格化                   | ✅                                                                                                                                      |
+| 聊天附件 + 工作区上传                           | ✅ 系统文件选择器                                                                                                                              |
+| 表格提取（视觉模型）                             | ✅                                                                                                                                      |
+| 朗读                                     | ✅ 系统 TTS（音色由系统决定）                                                                                                                      |
+| 语音输入                                   | ✅ MediaRecorder + 服务商转写（需另配或复用多模态配置）                                                                                                   |
+| 内置 Linux 终端（bash / Python / pip / Git） | ✅ 随 APK 打包，arm64；首次启动解压                                                                                                                |
+| 数据持久化                                  | ✅ IndexedDB（应用私有，卸载即清除）                                                                                                                |
+| PDF 解析 / 搜索 / 页面转图                     | ✅ PDF.js（主线程 fake worker + canvas，不依赖 Web Worker）；中文 CMap、标准字体、wasm 随包                                                                 |
+| 自定义工作区目录                               | ⚠️ 不支持：使用应用沙箱工作区，可用 ZIP 导出                                                                                                             |
+| 文件管理器「定位」                              | ⚠️ 改为保存/分享到系统下载目录                                                                                                                      |
+| 后台长任务                                  | ✅ 任务运行期间自动拉起前台保活服务：常驻通知 + `PARTIAL_WAKE_LOCK` + Wi-Fi 高性能锁 + 电池优化白名单，退后台/熄屏仍可联网、跑命令、收发流式回答；应用在前台时屏幕常亮（`FLAG_KEEP_SCREEN_ON`），不会放着不动就熄屏 |
 
 ## 项目结构
 
