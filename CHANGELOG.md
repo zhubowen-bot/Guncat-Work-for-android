@@ -2,26 +2,15 @@
 
 > [← 返回 README](README.md)
 
-本文件只记录 **Android 版**的版本变更。业务内核与电脑版同源（`src/core/` 两边共用），
-因此这里的很多条目对电脑版同样成立，但**电脑版自己的发布记录不在这里**：
+本文件只记录 **Android 版**。电脑版见
+[Guncat-Work-for-pc](https://github.com/zhubowen-bot/Guncat-Work-for-pc)，鸿蒙版见
+[Guncat-Work-for-hmos](https://github.com/zhubowen-bot/Guncat-Work-for-hmos)。
 
-- 电脑版（Windows / Electron）：[Guncat-Work-for-pc](https://github.com/zhubowen-bot/Guncat-Work-for-pc)
-- 鸿蒙版：[Guncat-Work-for-hmos](https://github.com/zhubowen-bot/Guncat-Work-for-hmos)
-
-> **版本号约定**：`7.0.0` 是 Android 版的**第一个正式版**。此前公开的 `0.2.0`、`0.2.1`、
-> `0.2.1-android`（以及电脑版仓库里的 `0.1.x`）都是测试版本，只用于迭代与验证：里面有
-> 重复的增量、有返工的做法、也有被后续版本推翻的结论。这些迭代的**最终结果**已全部收敛进
-> 7.0.0，测试版不再逐版罗列；需要追溯时见文末「附录：测试版本（0.1.0-fix – 0.2.1）」
-> （保留原文与提交清单）。
+> `7.0.0` 是首个正式版；此前的 `0.2.x` 均为测试版，能力已并入 7.0.0，原文归档在文末。
 
 ---
 
 ## 7.0.0（首个正式版）
-
-Android 版（与电脑版共用同一套业务内核）的第一个正式版。功能面等价于测试期
-`0.2.0` → `0.2.1` 的全部成果之和，但叙述按**当前实际行为**重写：测试期试过又改掉的
-做法只保留结论（见第八节），中途的数字（APK 211MB、解压 560MB、「首个 Android 版 7MB」）
-一律作废。
 
 - 产物：`release/Guncat-Work-7.0.0-android.apk`，arm64，**246.7MB**；首次启动解压内置
   终端约 **684MB**（26082 个文件）到应用私有目录。
@@ -183,12 +172,8 @@ Android 版（与电脑版共用同一套业务内核）的第一个正式版。
 
 ## 附录：测试版本（0.1.0-fix – 0.2.1）
 
-> 以下为正式版之前的测试迭代原文（`0.2.0` / `0.2.1` 是内核层测试版，Android 版同源继承），
-> 保留以便追溯提交与决策经过。其中「产物体积」「版本号」「已下线能力」「后续被推翻的做法」
-> 等陈述都只反映**当时**的状态，一律以 7.0.0 一节为准；个别条目（如凭据加密落盘）属电脑版
-> 专属，Android 没有对应实现。电脑版 `0.1.x` 阶段的迭代记录见
-> [Guncat-Work-for-pc](https://github.com/zhubowen-bot/Guncat-Work-for-pc)；这里只保留
-> 其中与内核同源的那一条（`0.1.0-fix`）。
+> 测试迭代原文，保留备查。其中的体积、版本号、已下线能力都只反映**当时**状态，以 7.0.0
+> 为准；凭据加密等条目属电脑版，Android 无对应实现。
 
 <details>
 <summary>展开：测试版本原始记录（含一次完整提交清单）</summary>
