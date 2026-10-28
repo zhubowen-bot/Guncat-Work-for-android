@@ -1,5 +1,9 @@
 # Guncat Work 电脑版 0.1.0 —— 首次公开
 
+> **历史文档**：`0.1.0` 属于测试版本，正式版及当前全部能力见
+> [更新记录](../CHANGELOG.md) 的 `7.0.0` 一节；本文保留当时的发布说明，数字与结论
+> 均只代表 `0.1.0` 当时的状态。
+
 **鸿蒙版 [Guncat Work](https://github.com/zhubowen-bot/Guncat-Work-for-hmos) 的桌面移植。**
 用 Electron + React + TypeScript 复刻的 Agent Harness 客户端：一个窗口里同时装着
 「一句话直出可操作界面」和「多轮工具循环自主干活」两种当下最当红的 Agent 形态。

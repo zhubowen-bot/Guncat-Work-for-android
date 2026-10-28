@@ -1,41 +1,199 @@
-# 更新记录
+﻿# 更新记录
 
 > [← 返回 README](README.md)
 
 本文件记录 Guncat Work（电脑版 / Android 版）的版本变更；鸿蒙版见
 [Guncat Work](https://github.com/zhubowen-bot/Guncat-Work-for-hmos)。
 
----
-
-## 7.0.0
-
-**Android 版版本号与其它平台对齐：`0.2.1` → `7.0.0`。** 功能集合与下面「0.2.1-android」
-一节相同（内置 Termux 用户态、随包 Python 三方库、工作区镜像等），本次只动版本号与
-一处存储泄漏：
-
-- `versionName` 统一为 `7.0.0`（由 `package.json` 驱动，构建时写进清单）；`versionCode` 仍按
-  构建时间生成，与版本名解耦，所以版本名回退不会被系统当成降级拒绝覆盖安装。
-- 产物为 `release/Guncat-Work-7.0.0-android.apk`。
-
-### 修复：选图暂存不再永久占用数据区
-
-- 选择器把 `File` 折成路径时的暂存目录，从 `/guncat/data/intake` 移到 `/guncat/data/temp`，
-  由启动时的 `clearTempDir()` 整目录清掉；启动时另做一次 `purgeLegacyIntakeDir()`，
-  清理旧版本留在 IndexedDB 里的原图副本。
-- 影响：此前每次选图都会在 `app_*_webview` 的 IndexedDB 里永久留一份原图，删会话、清工作区
-  都不回收（实测一台设备上 162 个 blob / 225MB，去重后唯一内容 132.6MB）。升级后首次启动
-  会删掉这些记录，空间在 WebView 下次回收时归还。
-- 副作用：选了图但**尚未发送**就杀进程/重启，那次选的附件会失效，需要重选；已发送的消息与
-  工作区文件不受影响。
+> **版本号约定**：`7.0.0` 是**第一个正式版**。此前公开的 `0.1.0`、`0.2.0`、`0.2.1`、
+> `0.2.1-android` 都属于测试版本，只用于迭代与验证：里面有重复的增量、有返工的做法、
+> 也有被后续版本推翻的结论。这些迭代的**最终结果**已全部收敛进 7.0.0，测试版不再逐版
+> 罗列；需要追溯时见文末「附录：测试版本（0.1.0 – 0.2.1）」（保留原文与提交清单）。
 
 ---
 
-## Android 版（0.2.1-android）
+## 7.0.0（首个正式版）
+
+桌面版与 Android 版合并后的第一个正式版。功能面等价于测试期 `0.1.0` → `0.2.1` 的全部
+成果之和，但叙述按**当前实际行为**重写：测试期试过又改掉的做法只保留结论（见第八节），
+中途的数字（APK 211MB、解压 560MB、「首个 Android 版 7MB」）一律作废。
+
+- Android 产物：`release/Guncat-Work-7.0.0-android.apk`，arm64，**246.7MB**；
+  首次启动解压内置终端约 **684MB**（26082 个文件）到应用私有目录。
+- 桌面产物：`release/Guncat Work-7.0.0/`（绿色目录，双击即用）与
+  `release/Guncat-Work-7.0.0-setup.exe`（安装包）。
+
+### 一、形态与平台
+
+- **一套业务内核，两个宿主**：`src/core/` 是自鸿蒙版逐字移植的约 3.5 万行业务代码
+  （目录结构与相对 import 完全一致），平台依赖收敛在 `@kit.*` 一行别名上；桌面用
+  Electron，Android 用 WebView。
+- **Android 把主进程搬进页面**：`SessionManager` 及服务在 WebView 内运行，
+  `window.guncat` 与桌面 preload 同签名，渲染层零改动复用；渲染层组件两端共用。
+- **本机流式代理**：`GuncatServer` 提供静态资源与 `/__fetch` 同源反向代理（绕开 WebView
+  CORS，SSE 逐块 flush）；固定 `127.0.0.1:47653` 端口保证 IndexedDB origin 稳定。
+- **文件系统替身**：Android 的 `node:fs` 是 memfs，写操作按路径标脏、400ms 防抖写
+  IndexedDB，切后台/卸载时全量兜底；同步语义与 Node 一致，core 一行都不用改。
+
+### 二、模型接入与对话
+
+- **三协议流式**：OpenAI Completions、OpenAI Responses、Anthropic Messages（均支持图片
+  输入），统一进协议适配层；多套 API 配置（配置方案）、推理强度档位、顶栏模型胶囊。
+- **超时按「读空闲」计时**，不是整段超时：工作模式流式跑 10 分钟也不会因为「总时长超 5 分钟」
+  被掐断；`connectTimeout` 单独覆盖「还没拿到响应头」那一段，并按请求体大小放大（大图上传）。
+- **必须看到流终止事件才算完成**：`finish_reason` / `message_stop` / `response.completed` /
+  `[DONE]` 任一；没有终止事件就按传输错误处理并自动重试，不再把半截正文当正常收尾。
+  重试 5 次，`Retry-After` 不被指数退避封顶截断（最多等 60s），408/409/425 可重试，
+  重试前清掉上一次的半截输出。
+- **跨轮不失忆**：工作/交互模式从第二轮起重放历史正文；assistant 的 `reasoning` 与
+  `thinkingSignature` 随正文回传（Completions 用 `reasoning_content`，Anthropic 用
+  `thinking` 块）；reasoning 全量落盘并计入上下文预算。
+- **上下文预算三级策略**：修剪早期工具结果 → 摘要压缩重建 → 从最旧处裁剪。
+- **附件**：选完即后台预解析（图片/文档），发送时走 dataUrl 内联或 Files API `file_id`；
+  聊天模式附件链路完整可用。
+- **展示**：mermaid（宽屏规范、可横向滚动）、代码高亮、LaTeX、图片灯箱（正文里的
+  `data:` 图片不再被 markdown 清洗掉）；表格提取工具页（模型产出的 HTML 按白名单重建）。
+
+### 三、工作模式
+
+- **工作区可绑定任意真实目录**（桌面），也可一键回默认沙箱；工作区面板是懒加载文件树，
+  按类型打开（图片灯箱 / Markdown 走对话渲染 / 代码高亮 / 二进制给出「用默认程序打开」）。
+- **工程规矩自动交给模型**：工作区根的 `AGENTS.md` / `CLAUDE.md` / `GUNCAT.md` 经运行时
+  快照注入（不是系统提示词，因为会被改写）；契约写明**项目指令是数据不是权限**，
+  不能解除审批、硬禁与路径约束。
+- **编辑前必须先读**：`FileObservation` 记录会话内读/写过的文件与指纹
+  （大小:mtime:开头 8KB 的 FNV-1a）；没读过报 `FS_NOT_OBSERVED`，读过又被外部改掉报
+  `FS_STALE_VERSION`，两种都拒绝且不落盘。
+- **`run_command` 与后台任务**（`job_list` / `job_output` / `job_kill`）：真实进程执行、
+  环形缓冲 + 丢弃计数、超时/停止/job_kill 按 `/proc` 递归杀子孙进程；输出超长时头尾截断、
+  全文落工作区 `.spill/`。
+- **`@` 引用工作区文件**：三重预算（单文件字符 / 本轮合计 / 份数），目录、二进制、
+  不存在、越界都如实说明；只改写发给模型的那份，会话记录仍是用户原话。
+- **过程可见**：产物汇总卡（每行只留文件名一个入口）、工具行 diff 卡与任务清单卡、
+  执行中插话、`ask_user_question` 提问卡（工具 + 挂起 + 回填 + 取消四处齐全）、
+  定时提醒（到期注入并唤醒循环）、当前目标卡、本轮统计、自动朗读。
+- **工具链**：Office 三件套 `write_docx` / `write_xlsx` / `write_pptx` 及读回与算子式编辑、
+  PDF 解析（桌面 `@napi-rs/canvas` + PDF.js）、SVG 栅格化、`run_js`（可真正终止死循环）、
+  37 项技能按需加载、插件热加载。
+
+### 四、Android 的内置 Linux 终端
+
+- **随包 Termux 用户态**：`assets/termux/bootstrap-aarch64.zip`，首次启动由
+  `TermuxBootstrap.java` 解压到 `<app home>/abcd`（HOME 为 `abcde`），不需要用户装 Termux；
+  版本变化时整目录重建；非 arm64 或解压失败可切 `/system/bin/sh` 兜底。
+- **预装软件**：bash、coreutils、grep/sed/awk、tar、curl、apt/dpkg、jq、sqlite3、
+  ssh/scp、rsync、make、rg、fd、dig、htop、wget、zip、**Git 2.56**、**Node 26 + npm 11**、
+  **ffmpeg/ffprobe**、**Python 3.14 + pip**。
+- **预装 Python 三方库**（对齐鸿蒙版，设备上不联网即可 `import`）：numpy 2.5、scipy 1.18、
+  pandas 3.0、matplotlib 3.11、Pillow 13、openpyxl、python-docx、python-pptx、XlsxWriter、
+  xlrd、pypdf、reportlab、sympy、requests、beautifulsoup4、lxml、jinja2、PyYAML、
+  fontTools、psutil、pycryptodomex 等；清单固定在 `scripts/python-preset-packages.txt`。
+  附 `guncat_fonts`（matplotlib/Pillow 中文字体）、`guncat_net`（分层网络自检）、
+  `guncat_mp`（不依赖 `/dev/shm` 的并行 map）、`sitecustomize.py` 与 `Crypto`→`Cryptodome`
+  兼容层。唯一没对齐的是 `regex`（纯 C 扩展，Termux/TUR 都无 arm64 包）。
+- **路径与权限的两个硬前提**：bootstrap 内写死的 `/data/data/com.termux/files/usr`
+  在构建期做**等长**替换为 `/data/data/com.guncat.work/abcd`；`targetSdk` 必须是 28
+  （Android 10 起禁止更高 targetSdk 执行私有目录文件）。
+- **不注入全局 `LD_LIBRARY_PATH`**（会劫持系统库，ffmpeg 的 `libhwui→libjpeg` 链会找不到
+  `tjInitDecompress`），并剔除 `libandroid-stub` 的假库。
+- **工作区镜像**：执行前把会话工作区从 memfs 写到设备（`files/guncat-data/files/workspaces/<会话>`），
+  执行后双向收敛；单文件 **32MB** / 单次 **64MB** 封顶；目录删除当轮同步，不留幻影目录。
+- **手机端专属能力**：原生相机（`CameraProvider`，无 AndroidX 依赖）、端侧语音识别
+  （API 31+ 且离线模型可用时走 `createOnDeviceSpeechRecognizer`）、剪贴板原生桥
+  （`navigator.clipboard` 在 WebView 里必抛 `NotAllowedError`，改为原生桥 → clipboard API
+  → `execCommand` 三级回退）、保存/分享（`ACTION_CREATE_DOCUMENT` 与系统分享面板，
+  文件经 `FileShareProvider` 的 `content://` 交出）、系统 TTS、后台保活（前台服务 +
+  唤醒锁 + Wi-Fi 锁 + 前台常亮 + 切后台心跳）。
+- **选图暂存**：选择器给的是一次性 `File`，而 core 只认路径，因此先落到
+  `/guncat/data/temp/intake_*`（启动即清），上游读完就不再需要。
+
+### 五、安全与审批
+
+- **判定层与进程层分离**：`CommandGuard` 只做判定，可脱离真实进程断言；四档为
+  「硬禁 / 自动审批 / 危险命令需批准 / 完全权限」。硬禁表在档位之前，任何档位都拒绝，
+  不给审批入口。
+- **自动审批是「模型先审一轮」，不是不设防**：命中危险后交给另一个模型，只看环境、用户
+  原话与命令原文（智能体自己的正文/思考/工具结果不进上下文），按 low/medium/high 出严格
+  JSON；只有 low/medium 且明确放行才静默执行，判 high、自相矛盾、不按契约回、超时、
+  没配模型**一律退回人工卡**（fail-closed）——机器没有终审权。
+- **判定文本三层**：原文 ∪ 去伪装还原（`^`、`@` 前缀、`%ComSpec%`、引号拆词）∪ 拆出的
+  内层命令（括号、管道、`-c`/`-e` 载荷、Base64）；归一化只去伪装、从不补全语义。
+- **按语义登记而不是按名字枚举**：`npx` 家族（`npm exec`/`pnpm dlx`/`bunx`/`pnpx`…）、
+  `/y` 与 `-y`、解包覆盖、`-c key=value`、按「命令位」而不是「出现过的词」判定，所以
+  `npm run format`、`--format=%h` 不被误伤。
+- **脚本同审**：按「进程 cwd + 脚本自身目录」逐个基准解析引用，裸名按 `PATHEXT` 候选后缀
+  查真实文件再同审；定位不到、文件不存在、被上限挡掉的一律转审批而不是静默放过；
+  脚本体内做常量折叠（`'d'+'el'`、`String.fromCharCode`、`$cmd='del' & $cmd`）。
+- **越界判定是反向边界**：任何绝对 POSIX 路径只要不在工作区根下就判危险（只保留
+  `/dev/null` 一类 I/O 通道与引号里的 sed/awk 正则字面量两个降噪口）；Windows 侧覆盖
+  盘符、盘根（`\data\a.txt`）、`..` 上跳、UNC 共享、环境变量路径。
+- **凭据**：桌面用 Electron `safeStorage` 加密成 `enc:v1:` 前缀，没有安全存储时如实上报
+  并保持明文；密钥与机器绑定，换机或钥匙串清空时只剔除解不开的项。Android 没有系统凭据
+  保险库，设置页如实显示「明文保存」。
+
+### 六、界面
+
+- 组件两端共用，Android 侧只补窄屏规则：会话抽屉、全屏工作区/设置、安全区、44px 触控
+  目标、16px 输入字号、表格横向滚动、返回键分层处理。
+- 输入区：语音/加号/输入框/发送统一 40px；加号里是「拍照 / 从相册选择 / 文件」；
+  模型、推理强度、配置方案、接入方式、搜索引擎、命令审批统一走底部 `Picker`，
+  不再弹 Android 原生大列表。
+- 触屏不粘 hover（只在 `(hover:hover) and (pointer:fine)` 下启用 hover 规则）、
+  复制有原生桥回退、流式自动置底不会打断正在拖选的选区。
+
+### 七、打包与验证
+
+- **Android 不依赖 Gradle**：`scripts/build-android.mjs` 用 SDK 自带工具链
+  （aapt2 → javac → d8 → zipalign → apksigner）直接出包，`npm run dist:android`；
+  `versionName` 由 `package.json` 驱动，`versionCode` 按构建时间生成（与版本名解耦，
+  版本名回退不会被系统当成降级）。
+- **桌面**：自带打包脚本组装出双击即用的应用目录（`app://` 加载、产物里固化快捷方式/
+  兼容模式/提权/诊断阶梯），另提供安装包；启动带 `--no-sandbox` 的真实命令行重启，
+  默认落盘 Chromium 日志。
+- **验证**：`npm run typecheck`（node/web/mobile）+ 四套无头冒烟（内核 / 渲染 / IPC 契约 /
+  启动链路）+ `android-check`（浏览器无原生桥的同一条回退路径，覆盖布局、Shell、工作区
+  镜像、PDF、`run_js`、审批与持久化）+ 审批语料库回归；CI 覆盖三端构建与全部冒烟。
+
+### 八、测试期被推翻的做法（现以本节结论为准）
+
+| 测试期的做法 | 现在的做法 |
+| --- | --- |
+| Android `run_command` 是 JS 模拟的 POSIX 子集；更早还要求用户自己装 Termux | 随包真实 Linux 用户态，外部 Termux `RUN_COMMAND` 后端已移除 |
+| `auto` 档 = 不弹审批卡（等于不设防） | `auto` = 模型先审一轮，机器无终审权；原语义改名 `full-access` |
+| PDF 工具「后端不可用」，任何 PDF 都报「结构损坏」 | PDF.js legacy build + fake worker（**不用** Web Worker），CMap/字体/wasm 随包 |
+| `ask_user_question` 下线，一律用默认假设继续 | 恢复：工具 + 挂起等待 + 提问卡 + 回填 + 取消 |
+| 工作区镜像 8MB 单文件 / 32MB 单次 | 32MB / 64MB（与原生 `fsRead` 上限对齐） |
+| 越界判定靠「系统目录前缀白名单」 | 反向边界：不在工作区根下即危险（`/sdcard`、`/system`、`/proc` 全部覆盖） |
+| 镜像根写死 `/guncat/data/workspaces`（与真实工作区两套目录） | 按 `/workspaces/<会话>` 定位，只有一套 |
+| 选图暂存落在 `/guncat/data/intake`（永久副本，删会话不回收） | 落在 `/guncat/data/temp`（启动即清），并清理历史副本 |
+| `view_image` 图片没真正进请求 | 作为工具结果之后的多模态消息注入 |
+| APK 211MB / 解压 560MB | 246.7MB / 684MB（增量来自随包 Python 三方库与工具） |
+
+### 九、已知边界
+
+- 内置终端只提供 arm64；`pkg install` 装出来的新包路径仍写死 `com.termux`，当前不承诺可用。
+- `targetSdk 28` 只适合 sideload，不满足 Google Play 新应用要求。
+- Android 无系统凭据保险库，API Key 明文存应用私有配置（界面如实提示）。
+- 自定义工作区目录、系统「打开方式」接收文件仅桌面；Android 只有应用沙箱。
+- 首次解压 684MB 与 APK 内的 237MB bootstrap 是同一份内容的两份形态，属预期。
+
+---
+
+## 附录：测试版本（0.1.0 – 0.2.1）
+
+> 以下为正式版之前的测试迭代原文，保留以便追溯提交与决策经过。其中「产物体积」
+> 「版本号」「已下线能力」「后续被推翻的做法」等陈述都只反映**当时**的状态，
+> 一律以 7.0.0 一节为准。
+
+<details>
+<summary>展开：测试版本原始记录（含两次完整提交清单）</summary>
+
+### Android 0.2.1（内置终端与随包 Python）
 
 把 `run_command` 从「JS 模拟的 POSIX 子集」换成**随 APK 内置的真实 Linux 用户态**，
 不需要用户安装 Termux。产物 `release/Guncat-Work-0.2.1-android.apk`（arm64，约 247MB）。
 
-### 新增：随包 Python 三方库（对齐鸿蒙版）
+#### 新增：随包 Python 三方库（对齐鸿蒙版）
 
 对齐鸿蒙版，把 Python 三方库预置进内置终端。
 
@@ -58,7 +216,7 @@
 - **没有对齐的只有 `regex`**：纯 C 扩展，Termux 主仓库与 TUR 都没有 arm64 包，
   设备上也没有随包编译器。
 
-### 构建与体积
+#### 构建与体积
 
 - `scripts/fetch-termux-bootstrap.py` 增加 TUR 仓库支持（pandas），下载后按 SHA256 校验；
   `scripts/add-termux-packages.py` 合并主仓库 + TUR 清单。
@@ -69,7 +227,7 @@
   `2026.10.18-r1+tools3`，升级安装会重新解压一次（用户自己 `pip install` 的包会丢，
   与之前版本升级行为一致）。
 
-### 修复：长任务中断与自动重试
+#### 修复：长任务中断与自动重试
 
 - **应用在前台不再自动熄屏**：`MainActivity.onCreate` 给窗口加 `FLAG_KEEP_SCREEN_ON`。
   之前手机放着不动触发系统息屏后，部分 ROM 会降频/冻结 WebView，流式回答或命令就断在
@@ -98,7 +256,7 @@
   同时 `connectTimeout` 按请求体大小放大（30s→最多 180s），避免大 base64 在手机慢速上传途中
   被 AbortController 掐断；AbortError 也不再显示成 “The user aborted a request”，而是明确的传输超时说明。
 
-### 修复：跨轮思考与大文件镜像
+#### 修复：跨轮思考与大文件镜像
 
 - **工作区里的大文件不再在真机命令里「凭空消失」**：镜像的单文件上限从 8MB 提到 **32MB**
   （与原生 `fsRead` 的上限对齐），单次同步从 32MB 提到 **64MB**。11MB 级的 ZIP / 附件现在会
@@ -113,7 +271,7 @@
   截断，上限交给上下文预算与 1M 窗口；同时把 reasoning 计入上下文预算的字符量，
   压缩阈值不再低估真实 prompt。
 
-### 提示词：数据图
+#### 提示词：数据图
 
 - **物理实验/数学类数据图先用 Python 真算再画，不许手写 SVG 冒充**：函数图像、拟合曲线、
   散点回归、误差棒要用 `run_command` 跑 Python，基于原始数据做最小二乘/回归，再由脚本按
@@ -122,7 +280,7 @@
   已装的 numpy/Pillow 自建绘图。
   SVG 只用于示意图、流程图、图标等信息表达。`write_svg` 的说明同步标注了这条边界。
 
-### PDF 解析（PDF.js）
+#### PDF 解析（PDF.js）
 
 - **PDF 三件套在 Android 上接通**：`parse_document`（按页解析文字层）、`search_pdf`
   （关键词定位）、`pdf_to_images`（页面渲染成 `pdf_images/<文件名>/p001.jpg`）。
@@ -149,7 +307,7 @@
   「Worker 一构造就抛错」+「删掉 ReadableStream 原生异步迭代器」的条件下跑完整条
   PDF 链路，确保兼容路径都由 App 自己补上。
 
-### 内置 Linux 终端
+#### 内置 Linux 终端
 
 - **Termux bootstrap 随包分发**：`assets/termux/bootstrap-aarch64.zip`（约 205MB）来自
   termux-packages 官方 release，包含 bash、coreutils、grep/sed/awk、tar、curl、apt，
@@ -228,7 +386,7 @@
 - 移除早期版本的外部 Termux `RUN_COMMAND` 后端与权限/接收器，避免「还要装 Termux」的歧义。
 - 文档同步：README / README_EN / `docs/ANDROID.md` / `docs/THIRD-PARTY.md` / `AGENTS.md`。
 
-### 导出 / 分享 / 剪贴板（真机反馈）
+#### 导出 / 分享 / 剪贴板（真机反馈）
 
 - **导出不再「点一下就说已导出」**：工作区打包、单个文件、一条回答的 Word 统一走
   `file:transfer` 通道与「导出/分享」弹层。保存一定先经过系统保存位置选择
@@ -254,7 +412,7 @@
   把当前选区原文显式写进 `clipboardData`，不再依赖内核选区与 DOM 选区同步。
   消息操作行的「复制 / 文本 / MD」也会优先复制正文里刚选中的那一段。
 
-### 工作区面板精简与默认档（真机反馈）
+#### 工作区面板精简与默认档（真机反馈）
 
 - **删掉「清空工作区」按钮**：全量删除的误触代价太高，按钮又常年占着底部；
   清空能力仍保留在主进程通道里（带原生二次确认），只是不再给常驻入口。
@@ -276,13 +434,13 @@
   现在任何绝对 POSIX 路径只要不在工作区根下就判「触及工作区之外的路径」；只保留
   `/dev/null` 一类 I/O 通道与引号里的 sed/awk 正则字面量两个降噪口子。
 
-### 已知边界
+#### 已知边界
 
 - 内置终端只提供 arm64；APK 约 211MB、首次解压约 560MB。
 - `pkg install` 的新包仍带 `com.termux` 路径，当前未做逐包改写；内置 Python/Git 可直接用。
 - `targetSdk 28` 只适合 sideload，不满足 Google Play 新应用要求。
 
-### 验证
+#### 验证
 
 - `npm run typecheck`（node/web/mobile）；
 - `javac --release 8` 单独编译 Java 源；
@@ -294,12 +452,12 @@
 
 ---
 
-## Android 版（0.2.1-android）
+### Android 首版（WebView 移植）
 
 首个 Android 版本：保留与桌面版相同的业务内核与界面，替换掉 Android 上不存在的宿主能力。
 产物 `release/Guncat-Work-0.2.1-android.apk`（Android 10+，约 7 MB）。
 
-### 新增
+#### 新增
 
 - **WebView 内宿主**：`SessionManager` 直接在页面内运行，`window.guncat` 与桌面 preload 同签名，
   渲染层零改动复用。
@@ -318,19 +476,19 @@
 - **文档**：README 重写为 Android 优先，新增 `docs/ANDROID.md`、`android/README.md`、
   `android/keystore/README.md`。
 
-### 平台差异
+#### 平台差异
 
 - PDF 解析后端未接：PDF 工具返回明确的「后端不可用」。
 - 自定义工作区目录、系统「打开方式」接收文件不支持。
 - 后台长任务可能被系统冻结。
 - API Key 以明文保存在应用私有配置（无系统凭据保险库），设置页如实提示。
 
-### 验证
+#### 验证
 
 首屏/抽屉/设置；mock SSE 流式回答与会话重启持久化；工作模式 `run_command` 工具调用；
 Shell 管道与重定向；不支持命令的 127；`run_js` 输入输出与 Worker 超时；三套 tsconfig 类型检查。
 
-### 手机 UI 调整（第二轮反馈）
+#### 手机 UI 调整（第二轮反馈）
 
 - 侧栏收窄到 300px；底部移除「工作区」（改由顶栏文件夹按钮直达），补上「表格」入口。
 - 顶栏「更多」按钮改为工作区按钮；模型 / 推理强度 / 深度思考 / 联网搜索改为输入框上方胶囊。
@@ -340,14 +498,14 @@ Shell 管道与重定向；不支持命令的 127；`run_js` 输入输出与 Wor
 
 ---
 
-## 0.2.1
+### 0.2.1
 
 `0.2.0` 之后的补丁版：不新增功能，只把「能跑命令」这条链路上**还能零审批直通的口子**一个个堵上。
 从 tag `v0.2.0` 到现在一共 13 个提交，全部落在 `CommandGuard` 判定层与审批链路，
 每一处都先拿真实 `CommandGuard.assess` / 真实 `run_command` 实测复现，再进 `scripts/ipc-check.mjs`
 做判定层与集成层回归。
 
-### 修复：`for` 循环变量当命令执行、`npx` 换个别名就免检
+#### 修复：`for` 循环变量当命令执行、`npx` 换个别名就免检
 
 第十轮实测（真实 `CommandGuard.assess` + 真实 `run_command` 各跑一遍）又找到两类**零审批直通**：
 
@@ -373,7 +531,7 @@ Shell 管道与重定向；不支持命令的 127；`run_js` 输入输出与 Wor
 两处都补进了 `scripts/ipc-check.mjs` 的判定层：`for` 的七种执行形态必须判危险、四个正常写法不得被
 误伤；`npx` 家族八种拼法必须判危险，`npm run build` / `npm run format` / `npm ls` / `npm ci` 必须放行。
 
-### 修复：边界层读错了文本，脚本同审漏了「没写后缀」的引用
+#### 修复：边界层读错了文本，脚本同审漏了「没写后缀」的引用
 
 第九轮实测（跑真实 `CommandGuard.assess` / `assessScript`，不靠推演）又找到两类**零审批直通**：
 
@@ -400,7 +558,7 @@ Shell 管道与重定向；不支持命令的 127；`run_js` 输入输出与 Wor
 三处都补进了 `scripts/ipc-check.mjs`：判定层（越界必判危险、正常路径与转义字面量不得被误伤、
 裸名 token 的提取）与集成层（`call guard-audit\barewipe` 要弹出审批卡、拒绝后 `victim.txt` 还在）。
 
-### 修复：两条「零审批直通」的高危通道
+#### 修复：两条「零审批直通」的高危通道
 
 第七轮实测（跑真实 `CommandGuard.assess`，不靠推演）发现两类命令在 auto 档下**根本不进审阅器**：
 
@@ -419,13 +577,13 @@ Shell 管道与重定向；不支持命令的 127；`run_js` 输入输出与 Wor
 
 两处都补进了 `scripts/ipc-check.mjs` 的判定层回归（危险项必判危险、正常写法不得被误伤）。
 
-## 0.2.0
+### 0.2.0
 
 这一版的主题是**让工作模式真的能干活**：会话可以指向一个真实工程，模型能跑命令、
 能读工程自己的规矩、改文件前必须先看过它；同时把「能跑命令」这件事带来的最大风险
 ——不可信输入 × 毁灭性后果——按六轮实测的穿透项一条条关进判定层。
 
-### 一、工作区从沙箱扩展到真实工程
+#### 一、工作区从沙箱扩展到真实工程
 
 - **会话可绑定任意目录作为工作区**，并可一键恢复默认沙箱。路径咽喉点 `workspaceRoot`
   加了自定义根注册表，工具链、文件树、导出、目标、定时全部自动跟随；越界校验语义不变。
@@ -452,7 +610,7 @@ Shell 管道与重定向；不支持命令的 127；`run_js` 输入输出与 Wor
   读过但之后又被改掉报 `FS_STALE_VERSION`，两种都拒绝且一个字节不落盘，并回一句可以直接
   照抄的 `read_file("同一路径")`。
 
-### 二、命令执行能力，与安全边界一起交付
+#### 二、命令执行能力，与安全边界一起交付
 
 - **新增 `run_command` 与后台任务工具**（`job_list` / `job_output` / `job_kill`）。
   模型此前只能读写文件、算数据，跑不了真实的工具链（测试、构建、git、本机 CLI），
@@ -469,7 +627,7 @@ Shell 管道与重定向；不支持命令的 127；`run_js` 输入输出与 Wor
 - 人工等待类工具的外层护栏超时改为盖住「等人 + 执行」：此前 `ask_user_question` 的卡片
   还挂在界面上，外层就先判了工具超时，用户随后点的答案静默落空。
 
-### 三、命令审批层：六轮实测的穿透项逐条关闭
+#### 三、命令审批层：六轮实测的穿透项逐条关闭
 
 每一轮都是拿真实 AI 报告对着生产代码复现，**只修成立的部分**。修的是根因而非再堆关键词：
 判定用的文本从「原文」扩成「原文 ∪ 还原后 ∪ 拆出来的内层命令」，归一化只做「去掉伪装」、
@@ -491,7 +649,7 @@ Shell 管道与重定向；不支持命令的 127；`run_js` 输入输出与 Wor
 按「宁可多问一次」的既有取向维持现状。判定表之外补了端到端断言——弹卡 → 卡上写着
 命中的理由 → 点拒绝 → 命令没执行，因为只测词表的回归最容易让「换个写法」溜过去。
 
-### 四、凭据不再明文落盘
+#### 四、凭据不再明文落盘
 
 配置里的 API Key 此前明文写进 `preferences.json`，任何能读到用户目录的进程（备份、
 同步盘）就顺手拿走凭据。改用 Electron `safeStorage` 把字符串值加密成 `enc:v1:` 前缀，
@@ -500,7 +658,7 @@ Shell 管道与重定向；不支持命令的 127；`run_js` 输入输出与 Wor
 钥匙串被清空时只剔除解不开的那几项并点名，其余配置照常可用；历史明文文件继续读得动，
 下次写盘自然转成密文。
 
-### 五、修复
+#### 五、修复
 
 - **工作/交互模式第二轮不再失忆**。`runWork` 每次开任务都重建循环消息，只放
   「系统提示词 + 本轮这一句」，此前几轮往来一行都没进请求——用户问「我上面发了什么」，
@@ -575,7 +733,7 @@ fcc1202 feat(workspace): 侧栏工作区面板改为懒加载文件树，按类�
 
 ---
 
-## 0.1.0-fix
+### 0.1.0-fix
 
 `0.1.0` 公开后的一个补丁版，只修一处会骗人的缺陷：
 
@@ -586,11 +744,11 @@ fcc1202 feat(workspace): 侧栏工作区面板改为懒加载文件树，按类�
 
 ---
 
-## 0.1.0（首次公开）
+### 0.1.0（首次公开）
 
 首个公开版本。从零到「双击即可用」的全部工作都在这一版里完成。
 
-### 一、移植：鸿蒙业务内核 → 桌面端（阶段一 ~ 三）
+#### 一、移植：鸿蒙业务内核 → 桌面端（阶段一 ~ 三）
 
 - **建立工程骨架**，把上游 `entry/src/main/ets/{common,model,service,export,data}` 的
   **约 3.5 万行** TypeScript 逐字移植到 `src/core/`，保持目录结构与相对 import 路径完全一致。
@@ -609,7 +767,7 @@ fcc1202 feat(workspace): 侧栏工作区面板改为懒加载文件树，按类�
   录音 + 服务商 `/audio/transcriptions` 转写）；系统分享接收改为命令行参数 / 第二实例 /
   窗口拖拽；导出回答为 Word（含 LaTeX → OMML 原生公式）。
 
-### 二、平台后端补完（阶段五）
+#### 二、平台后端补完（阶段五）
 
 两处「后端缺席」的故障此前都被包装成了「文件损坏」，这一版把它们接上了：
 
@@ -620,7 +778,7 @@ fcc1202 feat(workspace): 侧栏工作区面板改为懒加载文件树，按类�
 - `run_js` 沙箱从 JSVM-API 换成 `node:vm`：**死循环可以被引擎真正中断**，
   不再需要「放弃等待但后台继续烧 CPU」的兜底。
 
-### 三、补上「内核已移植、但没有任何调用点」的那一批（阶段六）
+#### 三、补上「内核已移植、但没有任何调用点」的那一批（阶段六）
 
 不是「没实现」，而是「实现了但没人用」—— 这类问题比功能缺失更隐蔽，
 因为代码看起来是齐的，用户却会遇到「模型说会提醒，到点什么都不发生」。
@@ -644,7 +802,7 @@ fcc1202 feat(workspace): 侧栏工作区面板改为懒加载文件树，按类�
 | 推理强度被写死在主进程                        | 工作模式永远拿不到 Max 档，也没法选 Low 提速                            | 契约加 `reasoningEffort` + 顶栏档位选择器（按形态分键持久化）               |
 | 提示词把桌面版描述成手机/鸿蒙应用                  | 模型自称「在 HarmonyOS 平台原生构建」、说「无法访问手机其他目录」，mermaid 按手机竖屏排版 | 22 处平台语义改为桌面端措辞                                         |
 
-### 四、逐项对标审计后的第二轮补齐（阶段七）
+#### 四、逐项对标审计后的第二轮补齐（阶段七）
 
 阶段六解决的是「内核有能力、没人调用」。阶段七换了方法：**逐文件对照原版的
 `@Builder` 参数、守卫条件与状态语义**做一次全量审计，凡是「原版有、桌面端没有或口径不同」
@@ -670,7 +828,7 @@ fcc1202 feat(workspace): 侧栏工作区面板改为懒加载文件树，按类�
 - 流式光标、思考跑马灯跟随、提示条规格、附件在发送前就被解析、开关与档位的完整语义、
   破坏性操作确认、顶栏模型胶囊、输入区元素顺序与按钮规格、语音门禁。
 
-### 五、桌面外壳、打包与启动
+#### 五、桌面外壳、打包与启动
 
 - **自带打包脚本**（`scripts/package-portable.mjs`）按 Electron 标准应用目录结构直接组装，
   产出 `release/Guncat Work-<version>/`：双击 exe 即可用，无需安装、无需命令行。
@@ -688,7 +846,7 @@ fcc1202 feat(workspace): 侧栏工作区面板改为懒加载文件树，按类�
 - **应用图标**取自上游分层图标真正引用的 `cat_avatar.png`；exe 与任务栏不再显示 Electron 默认图标。
 - `ELECTRON_RUN_AS_NODE` 在构建前被剔除 —— 它在场时 Electron 以纯 Node 运行，窗口永远不出现。
 
-### 六、工程与验证
+#### 六、工程与验证
 
 - **四套无头冒烟 + 源码级护栏**（内核 / 渲染 / IPC 契约 / 启动链路 + 禁用字符扫描），
   一条 `npm run verify` 跑完全部。设计前提是：**Electron GUI 在开发机上不一定起得来，
@@ -778,6 +936,8 @@ c78d008 feat(interactive): 阶段二 —— 交互模式 guncat-ui lang 渲染�
 d469e3a feat(app): 打通电脑版可运行闭环 —— Electron 外壳 + 会话编排 + React 界面
 cf80694 chore(port): 建立电脑版工程骨架，完成鸿蒙业务内核的逐字移植
 ```
+
+</details>
 
 </details>
 
