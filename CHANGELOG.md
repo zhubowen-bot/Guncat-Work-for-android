@@ -7,6 +7,29 @@
 
 ---
 
+## 7.0.0
+
+**Android 版版本号与其它平台对齐：`0.2.1` → `7.0.0`。** 功能集合与下面「0.2.1-android」
+一节相同（内置 Termux 用户态、随包 Python 三方库、工作区镜像等），本次只动版本号与
+一处存储泄漏：
+
+- `versionName` 统一为 `7.0.0`（由 `package.json` 驱动，构建时写进清单）；`versionCode` 仍按
+  构建时间生成，与版本名解耦，所以版本名回退不会被系统当成降级拒绝覆盖安装。
+- 产物为 `release/Guncat-Work-7.0.0-android.apk`。
+
+### 修复：选图暂存不再永久占用数据区
+
+- 选择器把 `File` 折成路径时的暂存目录，从 `/guncat/data/intake` 移到 `/guncat/data/temp`，
+  由启动时的 `clearTempDir()` 整目录清掉；启动时另做一次 `purgeLegacyIntakeDir()`，
+  清理旧版本留在 IndexedDB 里的原图副本。
+- 影响：此前每次选图都会在 `app_*_webview` 的 IndexedDB 里永久留一份原图，删会话、清工作区
+  都不回收（实测一台设备上 162 个 blob / 225MB，去重后唯一内容 132.6MB）。升级后首次启动
+  会删掉这些记录，空间在 WebView 下次回收时归还。
+- 副作用：选了图但**尚未发送**就杀进程/重启，那次选的附件会失效，需要重选；已发送的消息与
+  工作区文件不受影响。
+
+---
+
 ## Android 版（0.2.1-android）
 
 把 `run_command` 从「JS 模拟的 POSIX 子集」换成**随 APK 内置的真实 Linux 用户态**，

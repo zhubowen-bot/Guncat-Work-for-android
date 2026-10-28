@@ -11,7 +11,7 @@
 ![targetSdk](https://img.shields.io/badge/targetSdk-28-blue)
 ![React](https://img.shields.io/badge/React-19-blue)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue)
-![version](https://img.shields.io/badge/version-0.2.1-blue)
+![version](https://img.shields.io/badge/version-7.0.0-blue)
 [![license](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 
 | Chat | Session drawer | Workspace |
@@ -65,7 +65,7 @@ This is not a WebView wrapper around the Electron UI. Android has no Node main p
 
 ## Install
 
-1. Install `release/Guncat-Work-0.2.1-android.apk` (Android 10+; allow unknown sources).
+1. Install `release/Guncat-Work-7.0.0-android.apk` (Android 10+; allow unknown sources).
 2. Open **Settings → Provider**, fill Base URL, API Key and model, then save.
    Supported: OpenAI Completions, OpenAI Responses, Anthropic Messages (all with image input).
 3. Use the chat. In work/interactive modes, files enter through **Workspace → Upload**; in chat

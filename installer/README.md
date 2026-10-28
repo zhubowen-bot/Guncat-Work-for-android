@@ -102,7 +102,7 @@ release/Guncat-Work-<版本>-setup.exe
 ## 静默安装（批量部署 / 自动化验证）
 
 ```bash
-"release/Guncat-Work-0.2.1-setup.exe" --silent --dir "D:\Apps\Guncat Work"
+"release/Guncat-Work-7.0.0-setup.exe" --silent --dir "D:\Apps\Guncat Work"
 "<安装目录>\uninstall.exe" --silent          # 默认保留用户数据
 "<安装目录>\uninstall.exe" --silent --purge  # 连 %APPDATA%\Guncat Work 一起删
 ```

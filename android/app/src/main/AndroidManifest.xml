@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.guncat.work"
     android:versionCode="201"
-    android:versionName="0.2.1">
+    android:versionName="7.0.0">
 
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="28" />
 
