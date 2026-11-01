@@ -10,6 +10,52 @@
 
 ---
 
+## 7.1.0（2026-11-01）
+
+> **版本定位**：与电脑版 7.1.0 同步的 Word 工具链正确性修复。核心 docx 生成代码与电脑版同源，
+> 因此同样的公式解析缺陷在 Android 上也存在；本次修的是这些共有缺陷，不改变 Android 的
+> 工具面与平台边界。
+
+### 一、致命：命令后的上下标不再被吞
+
+- `\mu_0`、`\alpha_2`、`\bar{I}^2`、`\left(...\right)^2` 的上下标此前会丢失并留下空 `m:t`；
+  现在命令、字符、`{...}` 组、`\left...\right` 统一走「原子 + 上下标」绑定路径。
+- `\sum` 等 nary 没有上下限时改用合法的 `<m:sub/>` / `<m:sup/>`，不再制造空节点。
+- 同类修复：命名定界符（`\langle` / `\lfloor` 等）、`array` 列格式参数、未知环境、
+  `\tag{}`、`\hline`、`\not=`、`\mathbb{R}`、`\overset`、`\underbrace`、`\boxed` 等。
+
+### 二、致命：失败不再报「已生成」
+
+- `write_docx` / `edit_docx` 写盘前扫描 `document.xml`：空 `m:t`、LaTeX 残留、未识别命令、
+  公式父元素不合规都会**拒绝写盘**并返回具体原因，不再生成坏文件。
+- 成功时返回值附带自检证据，例如
+  `2 公式段 / 4 行内公式 / 空 m:t 节点 0 / LaTeX 残留 0 / 未识别命令 0`。
+
+### 三、中：结构与字体
+
+- `\bar` / `\overline` 改用一层 `m:bar`，不再重复上划线；`\underbrace` 改用合法 `m:groupChr`。
+- `m:oMath` / `m:oMathPara` 直接挂在 `w:p` 下，不再嵌在 `w:r` 里。
+- 普通文本按字符范围拆 run：CJK 用宋体、Unicode 下标/数学符号用 Cambria Math，
+  `Uₐ` 不再因缺字形变成 `U`。
+
+### 四、Android 平台差异：不提供 `docx_render`
+
+- 电脑版的 `docx_render` 依赖 LibreOffice/Word 转 PDF 后再栅格化；Android 内置 Shell
+  明确不支持 `libreoffice` / `soffice`，也没有 Word COM。因此本次**没有**在 Android 上
+  添加同名工具，避免提供一个必然失败的能力。
+- 若后续需要 Android 端渲染自查，需单独评估：引入可离线运行的 docx→PDF/HTML 渲染器，
+  或调用系统 Office 查看器（只能给人看，无法稳定产出 PNG 给模型）。这属于新能力，不是
+  同源代码修复。
+
+### 五、验证
+
+- `npm run typecheck`（node / web / mobile）通过；`npm run smoke` 全流程通过（退出码 0）。
+- `run-smoke` 180 项全过，新增公式回归：`\mu_0` / `\alpha_2` / `\bar{I}^2` 上下标绑定、
+  `\bar` 只有一层、正常公式无空 `m:t`、未知命令被自检拒绝。
+- 产物：`release/Guncat-Work-7.1.0-android.apk`（arm64，246.7 MB，versionCode 29892000）。
+
+---
+
 ## 7.0.0（首个正式版）
 
 - 产物：`release/Guncat-Work-7.0.0-android.apk`，arm64，**246.7MB**；首次启动解压内置

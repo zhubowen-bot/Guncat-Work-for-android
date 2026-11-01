@@ -337,6 +337,33 @@ async function main(): Promise<void> {
   } as never)
   check('DocxBuilder 产出 zip 字节', docxBytes.byteLength > 0 && docxBytes[0] === 0x50, `${docxBytes.byteLength} 字节`)
 
+  // 公式回归: 命令后的上下标必须绑定到命令原子(\\mu_0 / \\bar{I}^2 曾被吞成空 m:t)
+  const { OmmlConverter } = await import('../src/core/export/OmmlConverter')
+  OmmlConverter.beginAudit()
+  const muXml = OmmlConverter.inline('\\mu_0')
+  const alphaXml = OmmlConverter.inline('\\alpha_2')
+  const barXml = OmmlConverter.inline('\\bar{I}^2')
+  const mathAudit = OmmlConverter.takeAudit()
+  check('\\mu_0 生成下标', muXml.includes('<m:sSub>') && muXml.includes('>0<'), muXml)
+  check('\\alpha_2 生成下标', alphaXml.includes('<m:sSub>') && alphaXml.includes('>2<'), alphaXml)
+  check('\\bar{I}^2 上标绑定到重音组', barXml.includes('<m:sSup>') && barXml.includes('>2<'), barXml)
+  check('\\bar 只生成一层上划线', (barXml.match(/<m:bar>/g) ?? []).length === 1 &&
+    !barXml.includes('<m:acc>'), barXml)
+  check('正常公式不产生空 m:t', !muXml.includes('<m:t/>') && !alphaXml.includes('<m:t/>'), muXml)
+  check('正常公式无未识别命令', mathAudit.unknownCommands.length === 0, mathAudit.unknownCommands.join(','))
+
+  // 自检: 未知命令必须拒绝写盘, 而不是静默生成坏文件
+  const { DocxAudit } = await import('../src/core/export/DocxAudit')
+  const badAudit = DocxAudit.scan('<w:document><w:p><m:oMath><m:r><m:t>\\foo</m:t></m:r></m:oMath></w:p></w:document>',
+    ['foo'], [], 1)
+  let rejected = false
+  try {
+    badAudit.assertClean()
+  } catch (e) {
+    rejected = true
+  }
+  check('未知命令被自检拒绝', rejected, badAudit.report())
+
   const { XlsxBuilder } = await import('../src/core/export/XlsxBuilder')
   const { XlsxParser } = await import('../src/core/export/XlsxModel')
   const workbookJson = JSON.stringify({
@@ -517,6 +544,31 @@ async function main(): Promise<void> {
   const docxRead = await callTool('read_docx', { path: 'out/报告.docx' })
   check('read_docx 可读回', docxRead.ok, docxRead.output.slice(0, 100))
   check('读回内容无损（含标题）', docxRead.output.includes('季度报告'))
+
+  // --- Word 公式：命令上下标 + 生成后自检 + 坏公式拒绝写盘 ---
+  const formulaWrite = await callTool('write_docx', {
+    path: 'out/公式.docx',
+    doc: JSON.stringify({
+      title: '公式',
+      blocks: [
+        { type: 'paragraph', text: '$\\mu_0$、$\\alpha_2$、$\\bar{I}^2$、$Uₐ$' },
+        { type: 'paragraph', text: '$$\\sum_{i=1}^{n} x_i$$' }
+      ]
+    })
+  })
+  check('公式文档生成成功', formulaWrite.ok, formulaWrite.output.slice(0, 160))
+  check('返回值含公式自检证据', formulaWrite.output.includes('空 m:t 节点 0') &&
+    formulaWrite.output.includes('oMathPara 父元素合规'), formulaWrite.output)
+  const badFormulaPath = path.join(wsRoot, 'out/坏公式.docx')
+  const badFormulaWrite = await callTool('write_docx', {
+    path: 'out/坏公式.docx',
+    doc: JSON.stringify({
+      title: '坏公式',
+      blocks: [{ type: 'paragraph', text: '$\\foo{x}$' }]
+    })
+  })
+  check('未识别命令被拒绝写盘', !badFormulaWrite.ok && !fs.existsSync(badFormulaPath),
+    badFormulaWrite.output.slice(0, 160))
 
   // --- Excel：Workbook JSON → .xlsx → 读回 ---
   const xlsxWrite = await callTool('write_xlsx', {
