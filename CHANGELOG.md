@@ -12,11 +12,6 @@
 
 ## 7.1.0（2026-11-01）
 
-> **版本定位**：与电脑版 7.1.0 同步的一版修复。一是 Word 工具链的正确性（同样的公式解析
-> 缺陷在 Android 上也存在），二是跨轮次思考记忆：历史轮次的 reasoning 没有按协议回传，
-> 从第二轮起模型会「忘掉」上一轮推理过的结论。本次只改两端共有的内核，不改变 Android 的
-> 工具面与平台边界。
-
 ### 一、致命：命令后的上下标不再被吞
 
 - `\mu_0`、`\alpha_2`、`\bar{I}^2`、`\left(...\right)^2` 的上下标此前会丢失并留下空 `m:t`；
@@ -42,8 +37,8 @@
 ### 四、Android 平台差异：不提供 `docx_render`
 
 - 电脑版的 `docx_render` 依赖 LibreOffice/Word 转 PDF 后再栅格化；Android 内置 Shell
-  明确不支持 `libreoffice` / `soffice`，也没有 Word COM。因此本次**没有**在 Android 上
-  添加同名工具，避免提供一个必然失败的能力。
+  明确不支持 `libreoffice` / `soffice`，也没有 Word COM。因此 Android 版**没有**添加同名
+  工具，避免提供一个必然失败的能力。
 - 若后续需要 Android 端渲染自查，需单独评估：引入可离线运行的 docx→PDF/HTML 渲染器，
   或调用系统 Office 查看器（只能给人看，无法稳定产出 PNG 给模型）。这属于新能力，不是
   同源代码修复。
