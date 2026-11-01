@@ -352,6 +352,31 @@ async function main(): Promise<void> {
   check('正常公式不产生空 m:t', !muXml.includes('<m:t/>') && !alphaXml.includes('<m:t/>'), muXml)
   check('正常公式无未识别命令', mathAudit.unknownCommands.length === 0, mathAudit.unknownCommands.join(','))
 
+  // 真机自检报告里的 8 类公式问题(与鸿蒙版共用同一解析器)
+  const bmatrixXml = OmmlConverter.inline('\\begin{bmatrix} a & b \\\\ c & d \\end{bmatrix}')
+  const casesXml = OmmlConverter.inline('\\begin{cases} x & y \\\\ z & w \\end{cases}')
+  const alignedXml = OmmlConverter.inline('\\begin{aligned} a &= b \\\\ c &= d \\end{aligned}')
+  const mathbbXml = OmmlConverter.inline('\\mathbb{R}^n')
+  const mathrmXml = OmmlConverter.inline('\\mathrm{m/s^2}')
+  const normXml = OmmlConverter.inline('\\|\\mathbf{x}\\|_2')
+  const floorXml = OmmlConverter.inline('\\lfloor x\\rfloor')
+  const midXml = OmmlConverter.inline('\\mid')
+  const transposeXml = OmmlConverter.inline('\\mathbf{w}^T')
+  const arraySpecXml = OmmlConverter.inline('\\begin{array}{ll} a & b \\\\ c & d \\end{array}')
+  const tagXml = OmmlConverter.inline('\\tag{1} x')
+  check('bmatrix 右定界符正确', bmatrixXml.includes('<m:endChr m:val="]"/>'), bmatrixXml)
+  check('cases 生成左大括号', casesXml.includes('<m:begChr m:val="{"/>') &&
+    casesXml.includes('<m:endChr m:val=""/>'), casesXml)
+  check('aligned 使用 eqArr', alignedXml.includes('<m:eqArr>'), alignedXml)
+  check('mathbb 保留双线体与上标', mathbbXml.includes('ℝ') && mathbbXml.includes('<m:sSup>'), mathbbXml)
+  check('mathrm 解析组内上标', mathrmXml.includes('<m:sSup>') && !mathrmXml.includes('^'), mathrmXml)
+  check('范数双竖线且下标绑定', normXml.includes('‖') && normXml.includes('<m:sSub>'), normXml)
+  check('lfloor/rfloor 映射为符号', floorXml.includes('⌊') && floorXml.includes('⌋'), floorXml)
+  check('mid 映射为符号', midXml.includes('∣'), midXml)
+  check('mathbf 后的上标不再丢失', transposeXml.includes('<m:sSup>'), transposeXml)
+  check('array 列格式不泄漏', !arraySpecXml.includes('ll'), arraySpecXml)
+  check('tag 参数被消费', !tagXml.includes('tag'), tagXml)
+
   // 自检: 未知命令必须拒绝写盘, 而不是静默生成坏文件
   const { DocxAudit } = await import('../src/core/export/DocxAudit')
   const badAudit = DocxAudit.scan('<w:document><w:p><m:oMath><m:r><m:t>\\foo</m:t></m:r></m:oMath></w:p></w:document>',

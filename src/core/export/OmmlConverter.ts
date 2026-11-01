@@ -516,6 +516,9 @@ class LatexParser {
         esc = '}';
       } else if (c === '\\') {
         esc = '';
+      } else if (c === '|') {
+        // LaTeX 的 \| 是双竖线(范数), 不是单竖线
+        esc = '‖';
       } else if (c === '~') {
         esc = ' ';
       } else if (c === '^') {
@@ -791,9 +794,9 @@ class LatexParser {
       return;
     }
 
-    // \text / \mathrm 等文本模式
-    if (name === 'text' || name === 'mathrm' || name === 'operatorname' || name === 'textbf' ||
-      name === 'textit' || name === 'textnormal' || name === 'texttt' || name === 'textsc') {
+    // \text / \textbf 等真正的文本模式: 内容按原样显示, 不解析 ^/_
+    if (name === 'text' || name === 'textbf' || name === 'textit' || name === 'textnormal' ||
+      name === 'texttt' || name === 'textsc') {
       let txt: string = this.readGroupRaw();
       let sty: string = 'p';
       if (name === 'textbf') {
@@ -804,16 +807,23 @@ class LatexParser {
       parts.push(LatexParser.styledRun(escText(txt), sty));
       return;
     }
+    // \mathrm 是数学模式里的正体, 不是 \text: 组内必须继续解析 ^/_/分式等
+    if (name === 'mathrm') {
+      let inner: string = this.readGroupOrAtom();
+      parts.push(LatexParser.applyStyle(inner, 'p'));
+      return;
+    }
+    // \operatorname{arg\,max}: 函数名按文本读取, 但整体保持正体
+    if (name === 'operatorname') {
+      let txt: string = this.readGroupRaw();
+      parts.push(LatexParser.styledRun(escText(txt), 'p'));
+      return;
+    }
+    // \mathbf / \boldsymbol / \mathit: 保留组内结构(上下标/分式), 只给每个 m:r 加字形
     if (name === 'mathbf' || name === 'boldsymbol' || name === 'mathit') {
       let inner: string = this.readGroupOrAtom();
-      let plain: string = inner.replace(/<[^>]*>/g, '');
-      if (plain === '') {
-        return;
-      }
       let sty: string = name === 'mathit' ? 'i' : 'b';
-      parts.push('<m:r><m:rPr><m:sty m:val="' + sty + '"/></m:rPr>' +
-        LatexParser.mathFontPr(plain) + '<m:t xml:space="preserve">' +
-        XmlUtil.escape(plain) + '</m:t></m:r>');
+      parts.push(LatexParser.applyStyle(inner, sty));
       return;
     }
     // \mathbb{R} 等双线体: 直接映射到 Unicode 双线字符(Word 不依赖额外字体)
@@ -968,26 +978,38 @@ class LatexParser {
     parts.push(LatexParser.run('\\' + name));
   }
 
-  // 解析环境体(矩阵等), 输出到 parts
+  // 解析环境体(矩阵/对齐), 输出到 parts
   private parseEnvironment(env: string, parts: string[]): void {
     let openDelim: string = '';
+    let closeDelim: string = '';
+    let isEqArray: boolean = false;
     let len: number = this.src.length;
     if (env === 'pmatrix') {
       openDelim = '(';
+      closeDelim = ')';
     } else if (env === 'bmatrix') {
       openDelim = '[';
+      closeDelim = ']';
     } else if (env === 'Bmatrix') {
       openDelim = '{';
+      closeDelim = '}';
     } else if (env === 'vmatrix') {
       openDelim = '|';
+      closeDelim = '|';
     } else if (env === 'Vmatrix') {
       openDelim = '‖';
+      closeDelim = '‖';
     } else if (env === 'cases') {
+      // cases 只有左大括号, 没有右定界符
       openDelim = '{';
-    } else if (env === 'array' || env === 'aligned' || env === 'split' || env === 'matrix' ||
-      env === 'smallmatrix' || env === 'gathered' || env === 'alignedat' || env === 'equation' ||
-      env === 'equation*' || env === 'displaymath' || env === 'multline' || env === 'gather' ||
-      env === 'align' || env === 'align*' || env === 'flalign' || env === 'math') {
+      closeDelim = '';
+    } else if (env === 'aligned' || env === 'alignedat' || env === 'split' || env === 'gathered' ||
+      env === 'gather' || env === 'multline' || env === 'align' || env === 'align*' ||
+      env === 'flalign' || env === 'equation' || env === 'equation*' || env === 'displaymath' ||
+      env === 'math') {
+      // 对齐环境用 m:eqArr, 不再退化成两列矩阵
+      isEqArray = true;
+    } else if (env === 'array' || env === 'matrix' || env === 'smallmatrix') {
       openDelim = '';
     } else {
       // 未知环境: 不再静默跳过(那会让用户以为公式生成成功)。记录后跳过内容, 由自检拒绝写盘。
@@ -1035,6 +1057,11 @@ class LatexParser {
         continue;
       }
       if (this.src.charAt(this.pos) === '&') {
+        if (isEqArray) {
+          // 对齐环境里的 & 只是对齐点标记, 不产生新列
+          this.pos++;
+          continue;
+        }
         currentRow.push(currentCell);
         currentCell = '';
         this.pos++;
@@ -1051,31 +1078,38 @@ class LatexParser {
     if (rows.length === 0) {
       rows.push(['']);
     }
-    // 渲染 <m:m>
-    let mXml: string = '<m:m>';
-    if (openDelim !== '') {
-      mXml += '<m:mPr><m:chr m:val="' + XmlUtil.escapeAttr(openDelim) + '"/></m:mPr>';
-    }
-    for (let r: number = 0; r < rows.length; r++) {
-      mXml += '<m:mr>';
-      let row: string[] = rows[r];
-      if (row.length === 0) {
-        row = [''];
-      }
-      for (let cIdx: number = 0; cIdx < row.length; cIdx++) {
-        let cellXml: string = row[cIdx].trim();
-        cellXml = cellXml === '' ? '' : new LatexParser().initAndParse(cellXml);
+    let mXml: string = '';
+    if (isEqArray) {
+      // 对齐环境: 每行一个 m:e, 由 Word 按关系符对齐(不再是 m:m 两列)
+      mXml = '<m:eqArr>';
+      for (let r: number = 0; r < rows.length; r++) {
+        let rowText: string = rows[r].join('').trim();
+        let cellXml: string = rowText === '' ? '' : new LatexParser().initAndParse(rowText);
         mXml += '<m:e>' + cellXml + '</m:e>';
       }
-      mXml += '</m:mr>';
+      mXml += '</m:eqArr>';
+    } else {
+      // 渲染 <m:m>
+      mXml = '<m:m>';
+      for (let r: number = 0; r < rows.length; r++) {
+        mXml += '<m:mr>';
+        let row: string[] = rows[r];
+        if (row.length === 0) {
+          row = [''];
+        }
+        for (let cIdx: number = 0; cIdx < row.length; cIdx++) {
+          let cellXml: string = row[cIdx].trim();
+          cellXml = cellXml === '' ? '' : new LatexParser().initAndParse(cellXml);
+          mXml += '<m:e>' + cellXml + '</m:e>';
+        }
+        mXml += '</m:mr>';
+      }
+      mXml += '</m:m>';
     }
-    mXml += '</m:m>';
-    // 带定界符的环境包一层 m:d(自动缩放)
-    if (openDelim === '{') {
-      parts.push(mXml);
-    } else if (openDelim !== '') {
+    // 带定界符的环境包一层 m:d(自动缩放); cases 只有左括号, closeDelim 为空
+    if (openDelim !== '' || closeDelim !== '') {
       parts.push('<m:d><m:dPr><m:begChr m:val="' + XmlUtil.escapeAttr(openDelim) + '"/>' +
-        '<m:endChr m:val="' + XmlUtil.escapeAttr(openDelim) + '"/></m:dPr><m:e>' + mXml + '</m:e></m:d>');
+        '<m:endChr m:val="' + XmlUtil.escapeAttr(closeDelim) + '"/></m:dPr><m:e>' + mXml + '</m:e></m:d>');
     } else {
       parts.push(mXml);
     }
@@ -1227,6 +1261,25 @@ class LatexParser {
     }
     return '<m:r><m:rPr><m:sty m:val="' + style + '"/></m:rPr>' + LatexParser.mathFontPr(text) +
       '<m:t xml:space="preserve">' + XmlUtil.escape(text) + '</m:t></m:r>';
+  }
+
+  // 给一段已生成的 OMML 里每个 m:r 加字形(保留上下标/分式等结构)。
+  // \mathrm{m/s^2} 这类写法必须先按数学解析, 再统一改成正体, 不能按 \text 原样吞掉。
+  static applyStyle(inner: string, style: string): string {
+    if (inner === '') {
+      return '';
+    }
+    return inner.replace(/<m:r>([\s\S]*?)<\/m:r>/g,
+      (full: string, body: string): string => {
+        if (body.indexOf('<m:sty ') !== -1) {
+          return full;
+        }
+        if (body.indexOf('<m:rPr>') !== -1) {
+          return '<m:r>' + body.replace('<m:rPr>',
+            '<m:rPr><m:sty m:val="' + style + '"/>') + '</m:r>';
+        }
+        return '<m:r><m:rPr><m:sty m:val="' + style + '"/></m:rPr>' + body + '</m:r>';
+      });
   }
 
   // 数学 run 的字体兜底: CJK 用宋体, 特殊符号用 Cambria Math, 避免 Uₐ 这类字符
