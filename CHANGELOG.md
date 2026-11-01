@@ -12,38 +12,7 @@
 
 ## 7.1.0（2026-11-01）
 
-### 一、致命：命令后的上下标不再被吞
-
-- `\mu_0`、`\alpha_2`、`\bar{I}^2`、`\left(...\right)^2` 的上下标此前会丢失并留下空 `m:t`；
-  现在命令、字符、`{...}` 组、`\left...\right` 统一走「原子 + 上下标」绑定路径。
-- `\sum` 等 nary 没有上下限时改用合法的 `<m:sub/>` / `<m:sup/>`，不再制造空节点。
-- 同类修复：命名定界符（`\langle` / `\lfloor` 等）、`array` 列格式参数、未知环境、
-  `\tag{}`、`\hline`、`\not=`、`\mathbb{R}`、`\overset`、`\underbrace`、`\boxed` 等。
-
-### 二、致命：失败不再报「已生成」
-
-- `write_docx` / `edit_docx` 写盘前扫描 `document.xml`：空 `m:t`、LaTeX 残留、未识别命令、
-  公式父元素不合规都会**拒绝写盘**并返回具体原因，不再生成坏文件。
-- 成功时返回值附带自检证据，例如
-  `2 公式段 / 4 行内公式 / 空 m:t 节点 0 / LaTeX 残留 0 / 未识别命令 0`。
-
-### 三、中：结构与字体
-
-- `\bar` / `\overline` 改用一层 `m:bar`，不再重复上划线；`\underbrace` 改用合法 `m:groupChr`。
-- `m:oMath` / `m:oMathPara` 直接挂在 `w:p` 下，不再嵌在 `w:r` 里。
-- 普通文本按字符范围拆 run：CJK 用宋体、Unicode 下标/数学符号用 Cambria Math，
-  `Uₐ` 不再因缺字形变成 `U`。
-
-### 四、Android 平台差异：不提供 `docx_render`
-
-- 电脑版的 `docx_render` 依赖 LibreOffice/Word 转 PDF 后再栅格化；Android 内置 Shell
-  明确不支持 `libreoffice` / `soffice`，也没有 Word COM。因此 Android 版**没有**添加同名
-  工具，避免提供一个必然失败的能力。
-- 若后续需要 Android 端渲染自查，需单独评估：引入可离线运行的 docx→PDF/HTML 渲染器，
-  或调用系统 Office 查看器（只能给人看，无法稳定产出 PNG 给模型）。这属于新能力，不是
-  同源代码修复。
-
-### 五、修复：跨轮次深度思考记忆（三种协议全部回传）
+### Agent 内核：跨轮次思考记忆
 
 - **根因**：历史轮次的 `reasoning` 一直存在会话里，但重建请求时只回传了正文 ——
   Chat Completions 的普通 assistant 消息不写 `reasoning_content`；Anthropic 的
@@ -63,17 +32,41 @@
     `include: ["reasoning.encrypted_content"]`（DeepSeek 文档说明不支持该参数时静默忽略）。
 - **顺带**：只有思考、没有正文的 assistant 历史消息不再整条跳过；reasoning 全量落盘并计入
   上下文预算，长任务不会因为多带思考而悄悄超出预算。
-- **验证**：`ipc-check` 新增回归（三种协议 × 工作 / 聊天模式：第二轮请求必须带回上一轮思考，
-  并覆盖签名与 reasoning item 的持久化往返）。
 
-### 六、验证
+### Word 工具链：公式、自检与字体
+
+- **命令后的上下标不再被吞**：`\mu_0`、`\alpha_2`、`\bar{I}^2`、`\left(...\right)^2`
+  此前会丢失并留下空 `m:t`；现在命令、字符、`{...}` 组、`\left...\right` 统一走
+  「原子 + 上下标」绑定路径；`\sum` 等 nary 没有上下限时改用合法的
+  `<m:sub/>` / `<m:sup/>`，不再制造空节点。
+- **同类解析问题**：命名定界符（`\langle` / `\lfloor` 等）不再被截断，`array` 列格式参数
+  不再混进公式；未知环境、`\tag{}`、`\hline`、`\not=`、`\mathbb{R}`、`\overset`、
+  `\underbrace`、`\boxed` 等常见写法有了明确处理。
+- **写盘前自检**：`write_docx` / `edit_docx` 在写盘前扫描 `document.xml`，空 `m:t`、
+  LaTeX 残留、未识别命令、公式父元素不合规都会**拒绝写盘**并返回具体原因，不再生成坏文件。
+- **返回值给证据**：成功时附带可核对的自检结果，例如
+  `2 公式段 / 4 行内公式 / 空 m:t 节点 0 / LaTeX 残留 0 / 未识别命令 0`。
+- **结构与字体**：`\bar` / `\overline` 改用一层 `m:bar`，不再重复上划线；`\underbrace`
+  改用合法 `m:groupChr`；`m:oMath` / `m:oMathPara` 直接挂在 `w:p` 下，不再嵌在 `w:r`
+  里；普通文本按字符范围拆 run —— CJK 用宋体、Unicode 下标/数学符号用 Cambria Math，
+  `Uₐ` 不再因缺字形变成 `U`。
+
+### Android 平台差异：不提供 `docx_render`
+
+- 电脑版的 `docx_render` 依赖 LibreOffice/Word 转 PDF 后再栅格化；Android 内置 Shell
+  明确不支持 `libreoffice` / `soffice`，也没有 Word COM。因此 Android 版**没有**添加同名
+  工具，避免提供一个必然失败的能力。
+- 若后续需要 Android 端渲染自查，需单独评估：引入可离线运行的 docx→PDF/HTML 渲染器，
+  或调用系统 Office 查看器（只能给人看，无法稳定产出 PNG 给模型）。这属于新能力，不是
+  同源代码修复。
+
+### 验证
 
 - `npm run typecheck`（node / web / mobile）通过；`node --check scripts/ipc-check.mjs` 通过。
-- `run-smoke` 180 项全过，新增公式回归：`\mu_0` / `\alpha_2` / `\bar{I}^2` 上下标绑定、
-  `\bar` 只有一层、正常公式无空 `m:t`、未知命令被自检拒绝。
-- `ipc-check` **546 项全过**，新增跨轮次思考回归：Completions 的 `reasoning_content`、
-  Anthropic 的带签名 `thinking` 块、Responses 的 reasoning item 在第二轮请求里都能看到，
-  并覆盖签名 / reasoning item 的持久化往返。
+- `run-smoke` 180 项通过：新增公式回归（`\mu_0` / `\alpha_2` / `\bar{I}^2` 上下标绑定、
+  `\bar` 只有一层、正常公式无空 `m:t`、未知命令被自检拒绝）。
+- `ipc-check` **546 项通过**：新增三种协议 × 工作 / 聊天模式的跨轮次思考回归，含 Anthropic
+  签名与 Responses reasoning item 的持久化往返。
 - 产物：`release/Guncat-Work-7.1.0-android.apk`（arm64，246.7 MB，versionCode 29892015）。
 
 ---
