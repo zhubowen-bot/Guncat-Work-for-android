@@ -86,6 +86,20 @@
   word-break: break-word;
 }
 
+/* TextContent 走与正文相同的 Markdown 管线后，段落由 <p> 承担。
+   压掉浏览器默认的 1em 上下边距，保持卡片内原有的紧凑节奏。 */
+.gui-text > :first-child {
+  margin-top: 0;
+}
+
+.gui-text > :last-child {
+  margin-bottom: 0;
+}
+
+.gui-text p {
+  margin: 0 0 10px;
+}
+
 .gui-text--sm {
   font-size: 12.5px;
 }

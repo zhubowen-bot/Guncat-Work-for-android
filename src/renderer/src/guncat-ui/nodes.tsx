@@ -1212,9 +1212,14 @@ export function renderNode(el: UiElement | null, ctx: RenderCtx, key: string): R
     case 'CardHeader':
       return <CardHeader el={el} key={key} />
     case 'TextContent':
+      // TextContent 的契约是「一段正文，支持 **粗体** / [链接](…) / `行内代码`」，
+      // 交互模式提示词也明确允许在这一个字段里写行内 `**粗体**`。此前这里直接输出字符串，
+      // 星号、反引号、链接语法会原样留在界面上 —— 模型照着提示词写，用户看到的是没渲染的记号。
+      // 复用正文同一条 Markdown 管线（CommonMark + GFM + LaTeX），行内语法与段落、列表等
+      // 块级语法都能正确落地；原先只有 MarkDownRenderer 走这条路。
       return (
         <div className={`gui-text${sizeClass(str(el, 'size'))}`} key={key}>
-          {str(el, 'text')}
+          <Markdown text={str(el, 'text')} />
         </div>
       )
     case 'MarkDownRenderer':

@@ -939,6 +939,26 @@ export function renderUiProgramBlock(interactive: boolean): string {
 }
 
 /**
+ * TextContent 的行内 Markdown（用户报障：交互模式里 `**粗体**` 的星号原样显示）。
+ * 组件库与提示词都承诺这个字段支持粗体 / 链接 / 行内代码，这里钉住「语法真的进了渲染管线」。
+ */
+export function renderTextMarkdown(): string {
+  const program = [
+    'root = Card([',
+    '  TextContent("全年营收 **1,284 万**, 同比 `+18.6%`; 详见 [数据表](https://example.com/sales)。"),',
+    '  TextContent("第一段\\n\\n第二段")',
+    '])'
+  ].join('\n')
+  return renderToStaticMarkup(
+    createElement(GuncatUiBlock, {
+      content: program,
+      interactive: true,
+      onSend: () => {}
+    })
+  )
+}
+
+/**
  * 复现 MessageView 的组合方式：纯文本片段走 Markdown，界面片段走 GuncatUiBlock。
  * 界面块本身只负责界面，正文里的说明文字由外层渲染 —— 这条组合关系值得单独钉住。
  */

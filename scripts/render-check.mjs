@@ -508,6 +508,28 @@ check(
   radar.includes('A 机型') && radar.includes('B 机型') && radar.includes('gui-chart__legend')
 )
 
+// --- TextContent 的行内 Markdown（用户报障：`**粗体**` 的星号原样显示） ---
+const textMd = mod.renderTextMarkdown()
+check(
+  'TextContent 里的 **粗体** 渲染成 strong（不再把星号当正文）',
+  textMd.includes('<strong>1,284 万</strong>') && !textMd.includes('**1,284 万**'),
+  textMd.includes('**1,284 万**') ? '星号仍在正文里' : '已加粗'
+)
+check(
+  'TextContent 里的 `行内代码` 渲染成 code',
+  textMd.includes('<code>+18.6%</code>') && !textMd.includes('`+18.6%`')
+)
+check(
+  'TextContent 里的 [链接](…) 渲染成可点的 a 标签',
+  textMd.includes('href="https://example.com/sales"') && textMd.includes('>数据表</a>')
+)
+check(
+  'TextContent 的多个段落仍然分段（不是把换行吃掉）',
+  (textMd.match(/<p>/g) ?? []).length >= 2 &&
+    textMd.includes('第一段') &&
+    textMd.includes('第二段')
+)
+
 // --- 交互模式：整个回合收进一条活动折叠栏 ---
 const groupedShell = mod.renderGroupedTurn(false)
 const groupedRunning = mod.renderGroupedTurn(true)

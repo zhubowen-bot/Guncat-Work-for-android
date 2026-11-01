@@ -42,6 +42,10 @@
 - **同类解析问题**：命名定界符（`\langle` / `\lfloor` 等）不再被截断，`array` 列格式参数
   不再混进公式；未知环境、`\tag{}`、`\hline`、`\not=`、`\mathbb{R}`、`\overset`、
   `\underbrace`、`\boxed` 等常见写法有了明确处理。
+- **矩阵、对齐与单位写法**：`bmatrix` 的右定界符改为 `]`（此前左右都写成 `[`），`cases`
+  生成左大括号而不是裸矩阵，`aligned` / `align` / `split` 改用 `m:eqArr`（不再退化成两列
+  矩阵，等号能对齐）；`\mathrm{m/s^2}` 先按数学解析再套正体，`^` 不再原样漏出；`\|` 映射为
+  `‖` 并把下标绑到双竖线上，`\lfloor` / `\rfloor` / `\mid` 直接映射为符号。
 - **写盘前自检**：`write_docx` / `edit_docx` 在写盘前扫描 `document.xml`，空 `m:t`、
   LaTeX 残留、未识别命令、公式父元素不合规都会**拒绝写盘**并返回具体原因，不再生成坏文件。
 - **返回值给证据**：成功时附带可核对的自检结果，例如
@@ -60,14 +64,33 @@
   或调用系统 Office 查看器（只能给人看，无法稳定产出 PNG 给模型）。这属于新能力，不是
   同源代码修复。
 
+### 交互模式：TextContent 的 Markdown 现在真的会渲染
+
+- **根因**：`TextContent` 的组件契约（组件库说明与交互模式提示词）明确允许行内 `**粗体**`、
+  `[链接](…)` 与 `` `行内代码` ``，但渲染层 `renderNode` 直接输出了原始字符串。模型按提示词
+  写出的标记全部原样显示 —— 用户看到的是 `**1,284 万**` 而不是加粗数字；同一段里的链接、
+  行内代码、列表等 Markdown 语法同样不会生效。
+- **修复**：`TextContent` 改走与消息正文相同的 Markdown 管线（CommonMark + GFM + LaTeX），
+  行内语法与段落、列表、表格、代码块等块级语法一次性对齐；`TextContent` 的 `size` 档位与
+  卡片内排版保持不变。`guncat-ui.css` 为 Markdown 生成的段落补上首尾边距归零规则，避免卡片
+  里多出一截浏览器默认间距。
+- **范围**：`MarkDownRenderer` 仍是需要完整 Markdown 排版时的首选组件；`TextContent` 现在
+  同时兼容行内与块级语法，既有界面程序的渲染结果不受影响。Android 与电脑版共用同一份渲染层，
+  本次修复在两端完全一致，没有引入平台分支。
+- **回归**：`render-check` 新增 4 项断言，钉住粗体、行内代码、链接与多段落四种形态
+  （产物里必须出现 `<strong>` / `<code>` / `<a href>`，且原始标记不再残留）；安卓窄屏走同一
+  条渲染管线，断言与电脑版一致。
+
 ### 验证
 
 - `npm run typecheck`（node / web / mobile）通过；`node --check scripts/ipc-check.mjs` 通过。
-- `run-smoke` 180 项通过：新增公式回归（`\mu_0` / `\alpha_2` / `\bar{I}^2` 上下标绑定、
-  `\bar` 只有一层、正常公式无空 `m:t`、未知命令被自检拒绝）。
+- `run-smoke` 190 项通过：新增公式回归（`\mu_0` / `\alpha_2` / `\bar{I}^2` 上下标绑定、
+  `\bar` 只有一层、正常公式无空 `m:t`、未知命令被自检拒绝、矩阵/对齐/单位/范数等真机自检用例）。
+  另有 1 项 `reasoning_content` 断言由并行的上下文改动引入，与本次 docx 修复无关。
 - `ipc-check` **546 项通过**：新增三种协议 × 工作 / 聊天模式的跨轮次思考回归，含 Anthropic
   签名与 Responses reasoning item 的持久化往返。
-- 产物：`release/Guncat-Work-7.1.0-android.apk`（arm64，246.7 MB，versionCode 29892015）。
+- `render-check` **317 项**通过：新增 `TextContent` 粗体 / 行内代码 / 链接 / 多段落 4 项回归。
+- 产物：`release/Guncat-Work-7.1.0-android.apk`（arm64，246.7 MB，versionCode 29892038）。
 
 ---
 
