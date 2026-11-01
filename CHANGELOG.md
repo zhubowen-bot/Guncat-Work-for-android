@@ -12,8 +12,9 @@
 
 ## 7.1.0（2026-11-01）
 
-> **版本定位**：与电脑版 7.1.0 同步的 Word 工具链正确性修复。核心 docx 生成代码与电脑版同源，
-> 因此同样的公式解析缺陷在 Android 上也存在；本次修的是这些共有缺陷，不改变 Android 的
+> **版本定位**：与电脑版 7.1.0 同步的一版修复。一是 Word 工具链的正确性（同样的公式解析
+> 缺陷在 Android 上也存在），二是跨轮次思考记忆：历史轮次的 reasoning 没有按协议回传，
+> 从第二轮起模型会「忘掉」上一轮推理过的结论。本次只改两端共有的内核，不改变 Android 的
 > 工具面与平台边界。
 
 ### 一、致命：命令后的上下标不再被吞
@@ -47,12 +48,38 @@
   或调用系统 Office 查看器（只能给人看，无法稳定产出 PNG 给模型）。这属于新能力，不是
   同源代码修复。
 
-### 五、验证
+### 五、修复：跨轮次深度思考记忆（三种协议全部回传）
 
-- `npm run typecheck`（node / web / mobile）通过；`npm run smoke` 全流程通过（退出码 0）。
+- **根因**：历史轮次的 `reasoning` 一直存在会话里，但重建请求时只回传了正文 ——
+  Chat Completions 的普通 assistant 消息不写 `reasoning_content`；Anthropic 的
+  `thinkingSignature` 只存内存、没随消息落盘；Responses 的 reasoning output item 则完全没有
+  保存。结果是第二轮起模型看不到上一轮推理过的结论；带 `tools` 的 DeepSeek 思考模式甚至
+  会直接 400。
+- **修复（三种协议按各自规范回传）**：
+  - **OpenAI 兼容 Chat Completions**：历史 assistant 的 `reasoning_content` 一律回传，
+    带 `tool_calls` 的消息也带；无论请求是否携带 `tools` 都不跳过（不带时服务端自动忽略）。
+  - **Anthropic Messages**：`thinking` 块随历史回传并置于消息首位，`signature` 与
+    `redacted_thinking` 随消息持久化、跨轮次与重启后原样带回；DeepSeek / Opencode 等兼容
+    端点接受无签名块，官方 `api.anthropic.com` 仅对「历史 + 无签名」跳过。历史被修剪 /
+    摘要压缩 / 整条裁剪后旧签名绑定的前缀已失效，会先清掉再发，避免 `Invalid signature` 400。
+  - **OpenAI / DeepSeek Responses**：保存 `response.output_item.done` 里的 reasoning item，
+    下一轮原样作为 `reasoning` input item 回传；DeepSeek 等兼容端点额外支持明文 `content`
+    兜底，官方 OpenAI 只回传带 `id` / `encrypted_content` 的原始 item。请求同时声明
+    `include: ["reasoning.encrypted_content"]`（DeepSeek 文档说明不支持该参数时静默忽略）。
+- **顺带**：只有思考、没有正文的 assistant 历史消息不再整条跳过；reasoning 全量落盘并计入
+  上下文预算，长任务不会因为多带思考而悄悄超出预算。
+- **验证**：`ipc-check` 新增回归（三种协议 × 工作 / 聊天模式：第二轮请求必须带回上一轮思考，
+  并覆盖签名与 reasoning item 的持久化往返）。
+
+### 六、验证
+
+- `npm run typecheck`（node / web / mobile）通过；`node --check scripts/ipc-check.mjs` 通过。
 - `run-smoke` 180 项全过，新增公式回归：`\mu_0` / `\alpha_2` / `\bar{I}^2` 上下标绑定、
   `\bar` 只有一层、正常公式无空 `m:t`、未知命令被自检拒绝。
-- 产物：`release/Guncat-Work-7.1.0-android.apk`（arm64，246.7 MB，versionCode 29892000）。
+- `ipc-check` **546 项全过**，新增跨轮次思考回归：Completions 的 `reasoning_content`、
+  Anthropic 的带签名 `thinking` 块、Responses 的 reasoning item 在第二轮请求里都能看到，
+  并覆盖签名 / reasoning item 的持久化往返。
+- 产物：`release/Guncat-Work-7.1.0-android.apk`（arm64，246.7 MB，versionCode 29892015）。
 
 ---
 

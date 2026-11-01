@@ -60,6 +60,8 @@ export { ApiProfileSeeder } from '@main/session/ApiProfileSeeder'
 export { ApiProfile } from '@core/model/ApiProfile'
 export { ApiConfig } from '@core/model/ApiConfig'
 export { LLMProtocol } from '@core/common/LLMProtocol'
+// 消息持久化往返(思考签名 / reasoning item 必须跨重启保留)
+export { Message } from '@core/model/Message'
 `
 )
 
@@ -6032,6 +6034,193 @@ check(
     (m) => m.role === 'assistant' && String(m.reasoning_content ?? '').includes('第一轮思考')
   )
 )
+
+// --- Anthropic：历史 thinking 块必须带着签名回传 ---
+const anthBodies = []
+const anthServer = http.createServer((req, res) => {
+  let raw = ''
+  req.on('data', (chunk) => {
+    raw += chunk.toString('utf8')
+  })
+  req.on('end', () => {
+    anthBodies.push(raw)
+    res.writeHead(200, { 'content-type': 'text/event-stream' })
+    const send = (obj) => res.write('data: ' + JSON.stringify(obj) + '\n\n')
+    send({ type: 'content_block_delta', index: 0,
+      delta: { type: 'thinking_delta', thinking: '第一轮思考：先确认口径' } })
+    send({ type: 'content_block_delta', index: 0,
+      delta: { type: 'signature_delta', signature: 'sig-test-123' } })
+    send({ type: 'content_block_delta', index: 1,
+      delta: { type: 'text_delta', text: '第一轮回答' } })
+    send({ type: 'message_delta', delta: { stop_reason: 'end_turn' },
+      usage: { input_tokens: 10, output_tokens: 5 } })
+    send({ type: 'message_stop' })
+    res.end()
+  })
+})
+await new Promise((resolve) => anthServer.listen(0, '127.0.0.1', () => resolve()))
+const anthPort = anthServer.address().port
+await inv('settings:saveApiConfig', {
+  provider: 'anthropic-messages',
+  baseUrl: 'http://127.0.0.1:' + String(anthPort),
+  apiKey: 'sk-anth-test',
+  model: 'anthropic-reasoning-model',
+  temperature: 0,
+  topP: 0,
+  maxTokens: 0,
+  extraParams: '',
+  autoSuffix: true
+})
+const sigMsg = mod.Message.ofAssistant('m_sig', '正文')
+sigMsg.reasoning = '思考'
+sigMsg.thinkingSignature = 'sig-test-123'
+sigMsg.redactedThinking = 'redacted-xyz'
+const sigBack = mod.Message.fromJson(sigMsg.toJson())
+check(
+  'Anthropic：思考签名/加密思考随消息持久化（重启后仍可回传）',
+  sigBack.thinkingSignature === 'sig-test-123' && sigBack.redactedThinking === 'redacted-xyz',
+  `signature=${sigBack.thinkingSignature}`
+)
+const THINKING_BLOCK =
+  '"content":[{"type":"thinking","thinking":"第一轮思考：先确认口径","signature":"sig-test-123"},'
+
+const convAnthWork = await inv('conversations:create', agents[0].id, 'work')
+for (const text of ['第一轮提问', '第二轮提问']) {
+  anthBodies.length = 0
+  await inv('work:run', {
+    conversationId: convAnthWork.id,
+    text,
+    mode: 'work',
+    thinkingEnabled: true,
+    webSearchEnabled: false
+  })
+}
+check(
+  'Anthropic 工作模式第二轮回传了带签名的 thinking 块',
+  anthBodies.some((b) => b.includes(THINKING_BLOCK)),
+  (anthBodies[0] ?? '').slice(0, 300)
+)
+
+const convAnthChat = await inv('conversations:create', agents[0].id, 'chat')
+for (const text of ['第一轮提问', '第二轮提问']) {
+  anthBodies.length = 0
+  await inv('chat:send', {
+    conversationId: convAnthChat.id,
+    text,
+    mode: 'chat',
+    thinkingEnabled: true,
+    webSearchEnabled: false
+  })
+}
+check(
+  'Anthropic 聊天模式第二轮回传了带签名的 thinking 块',
+  anthBodies.some((b) => b.includes(THINKING_BLOCK)),
+  (anthBodies[0] ?? '').slice(0, 300)
+)
+await new Promise((resolve) => anthServer.close(resolve))
+
+// --- Responses：reasoning output item 必须持久化并回传 ---
+const respBodies = []
+const respServer = http.createServer((req, res) => {
+  let raw = ''
+  req.on('data', (chunk) => {
+    raw += chunk.toString('utf8')
+  })
+  req.on('end', () => {
+    respBodies.push(raw)
+    res.writeHead(200, { 'content-type': 'text/event-stream' })
+    const send = (obj) => res.write('data: ' + JSON.stringify(obj) + '\n\n')
+    send({
+      type: 'response.output_item.done',
+      item: {
+        type: 'reasoning',
+        id: 'rs_test_1',
+        summary: [],
+        content: [{ type: 'reasoning_text', text: '第一轮思考：先确认口径' }],
+        encrypted_content: 'enc-test-xyz'
+      }
+    })
+    send({ type: 'response.output_text.delta', delta: '第一轮回答' })
+    send({ type: 'response.completed',
+      response: { status: 'completed', usage: { input_tokens: 10, output_tokens: 5 } } })
+    res.end()
+  })
+})
+await new Promise((resolve) => respServer.listen(0, '127.0.0.1', () => resolve()))
+const respPort = respServer.address().port
+await inv('settings:saveApiConfig', {
+  provider: 'openai-responses',
+  baseUrl: 'http://127.0.0.1:' + String(respPort),
+  apiKey: 'sk-resp-test',
+  model: 'responses-reasoning-model',
+  temperature: 0,
+  topP: 0,
+  maxTokens: 0,
+  extraParams: '',
+  autoSuffix: true
+})
+const respMsg = mod.Message.ofAssistant('m_resp', '正文')
+respMsg.reasoningItems = '[{"type":"reasoning","id":"rs_x","encrypted_content":"enc_x"}]'
+const respBack = mod.Message.fromJson(respMsg.toJson())
+check(
+  'Responses：reasoning item 随消息持久化',
+  respBack.reasoningItems.includes('enc_x'),
+  respBack.reasoningItems.slice(0, 60)
+)
+const convRespWork = await inv('conversations:create', agents[0].id, 'work')
+for (const text of ['第一轮提问', '第二轮提问']) {
+  respBodies.length = 0
+  await inv('work:run', {
+    conversationId: convRespWork.id,
+    text,
+    mode: 'work',
+    thinkingEnabled: true,
+    webSearchEnabled: false
+  })
+}
+check(
+  'Responses 工作模式第二轮回传了 reasoning item',
+  respBodies.some((b) =>
+    b.includes('"type":"reasoning","id":"rs_test_1"') && b.includes('"encrypted_content":"enc-test-xyz"')),
+  (respBodies[0] ?? '').slice(0, 300)
+)
+check(
+  'Responses 请求声明了 reasoning.encrypted_content',
+  respBodies.some((b) => b.includes('"include":["reasoning.encrypted_content"]')),
+  (respBodies[0] ?? '').slice(0, 200)
+)
+const convRespChat = await inv('conversations:create', agents[0].id, 'chat')
+for (const text of ['第一轮提问', '第二轮提问']) {
+  respBodies.length = 0
+  await inv('chat:send', {
+    conversationId: convRespChat.id,
+    text,
+    mode: 'chat',
+    thinkingEnabled: true,
+    webSearchEnabled: false
+  })
+}
+check(
+  'Responses 聊天模式第二轮回传了 reasoning item',
+  respBodies.some((b) =>
+    b.includes('"type":"reasoning","id":"rs_test_1"') && b.includes('"encrypted_content":"enc-test-xyz"')),
+  (respBodies[0] ?? '').slice(0, 300)
+)
+await new Promise((resolve) => respServer.close(resolve))
+
+// 还原上下文测试用的 Completions 配置：后面的「交互模式 / 全新会话」断言还要打 ctxServer，
+// 不能带着上面 Anthropic / Responses 的配置继续跑（否则请求会发到别的替身服务上）。
+await inv('settings:saveApiConfig', {
+  provider: 'openai-completions',
+  baseUrl: 'http://127.0.0.1:' + String(ctxPort),
+  apiKey: 'sk-ctx-test',
+  model: 'ctx-model',
+  temperature: 0,
+  topP: 0,
+  maxTokens: 0,
+  extraParams: '',
+  autoSuffix: true
+})
 
 // 交互模式走的是同一条 runWork，也必须记得上一轮（用户报障覆盖两种模式）
 const convCtxI = await inv('conversations:create', agents[0].id, 'interactive')

@@ -1165,9 +1165,11 @@ export class SessionManager {
           callbacks,
           handle.abort
         )
-        // Anthropic 思考模式下，带 tool_use 的 assistant 消息回传下一轮时必须带思考块签名
-        // （不持久化，仅本次运行内存内有效 —— 见 Message.thinkingSignature 的说明）
+        // Anthropic 思考模式下，带 tool_use 的 assistant 消息回传下一轮时必须带思考块签名；
+        // 签名/加密思考块/Responses reasoning item 都随消息持久化，跨轮次与重启后都能原样回传
         assistantMsg.thinkingSignature = result.thinkingSignature
+        assistantMsg.redactedThinking = result.redactedThinking
+        assistantMsg.reasoningItems = result.reasoningItems
 
         // 中断：与改动前一致，不再继续（收尾由下面的 finally 统一处理）
         if (handle.abort.aborted) {
@@ -1602,9 +1604,11 @@ export class SessionManager {
           }
 
           targetMsg.reasoning = turn.reasoning
-          // Anthropic 的签名只在本次运行的内存里跟着消息走：下一轮把历史思考块
-          // 原样回传时随块携带（DeepSeek 的 /anthropic 端点不签名，留空即可）。
+          // Anthropic 思考块签名 / 加密思考块、Responses reasoning item 随消息持久化：
+          // 下一轮（含重启后）回传思考时必须原样携带，否则官方 API 400、兼容端点丢思考。
           targetMsg.thinkingSignature = turn.thinkingSignature
+          targetMsg.redactedThinking = turn.redactedThinking
+          targetMsg.reasoningItems = turn.reasoningItems
           targetMsg.tokenSpeed = turn.tokenSpeed
           targetMsg.cacheHitRate = turn.cacheHitRate
           finishReason = turn.finishReason ?? ''
@@ -1880,6 +1884,8 @@ export class SessionManager {
     // 第一级：修剪早期过长的工具结果
     if (oldEnd > 1 && ContextBudget.pruneOldToolResults(messages, 1, oldEnd)) {
       notes += ContextBudget.PRUNE_NOTE
+      // 前缀已经被改写，旧的 thinking 签名全部失效 → 先清掉再发摘要/后续请求
+      this.dropThinkingSignatures(messages)
     }
     // 零成本的第一级已经够用时就不再花钱调模型（force 时跳过：服务端已经报了超限）
     if (!force && !ContextBudget.overBudget(messages, anchor)) {
@@ -1923,11 +1929,14 @@ export class SessionManager {
         }
         compacted = true
         notes += ContextBudget.summaryNote(oldEnd - 1)
+        // 摘要替换了早期历史，保留尾部消息的签名同样绑定在旧前缀上 → 一并清掉
+        this.dropThinkingSignatures(messages)
       }
     }
     // 第三级：压缩后（或压缩失败时）仍超预算 → 从最旧处整条丢弃
     if (ContextBudget.dropOldestUntilUnderBudget(messages, anchor) > 0) {
       compacted = true
+      this.dropThinkingSignatures(messages)
     }
     // 标注不重复：已经写了「摘要压缩」就不再补一条「整条裁剪」
     if (compacted && notes.indexOf(ContextBudget.SUMMARY_NOTE_KEY) < 0) {
@@ -1937,6 +1946,29 @@ export class SessionManager {
     anchor.tokens = 0
     anchor.chars = 0
     return notes
+  }
+
+  /**
+   * 清掉循环消息里的 Anthropic thinking 签名。
+   *
+   * 为什么必须清：signature 绑定在「生成该思考块时的完整前缀」（系统提示词 + 工具面 +
+   * 更早的消息）上。修剪工具结果 / 摘要压缩 / 整条裁剪都会改写前缀，旧签名随即失效，
+   * 官方 API 会直接 400（Invalid signature in thinking block）。清掉签名并标记为历史消息后，
+   * 构建器会按「无签名」规则处理：兼容端点照常回传思考正文，官方端点省略该块；
+   * 之后的轮次会拿到新签名。
+   */
+  private dropThinkingSignatures(messages: LoopMessage[]): void {
+    for (const m of messages) {
+      if (m.role !== 'assistant') {
+        continue
+      }
+      if (m.thinkingSignature === '' && m.redactedThinking === '') {
+        continue
+      }
+      m.thinkingSignature = ''
+      m.redactedThinking = ''
+      m.reasoningFromHistory = true
+    }
   }
 
   /**
