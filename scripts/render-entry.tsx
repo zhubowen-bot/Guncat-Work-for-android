@@ -17,6 +17,7 @@ import {
   conversationMeta,
   conversationTitle,
   engineIdOfConversation,
+  findNewConversationForAgent,
   formatTimeLabel,
   modeForAgentId
 } from '@renderer/conversations'
@@ -110,6 +111,7 @@ export {
   conversationMeta,
   conversationTitle,
   engineIdOfConversation,
+  findNewConversationForAgent,
   formatTimeLabel,
   modeForAgentId
 }

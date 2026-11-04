@@ -156,6 +156,32 @@ export function engineIdOfConversation(summary: { agentId: string; mode: string 
 }
 
 /**
+ * 找该引擎可复用的「新建对话」。
+ *
+ * 切换工作 / 交互模式时，胶囊的语义是「开一个新的」，不是把用户丢回该引擎的
+ * 最新历史会话。但如果目标引擎已经有一条空会话（messageCount === 0），应当直接
+ * 复用它 —— 否则每切一次模式就会在侧栏多堆一条没有任何内容的「新建对话」。
+ *
+ * 空会话按 updatedAt 取最新的一条；工作 / 交互形态优先按 engineId 归属判断，
+ * 因此移植早期 agentId 写成真实智能体、mode 写成 work 的脏数据也能被正确复用。
+ */
+export function findNewConversationForAgent(
+  summaries: ConversationSummaryDto[],
+  agentId: string
+): ConversationSummaryDto | undefined {
+  let found: ConversationSummaryDto | undefined
+  for (const summary of summaries) {
+    if (summary.messageCount !== 0 || engineIdOfConversation(summary) !== agentId) {
+      continue
+    }
+    if (found === undefined || summary.updatedAt > found.updatedAt) {
+      found = summary
+    }
+  }
+  return found
+}
+
+/**
  * 会话条目标题。
  *
  * 关键（原版 getConvTitle + ChatViewModel 新建时 title = ''）：

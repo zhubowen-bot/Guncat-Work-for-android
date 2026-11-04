@@ -230,6 +230,38 @@ check(
     mod.agentIdForMode('chat', AGENTS, 'guncat-3.0-pro') === 'guncat-3.0-pro'
 )
 
+// --- 胶囊切换模式：目标是「新建对话」，不是该形态的历史会话 ---
+const SWITCH_SUMMARIES = [
+  { id: 'work-history', title: '', agentId: 'work', mode: 'work', updatedAt: 300, messageCount: 6 },
+  { id: 'work-empty-old', title: '', agentId: 'work', mode: 'work', updatedAt: 100, messageCount: 0 },
+  { id: 'work-empty-new', title: '', agentId: 'work', mode: 'work', updatedAt: 200, messageCount: 0 },
+  { id: 'interactive-empty', title: '', agentId: 'interactive', mode: 'interactive', updatedAt: 400, messageCount: 0 },
+  { id: 'chat-history', title: '', agentId: 'guncat-3.1-flash', mode: 'chat', updatedAt: 500, messageCount: 3 }
+]
+check(
+  '胶囊切到工作模式：复用工作形态已有的空会话（取最新的一条），不跳历史会话',
+  mod.findNewConversationForAgent(SWITCH_SUMMARIES, 'work')?.id === 'work-empty-new',
+  mod.findNewConversationForAgent(SWITCH_SUMMARIES, 'work')?.id ?? '未命中'
+)
+check(
+  '胶囊切到交互模式：复用交互形态的空会话',
+  mod.findNewConversationForAgent(SWITCH_SUMMARIES, 'interactive')?.id === 'interactive-empty'
+)
+check(
+  '目标形态没有空会话时返回 undefined（调用方才会新建，不会拿历史会话顶替）',
+  mod.findNewConversationForAgent(
+    SWITCH_SUMMARIES.filter((s) => s.id === 'work-history'),
+    'work'
+  ) === undefined
+)
+check(
+  '空会话归属按形态判断：脏数据 agentId=真实智能体 + mode=work 仍算工作模式',
+  mod.findNewConversationForAgent(
+    [{ id: 'dirty-work-empty', title: '', agentId: 'guncat-3.1-flash', mode: 'work', updatedAt: 10, messageCount: 0 }],
+    'work'
+  )?.id === 'dirty-work-empty'
+)
+
 // 时间显示：以固定「现在」断言，避免测试自己漂移
 const NOW = new Date(2024, 8, 10, 15, 30, 0).getTime()
 const TODAY = new Date(2024, 8, 10, 9, 5, 0).getTime()

@@ -10,6 +10,7 @@ import {
   agentIdForMode,
   buildAgentList,
   engineIdOfConversation,
+  findNewConversationForAgent,
   isVirtualAgentId,
   modeForAgentId,
   resolveConversationMode
@@ -223,8 +224,8 @@ interface State {
   selectConversation(id: string): Promise<void>
   createConversation(): Promise<ConversationDto>
   deleteConversation(id: string): Promise<void>
-  /** 切换引擎（原版侧栏「引擎」区）：选中即切到该引擎的最新会话，没有就新建 */
-  selectAgent(agentId: string): Promise<void>
+  /** 切换引擎（原版侧栏「引擎」区）：默认切到该引擎的最新会话；传 newConversation 时落到新建对话 */
+  selectAgent(agentId: string, options?: { newConversation?: boolean }): Promise<void>
   setMode(mode: AgentMode): void
   setThinking(value: boolean): void
   setReasoningEffort(value: string): void
@@ -621,7 +622,7 @@ export const useStore = create<State>((set, get) => {
       }
     },
 
-    async selectAgent(agentId) {
+    async selectAgent(agentId, options) {
       const engine = get().engines.find((a) => a.id === agentId)
       if (engine === undefined) {
         return
@@ -629,17 +630,30 @@ export const useStore = create<State>((set, get) => {
       await window.guncat.settings.saveString('guncat_current_agent', agentId)
       const mode = modeForAgentId(agentId)
       set({ activeAgentId: agentId, mode })
-      // 切到该引擎的最新会话；没有就新建（原版 selectAgent 的行为）
-      const summaries = get().summaries
-      const latest =
-        summaries.find((s) => engineIdOfConversation(s) === agentId) ??
-        (isVirtualAgentId(agentId)
-          ? summaries.find((s) => s.agentId === agentId)
-          : undefined)
-      if (latest !== undefined) {
-        await get().selectConversation(latest.id)
+      if (options?.newConversation === true) {
+        // 模式胶囊 / 侧栏底部的形态切换：目标是「该形态的新建对话」，
+        // **不能**因为该引擎有历史会话就跳到最新那条（用户报障点）。
+        // 但目标形态若已经有一条空会话，直接复用它 —— 否则每切一次模式
+        // 就会在侧栏多堆一条没有任何内容的「新建对话」。
+        const reusable = findNewConversationForAgent(get().summaries, agentId)
+        if (reusable !== undefined) {
+          await get().selectConversation(reusable.id)
+        } else {
+          await get().createConversation()
+        }
       } else {
-        await get().createConversation()
+        // 侧栏引擎列表：保留原行为 —— 打开该引擎的最新会话；没有才新建。
+        const summaries = get().summaries
+        const latest =
+          summaries.find((s) => engineIdOfConversation(s) === agentId) ??
+          (isVirtualAgentId(agentId)
+            ? summaries.find((s) => s.agentId === agentId)
+            : undefined)
+        if (latest !== undefined) {
+          await get().selectConversation(latest.id)
+        } else {
+          await get().createConversation()
+        }
       }
       // 切智能体后按它的名称重置深度思考默认值（效率/轻简模式关、专家模式开）；
       // Agent Loop 形态再强制为开
@@ -657,6 +671,10 @@ export const useStore = create<State>((set, get) => {
       // 两道守卫逐字对齐原版 ChatViewModel.ets:666-697 的 setInteractiveMode / setWorkMode：
       //   (1) 已经在目标形态里 → 什么都不做（原版这是为了「点当前档不把你带走」）；
       //   (2) 正在生成或正在解析附件 → 提示并拒绝（切走会让用户以为任务没了）。
+      //
+      // 工作 / 交互模式的切换**必须落到新建对话**：胶囊出现在新建会话页，用户点它
+      // 是想换一种形态重新开始，不是想打开该形态上一次的长会话。目标形态已有空会话时
+      // selectAgent 会复用它，避免反复切换时堆出一串空对话。
       if (mode === get().mode) {
         return
       }
@@ -673,7 +691,9 @@ export const useStore = create<State>((set, get) => {
         }
         return
       }
-      void get().selectAgent(target)
+      void get().selectAgent(target, {
+        newConversation: mode === 'work' || mode === 'interactive'
+      })
     },
 
     setThinking(value) {
