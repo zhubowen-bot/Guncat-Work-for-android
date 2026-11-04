@@ -39,6 +39,25 @@
 - **回归**：`render-check` 的设置页断言改为检查模块导航、「首帧只渲染当前选项」、手机首帧
   只有一级列表且没有保存按钮；`android-check` 改用设置页根节点与返回按钮定位。
 
+### 交互模式：卡片内文本字段恢复 Markdown 渲染
+
+- **根因**：此前只有 `TextContent` / `MarkDownRenderer` 走 Markdown 管线；`CardHeader`、
+  `Callout`、`ContextCardItem`、`ListBlock`、`Steps`、`OptionCards`、表单标签等直接把字段
+  当字符串输出，模型写入的 `**粗体**`、`` `行内代码` ``、`[链接](…)` 会原样显示。
+- **修复**：新增 `InlineMarkdown`（复用 CommonMark + GFM + LaTeX 管线，只放行行内标签、
+  去掉 `<p>` 外壳，避免短字段多出段落边距）；所有标题/副标题/列表项/标签/表单说明/按钮文字
+  改用它，`Callout` 说明、`ContextCardItem` 正文、`StepsItem` 详情等长字段走完整 `Markdown`。
+  交互元素（按钮 / 选项卡 / 折叠触发器）里的链接降级为文字，避免嵌套交互元素。
+- **样式**：`guncat-ui.css` 为长字段补齐 Markdown 段落/列表/表格的紧凑间距；短字段沿用原字号、
+  行高与间距，既有卡片布局不变。
+- **契约**：交互模式提示词不再把行内 Markdown 限定在 `TextContent`，改为所有展示文本字段
+  都可渲染，但仍要求标题/表格/列表使用对应组件。
+- **回归**：`render-check` 新增 14 项断言，覆盖 CardHeader / Callout / InlineHeader / Text /
+  BoldText / IconText / ImageText / Table / EntityList / ListBlock / Steps / Tabs / Accordion /
+  ContextCardBlock / CompositeCardBlock / OptionCards / 单选/多选/开关 / Form / Tag / Button
+  等字段的粗体、行内代码、链接，并断言产物里不再残留 `**` 原文、交互元素内不产生嵌套 `<a>`。
+  Android 与电脑版共用同一份渲染层，本次修复在两端完全一致。
+
 ---
 
 ## 7.1.0（2026-11-01）

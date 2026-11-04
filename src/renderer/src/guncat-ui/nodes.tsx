@@ -10,7 +10,7 @@ import { useState } from 'react'
 import { UiNode, UiElement, UiActionStep } from '@core/common/GuncatUiLang'
 import { GuncatUiRuntime, GuncatUiState } from '@core/common/GuncatUiRuntime'
 import { UiNum } from '@core/common/GuncatUiPaint'
-import { Markdown } from '../components/Markdown'
+import { Markdown, InlineMarkdown } from '../components/Markdown'
 import {
   BarChartView,
   LineChartView,
@@ -378,8 +378,16 @@ function CardHeader({ el }: { el: UiElement }) {
   }
   return (
     <div className="gui-card-header">
-      {title !== '' ? <div className="gui-card-header__title">{title}</div> : null}
-      {subtitle !== '' ? <div className="gui-card-header__sub">{subtitle}</div> : null}
+      {title !== '' ? (
+        <div className="gui-card-header__title">
+          <InlineMarkdown text={title} />
+        </div>
+      ) : null}
+      {subtitle !== '' ? (
+        <div className="gui-card-header__sub">
+          <InlineMarkdown text={subtitle} />
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -388,8 +396,16 @@ function CalloutBlock({ el }: { el: UiElement }) {
   const variant = normalizeVariant(str(el, 'variant'), 'info')
   return (
     <div className={`gui-callout${variantClass(variant, 'gui-callout')}`}>
-      {str(el, 'title') !== '' ? <div className="gui-callout__title">{str(el, 'title')}</div> : null}
-      {str(el, 'description') !== '' ? <div>{str(el, 'description')}</div> : null}
+      {str(el, 'title') !== '' ? (
+        <div className="gui-callout__title">
+          <InlineMarkdown text={str(el, 'title')} />
+        </div>
+      ) : null}
+      {str(el, 'description') !== '' ? (
+        <div className="gui-callout__body gui-md">
+          <Markdown text={str(el, 'description')} />
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -399,7 +415,7 @@ function TagView({ el, ctx }: { el: UiElement; ctx: RenderCtx }) {
   return (
     <span className={`gui-tag${variantClass(str(el, 'variant'), 'gui-tag')}`}>
       {icon !== null ? <span className="gui-icon">{iconGlyph(str(icon, 'name'))}</span> : null}
-      {str(el, 'text')}
+      <InlineMarkdown text={str(el, 'text')} />
     </span>
   )
 }
@@ -438,11 +454,19 @@ function MetricView({ el }: { el: UiElement }) {
   const previous = str(el, 'previousValue')
   return (
     <div className="gui-metric">
-      {previous !== '' ? <span className="gui-metric__prev">{previous}</span> : null}
-      <span className="gui-metric__value">{str(el, 'value')}</span>
+      {previous !== '' ? (
+        <span className="gui-metric__prev">
+          <InlineMarkdown text={previous} />
+        </span>
+      ) : null}
+      <span className="gui-metric__value">
+        <InlineMarkdown text={str(el, 'value')} />
+      </span>
       {trend !== null ? <TrendBadge trend={trend} /> : null}
       {str(el, 'subtext') !== '' ? (
-        <span className="gui-metric__sub">{str(el, 'subtext')}</span>
+        <span className="gui-metric__sub">
+          <InlineMarkdown text={str(el, 'subtext')} />
+        </span>
       ) : null}
     </div>
   )
@@ -459,9 +483,13 @@ function IconTextView({ el, ctx }: { el: UiElement; ctx: RenderCtx }) {
     >
       {icon !== null ? <span className="gui-icon">{iconGlyph(str(icon, 'name'))}</span> : null}
       <div>
-        <div className="gui-icontext__title">{str(el, 'title')}</div>
+        <div className="gui-icontext__title">
+          <InlineMarkdown text={str(el, 'title')} />
+        </div>
         {str(el, 'subtitle') !== '' ? (
-          <div className="gui-icontext__sub">{str(el, 'subtitle')}</div>
+          <div className="gui-icontext__sub">
+            <InlineMarkdown text={str(el, 'subtitle')} />
+          </div>
         ) : null}
       </div>
     </div>
@@ -481,9 +509,13 @@ function ImageTextView({ el }: { el: UiElement }) {
         <img className="gui-list__thumb" src={src} alt="" loading="lazy" />
       ) : null}
       <div>
-        <div className="gui-icontext__title">{str(el, 'title')}</div>
+        <div className="gui-icontext__title">
+          <InlineMarkdown text={str(el, 'title')} />
+        </div>
         {str(el, 'subtitle') !== '' ? (
-          <div className="gui-icontext__sub">{str(el, 'subtitle')}</div>
+          <div className="gui-icontext__sub">
+            <InlineMarkdown text={str(el, 'subtitle')} />
+          </div>
         ) : null}
       </div>
     </div>
@@ -517,7 +549,9 @@ function TableView({ el, ctx }: { el: UiElement; ctx: RenderCtx }) {
         <thead>
           <tr>
             {headers.map((h, i) => (
-              <th key={i}>{h}</th>
+              <th key={i}>
+                <InlineMarkdown text={h} />
+              </th>
             ))}
           </tr>
         </thead>
@@ -533,7 +567,7 @@ function TableView({ el, ctx }: { el: UiElement; ctx: RenderCtx }) {
                     key={ci}
                     style={type === 'number' ? { textAlign: 'right', fontVariantNumeric: 'tabular-nums' } : undefined}
                   >
-                    {text}
+                    <InlineMarkdown text={text} />
                   </td>
                 )
               })}
@@ -563,9 +597,11 @@ function EntityListView({ el }: { el: UiElement }) {
         fontSize: 13
       }}
     >
-      <span>{String(row['left'] ?? row['label'] ?? '')}</span>
+      <span>
+        <InlineMarkdown text={String(row['left'] ?? row['label'] ?? '')} />
+      </span>
       <span style={{ fontVariantNumeric: 'tabular-nums' }}>
-        {String(row['right'] ?? row['value'] ?? '')}
+        <InlineMarkdown text={String(row['right'] ?? row['value'] ?? '')} />
       </span>
     </div>
   )
@@ -723,9 +759,11 @@ function RadioControl({ el, ctx }: { el: UiElement; ctx: RenderCtx }) {
               )}
             </span>
             <span>
-              {str(item, 'label')}
+              <InlineMarkdown text={str(item, 'label')} links={false} />
               {str(item, 'description') !== '' ? (
-                <span className="gui-choice__desc">{str(item, 'description')}</span>
+                <span className="gui-choice__desc">
+                  <InlineMarkdown text={str(item, 'description')} links={false} />
+                </span>
               ) : null}
             </span>
           </button>
@@ -756,9 +794,11 @@ function CheckBoxControl({ el, ctx }: { el: UiElement; ctx: RenderCtx }) {
               }}
             />
             <span>
-              {str(item, 'label')}
+              <InlineMarkdown text={str(item, 'label')} links={false} />
               {str(item, 'description') !== '' ? (
-                <span className="gui-choice__desc">{str(item, 'description')}</span>
+                <span className="gui-choice__desc">
+                  <InlineMarkdown text={str(item, 'description')} links={false} />
+                </span>
               ) : null}
             </span>
           </label>
@@ -792,9 +832,11 @@ function SwitchControl({ el, ctx }: { el: UiElement; ctx: RenderCtx }) {
               <span className="gui-switch__knob" />
             </span>
             <span>
-              {str(item, 'label')}
+              <InlineMarkdown text={str(item, 'label')} links={false} />
               {str(item, 'description') !== '' ? (
-                <span className="gui-choice__desc">{str(item, 'description')}</span>
+                <span className="gui-choice__desc">
+                  <InlineMarkdown text={str(item, 'description')} links={false} />
+                </span>
               ) : null}
             </span>
           </button>
@@ -834,7 +876,7 @@ function ChipsControl({ el, ctx }: { el: UiElement; ctx: RenderCtx }) {
             disabled={ctx.stale || bool(item, 'disabled')}
             onClick={() => toggle(v)}
           >
-            {str(item, 'label', v)}
+            <InlineMarkdown text={str(item, 'label', v)} links={false} />
           </button>
         )
       })}
@@ -872,9 +914,13 @@ function OptionCardsControl({ el, ctx }: { el: UiElement; ctx: RenderCtx }) {
             disabled={ctx.stale || bool(item, 'disabled')}
             onClick={() => toggle(v)}
           >
-            <div className="gui-optioncard__title">{str(item, 'title')}</div>
+            <div className="gui-optioncard__title">
+              <InlineMarkdown text={str(item, 'title')} links={false} />
+            </div>
             {str(item, 'subtitle') !== '' ? (
-              <div className="gui-optioncard__sub">{str(item, 'subtitle')}</div>
+              <div className="gui-optioncard__sub">
+                <InlineMarkdown text={str(item, 'subtitle')} links={false} />
+              </div>
             ) : null}
           </button>
         )
@@ -948,10 +994,14 @@ function FormView({ el, ctx }: { el: UiElement; ctx: RenderCtx }) {
         const input = UiNode.element(field, 'input')
         return (
           <div className="gui-field" key={i}>
-            <label className="gui-field__label">{str(field, 'label')}</label>
+            <label className="gui-field__label">
+              <InlineMarkdown text={str(field, 'label')} />
+            </label>
             {input !== null ? renderControl(input, ctx) : null}
             {str(field, 'hint') !== '' ? (
-              <div className="gui-field__hint">{str(field, 'hint')}</div>
+              <div className="gui-field__hint">
+                <InlineMarkdown text={str(field, 'hint')} />
+              </div>
             ) : null}
           </div>
         )
@@ -966,7 +1016,7 @@ function FormView({ el, ctx }: { el: UiElement; ctx: RenderCtx }) {
               disabled={ctx.stale}
               onClick={submit}
             >
-              {str(btn, 'label')}
+              <InlineMarkdown text={str(btn, 'label')} links={false} />
             </button>
           ))}
         </div>
@@ -995,7 +1045,7 @@ function TabsView({ el, ctx }: { el: UiElement; ctx: RenderCtx }) {
             data-active={i === index}
             onClick={() => setActive(i)}
           >
-            {str(item, 'trigger', str(item, 'value'))}
+            <InlineMarkdown text={str(item, 'trigger', str(item, 'value'))} links={false} />
           </button>
         ))}
       </div>
@@ -1026,7 +1076,9 @@ function AccordionView({ el, ctx }: { el: UiElement; ctx: RenderCtx }) {
                   <path d="m6.6 9.4 5.4 5.4 5.4-5.4" />
                 </GuiSvg>
               </span>
-              <span>{str(item, 'trigger', str(item, 'value'))}</span>
+              <span>
+                <InlineMarkdown text={str(item, 'trigger', str(item, 'value'))} links={false} />
+              </span>
             </button>
             {isOpen ? <div className="gui-acc__body">{renderChildren(children(item, 'content'), ctx)}</div> : null}
           </div>
@@ -1047,9 +1099,13 @@ function StepsView({ el }: { el: UiElement }) {
             {i < items.length - 1 ? <span className="gui-step__line" /> : null}
           </div>
           <div className="gui-step__body">
-            <div className="gui-step__title">{str(item, 'title')}</div>
+            <div className="gui-step__title">
+              <InlineMarkdown text={str(item, 'title')} />
+            </div>
             {str(item, 'details') !== '' ? (
-              <div className="gui-step__details">{str(item, 'details')}</div>
+              <div className="gui-step__details gui-md">
+                <Markdown text={str(item, 'details')} />
+              </div>
             ) : null}
           </div>
         </div>
@@ -1079,9 +1135,13 @@ function ListBlockView({ el, ctx }: { el: UiElement; ctx: RenderCtx }) {
           <div className="gui-list__item" key={i}>
             {src !== '' ? <img className="gui-list__thumb" src={src} alt="" loading="lazy" /> : null}
             <div className="gui-list__body">
-              <div className="gui-list__title">{str(item, 'title')}</div>
+              <div className="gui-list__title">
+                <InlineMarkdown text={str(item, 'title')} />
+              </div>
               {str(item, 'subtitle') !== '' ? (
-                <div className="gui-list__sub">{str(item, 'subtitle')}</div>
+                <div className="gui-list__sub">
+                  <InlineMarkdown text={str(item, 'subtitle')} />
+                </div>
               ) : null}
             </div>
             {actionLabel !== '' || hasAction ? (
@@ -1097,7 +1157,7 @@ function ListBlockView({ el, ctx }: { el: UiElement; ctx: RenderCtx }) {
                   }
                 }}
               >
-                {actionLabel || '查看'}
+                <InlineMarkdown text={actionLabel || '查看'} links={false} />
               </button>
             ) : null}
           </div>
@@ -1150,8 +1210,14 @@ function renderCardItem(item: UiElement, ctx: RenderCtx, key: number): ReactNode
           key={key}
           style={str(item, 'bgColor') !== '' ? { background: str(item, 'bgColor') } : undefined}
         >
-          <div className="gui-carditem__title">{str(item, 'title')}</div>
-          {str(item, 'body') !== '' ? <div className="gui-carditem__body">{str(item, 'body')}</div> : null}
+          <div className="gui-carditem__title">
+            <InlineMarkdown text={str(item, 'title')} />
+          </div>
+          {str(item, 'body') !== '' ? (
+            <div className="gui-carditem__body gui-md">
+              <Markdown text={str(item, 'body')} />
+            </div>
+          ) : null}
         </div>
       )
     case 'CompositeCardItem': {
@@ -1164,7 +1230,7 @@ function renderCardItem(item: UiElement, ctx: RenderCtx, key: number): ReactNode
           ) : null}
           {footer !== null ? (
             <div className="gui-carditem__body" style={{ marginTop: 6 }}>
-              {String(footer['text'] ?? '')}
+              <InlineMarkdown text={String(footer['text'] ?? '')} />
             </div>
           ) : null}
         </div>
@@ -1216,7 +1282,7 @@ export function renderNode(el: UiElement | null, ctx: RenderCtx, key: string): R
       // 交互模式提示词也明确允许在这一个字段里写行内 `**粗体**`。此前这里直接输出字符串，
       // 星号、反引号、链接语法会原样留在界面上 —— 模型照着提示词写，用户看到的是没渲染的记号。
       // 复用正文同一条 Markdown 管线（CommonMark + GFM + LaTeX），行内语法与段落、列表等
-      // 块级语法都能正确落地；原先只有 MarkDownRenderer 走这条路。
+      // 块级语法都能正确落地；其它短文本字段走 InlineMarkdown（见 components/Markdown.tsx）。
       return (
         <div className={`gui-text${sizeClass(str(el, 'size'))}`} key={key}>
           <Markdown text={str(el, 'text')} />
@@ -1233,17 +1299,27 @@ export function renderNode(el: UiElement | null, ctx: RenderCtx, key: string): R
       const subtext = str(el, 'subtext')
       return (
         <div className={type === 'BoldText' ? 'gui-bold' : ''} key={key}>
-          <div className={`gui-text${sizeClass(str(el, 'size'))}`}>{str(el, 'value')}</div>
-          {subtext !== '' ? <div className="gui-text__sub">{subtext}</div> : null}
+          <div className={`gui-text${sizeClass(str(el, 'size'))}`}>
+            <InlineMarkdown text={str(el, 'value')} />
+          </div>
+          {subtext !== '' ? (
+            <div className="gui-text__sub">
+              <InlineMarkdown text={subtext} />
+            </div>
+          ) : null}
         </div>
       )
     }
     case 'InlineHeader':
       return (
         <div key={key}>
-          <div className="gui-inline-header__title">{str(el, 'heading')}</div>
+          <div className="gui-inline-header__title">
+            <InlineMarkdown text={str(el, 'heading')} />
+          </div>
           {str(el, 'description') !== '' ? (
-            <div className="gui-inline-header__desc">{str(el, 'description')}</div>
+            <div className="gui-inline-header__desc">
+              <InlineMarkdown text={str(el, 'description')} />
+            </div>
           ) : null}
         </div>
       )
@@ -1273,7 +1349,7 @@ export function renderNode(el: UiElement | null, ctx: RenderCtx, key: string): R
         <div className="gui-tags" key={key}>
           {UiNode.strList(el, 'tags').map((t, i) => (
             <span className="gui-tag" key={i}>
-              {t}
+              <InlineMarkdown text={t} />
             </span>
           ))}
         </div>
@@ -1371,7 +1447,9 @@ export function renderNode(el: UiElement | null, ctx: RenderCtx, key: string): R
         <div className="gui-col" key={key}>
           {sections.map((s, i) => (
             <div key={i}>
-              <div className="gui-inline-header__title">{str(s, 'trigger')}</div>
+              <div className="gui-inline-header__title">
+                <InlineMarkdown text={str(s, 'trigger')} />
+              </div>
               <div style={{ marginTop: 6 }}>{renderChildren(children(s, 'content'), ctx)}</div>
             </div>
           ))}
@@ -1403,7 +1481,9 @@ export function renderNode(el: UiElement | null, ctx: RenderCtx, key: string): R
               disabled={ctx.stale}
               onClick={() => ctx.send(str(item, 'text'))}
             >
-              <div className="gui-optioncard__title">{str(item, 'text')}</div>
+              <div className="gui-optioncard__title">
+                <InlineMarkdown text={str(item, 'text')} links={false} />
+              </div>
             </button>
           ))}
         </div>
@@ -1422,9 +1502,15 @@ export function renderNode(el: UiElement | null, ctx: RenderCtx, key: string): R
       const input = UiNode.element(el, 'input')
       return (
         <div className="gui-field" key={key}>
-          <label className="gui-field__label">{str(el, 'label')}</label>
+          <label className="gui-field__label">
+            <InlineMarkdown text={str(el, 'label')} />
+          </label>
           {input !== null ? renderControl(input, ctx) : null}
-          {str(el, 'hint') !== '' ? <div className="gui-field__hint">{str(el, 'hint')}</div> : null}
+          {str(el, 'hint') !== '' ? (
+            <div className="gui-field__hint">
+              <InlineMarkdown text={str(el, 'hint')} />
+            </div>
+          ) : null}
         </div>
       )
     }
@@ -1472,7 +1558,7 @@ export function renderNode(el: UiElement | null, ctx: RenderCtx, key: string): R
             }
           }}
         >
-          {label}
+          <InlineMarkdown text={label} links={false} />
         </button>
       )
     }
@@ -1493,7 +1579,11 @@ function renderUnknown(el: UiElement, ctx: RenderCtx): ReactNode {
   for (const k of textKeys) {
     const v = UiNode.str(el, k, '')
     if (v !== '') {
-      parts.push(<div key={k}>{v}</div>)
+      parts.push(
+        <div key={k}>
+          <InlineMarkdown text={v} />
+        </div>
+      )
     }
   }
   for (const k of ['children', 'items', 'content', 'fields', 'sections']) {

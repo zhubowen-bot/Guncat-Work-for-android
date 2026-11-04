@@ -530,6 +530,81 @@ check(
     textMd.includes('第二段')
 )
 
+// --- 卡片/列表/表单等短文本字段的行内 Markdown（同一类问题的其余组件） ---
+const cardMd = mod.renderCardTextMarkdown()
+check(
+  'CardHeader 的标题与副标题都渲染行内 Markdown',
+  cardMd.includes('<strong>季度</strong>') && cardMd.includes('<strong>+18.6%</strong>'),
+  cardMd.includes('**季度**') ? '星号仍在标题里' : '已加粗'
+)
+check(
+  'Callout 标题与说明、InlineHeader 标题与说明都渲染 Markdown',
+  cardMd.includes('<strong>结论</strong>') &&
+    cardMd.includes('<strong>1,284 万</strong>') &&
+    cardMd.includes('<strong>明细</strong>')
+)
+check(
+  'Text / BoldText / IconText / ImageText 的 value 与 subtext 都渲染 Markdown',
+  cardMd.includes('<strong>文本</strong>') &&
+    cardMd.includes('<strong>重点</strong>') &&
+    cardMd.includes('<strong>图标</strong>') &&
+    cardMd.includes('<strong>图片</strong>')
+)
+check(
+  '表格表头/单元格、EntityList 左右值都渲染 Markdown',
+  cardMd.includes('<strong>区域</strong>') &&
+    cardMd.includes('<strong>华东</strong>') &&
+    cardMd.includes('<strong>合计</strong>') &&
+    cardMd.includes('<strong>1,284</strong>')
+)
+check(
+  'ListBlock / Steps / Tabs / Accordion 的文字字段都渲染 Markdown',
+  cardMd.includes('<strong>标题</strong>') &&
+    cardMd.includes('<strong>第一步</strong>') &&
+    cardMd.includes('<strong>概览</strong>') &&
+    cardMd.includes('<strong>更多</strong>')
+)
+check(
+  'ContextCardBlock / CompositeCardBlock 的标题、正文、footer 都渲染 Markdown',
+  cardMd.includes('<strong>标题</strong>') &&
+    cardMd.includes('正文 <strong>加粗</strong>') &&
+    cardMd.includes('底部 <strong>加粗</strong>')
+)
+check(
+  'OptionCards / RadioGroup / CheckBoxGroup / SwitchGroup 的 label 与 description 都渲染 Markdown',
+  cardMd.includes('<strong>方案 A</strong>') &&
+    cardMd.includes('<strong>选项</strong>') &&
+    cardMd.includes('<strong>复选</strong>') &&
+    cardMd.includes('<strong>开关</strong>')
+)
+check(
+  'Form 的字段标签/提示与按钮文字都渲染 Markdown',
+  cardMd.includes('<strong>字段</strong>') &&
+    cardMd.includes('<strong>提交</strong>') &&
+    cardMd.includes('<strong>按钮</strong>')
+)
+check(
+  'Tag / TagBlock 的标签文字也渲染 Markdown',
+  cardMd.includes('<strong>标签</strong>')
+)
+check(
+  '卡片内所有文本字段都不再残留 ** 原文',
+  !cardMd.includes('**'),
+  cardMd.includes('**') ? '仍有组件把星号当正文' : '全部进入 Markdown 管线'
+)
+check(
+  '短字段里的行内代码渲染成 code',
+  cardMd.includes('<code>区域</code>') && cardMd.includes('<code>代码</code>')
+)
+check(
+  '非交互字段里的链接仍可点击',
+  cardMd.includes('href="https://example.com/sales"') && cardMd.includes('>明细</a>')
+)
+check(
+  '交互元素里的链接降级为文字（不产生嵌套 <a>）',
+  !cardMd.includes('https://example.com/button') && cardMd.includes('按钮链接')
+)
+
 // --- 交互模式：整个回合收进一条活动折叠栏 ---
 const groupedShell = mod.renderGroupedTurn(false)
 const groupedRunning = mod.renderGroupedTurn(true)

@@ -23,6 +23,11 @@ interface Props {
   text: string
 }
 
+interface InlineProps extends Props {
+  /** 交互元素（按钮 / 选项卡 / 折叠触发器）里的文字不渲染成可点的链接，避免嵌套交互元素 */
+  links?: boolean
+}
+
 /** 透传给 remark-rehype 的脚注文案（不含任何符号） */
 export const REHYPE_OPTIONS = {
   footnoteBackContent: '返回',
@@ -108,6 +113,56 @@ const COMPONENTS: Components = {
   }
 }
 
+/**
+ * 行内 Markdown 的组件映射：短文本字段（标题、副标题、列表项、按钮文字…）只保留
+ * 行内语法，不把 `<p>`、标题、列表这些块级外壳带进原本的单行排版里。
+ *
+ * 为什么不用完整的 `Markdown`：一个 `**粗体**` 会被 react-markdown 包成
+ * `<p><strong>…</strong></p>`，塞进 `<div class="gui-card-header__title">` 后
+ * 会多出浏览器默认的段落边距，标题/副标题的间距全部变形。
+ */
+const INLINE_COMPONENTS: Components = {
+  ...COMPONENTS,
+  p({ children }) {
+    return <>{children}</>
+  }
+}
+
+/** 行内字段里只允许这些标签；块级语法被 unwrap 成文字，不会破坏单行排版 */
+const INLINE_ALLOWED = ['p', 'br', 'strong', 'em', 'del', 'code', 'a', 'span', 'sup', 'sub', 'img']
+
+const INLINE_COMPONENTS_NO_LINKS: Components = {
+  ...INLINE_COMPONENTS,
+  // 按钮 / 选项卡 / 选项卡触发器本身已经是可点区域，内部再套 <a> 属于嵌套交互元素。
+  a({ children }) {
+    return <span>{children}</span>
+  }
+}
+
+function MarkdownRenderer({
+  text,
+  inline,
+  links
+}: {
+  text: string
+  inline: boolean
+  links: boolean
+}): React.ReactElement {
+  const prepared = sanitizeMarkdownForRender(text)
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, remarkMath]}
+      rehypePlugins={[rehypeKatex]}
+      remarkRehypeOptions={REHYPE_OPTIONS}
+      urlTransform={safeUrlTransform}
+      components={inline ? (links ? INLINE_COMPONENTS : INLINE_COMPONENTS_NO_LINKS) : COMPONENTS}
+      {...(inline ? { allowedElements: INLINE_ALLOWED, unwrapDisallowed: true } : {})}
+    >
+      {prepared}
+    </ReactMarkdown>
+  )
+}
+
 export const Markdown = memo(function Markdown({ text }: Props) {
   // 渲染前做表格结构规范化。
   //
@@ -116,16 +171,21 @@ export const Markdown = memo(function Markdown({ text }: Props) {
   // 桌面端用 react-markdown 不会闪退，但同一个模块**在端口里此前零调用点** ——
   // 而它做的事情对这里同样有意义：结构合法的表格被补齐到统一形态，
   // 修不了的退化表格降级成纯文本（内容不丢，不会被渲染成一张错位的表）。
-  const prepared = sanitizeMarkdownForRender(text)
+  return <MarkdownRenderer text={text} inline={false} links />
+})
+
+/**
+ * 短文本字段的行内 Markdown。
+ *
+ * 交互模式的卡片里除了 `TextContent`，还有大量「标题 / 副标题 / 列表项 / 按钮文字」
+ * 这类短字段。模型写这些字段时同样会带 `**粗体**`、`` `代码` ``、`[链接](…)`；
+ * 此前它们都被直接当字符串输出，星号和反引号原样留在界面上。这里复用同一套解析器，
+ * 但只放行行内标签，避免段落/列表的块级边距把卡片排版撑开。
+ */
+export const InlineMarkdown = memo(function InlineMarkdown({ text, links = true }: InlineProps) {
   return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm, remarkMath]}
-      rehypePlugins={[rehypeKatex]}
-      remarkRehypeOptions={REHYPE_OPTIONS}
-      urlTransform={safeUrlTransform}
-      components={COMPONENTS}
-    >
-      {prepared}
-    </ReactMarkdown>
+    <span className="gui-md-inline">
+      <MarkdownRenderer text={text} inline links={links} />
+    </span>
   )
 })

@@ -964,6 +964,49 @@ export function renderTextMarkdown(): string {
 }
 
 /**
+ * 卡片/列表/表单等短文本字段的行内 Markdown（用户报障：`**粗体**` 只在 TextContent 生效）。
+ * 这些字段不是 TextContent，但模型同样会写入行内标记；这里一次性钉住所有会显示文字的位置。
+ */
+export function renderCardTextMarkdown(): string {
+  const program = [
+    'root = Card([',
+    '  CardHeader("**季度**复盘", "同比 **+18.6%** · [明细](https://example.com/sales)"),',
+    '  Callout("info", "**结论**", "营收 **1,284 万**"),',
+    '  InlineHeader("**明细**", "按 `区域` 拆分"),',
+    '  Text("text", "**文本**", "副标题 **加粗**"),',
+    '  BoldText("text", "**重点**", "说明 `代码`"),',
+    '  IconText(Icon("chart"), "**图标**", "副标题 **加粗**"),',
+    '  ImageText("", "**图片**", "副标题 **加粗**"),',
+    '  MetricIndicatorInline("**1,284**", "同比 **+18.6%**"),',
+    '  Table([Col("**区域**", ["**华东**", "华南"])]),',
+    '  EntityList([{left: "**合计**", right: "**1,284**"}]),',
+    '  ListBlock([ListItem("**标题**", "副标题 **加粗**")]),',
+    '  Steps([StepsItem("**第一步**", "说明 **加粗**")]),',
+    '  Tabs([TabItem("a", "**概览**", [TextContent("内容")])]),',
+    '  Accordion([AccordionItem("k", "**更多**", [TextContent("内容")])]),',
+    '  ContextCardBlock([ContextCardItem("**标题**", "正文 **加粗**")]),',
+    '  CompositeCardBlock([CompositeCardItem(IconText(Icon("info"), "头部"), [TextContent("内容")], {text: "底部 **加粗**"})]),',
+    '  OptionCards("opt", "single", [OptionCard("a", "**方案 A**", "说明 **加粗**")]),',
+    '  RadioGroup("r", [RadioItem("**选项**", "说明 **加粗**", "a")]),',
+    '  CheckBoxGroup("c", [CheckBoxItem("**复选**", "说明 **加粗**", "a")]),',
+    '  SwitchGroup("s", [SwitchItem("**开关**", "a", "说明 **加粗**")]),',
+    '  Form("f", Buttons([Button("**提交**")]), [FormControl("**字段**", Input("x"), "提示 **加粗**")]),',
+    '  TagBlock(["**标签**"]),',
+    '  Tag("**标签**"),',
+    '  Button("**按钮**"),',
+    '  Button("[按钮链接](https://example.com/button)")',
+    '])'
+  ].join('\n')
+  return renderToStaticMarkup(
+    createElement(GuncatUiBlock, {
+      content: program,
+      interactive: true,
+      onSend: () => {}
+    })
+  )
+}
+
+/**
  * 复现 MessageView 的组合方式：纯文本片段走 Markdown，界面片段走 GuncatUiBlock。
  * 界面块本身只负责界面，正文里的说明文字由外层渲染 —— 这条组合关系值得单独钉住。
  */
