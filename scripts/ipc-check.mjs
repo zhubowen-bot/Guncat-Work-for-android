@@ -235,6 +235,11 @@ check('settings:saveApiConfig → load 往返一致', settings.apiConfig?.apiKey
 check('provider 类型保留', settings.apiConfig?.provider === 'openai-responses')
 check('温度等数值保留', settings.apiConfig?.temperature === 0.7)
 check(
+  '附件先行解析默认关闭（新装与缺字段的旧配置都不主动调用多模态 API）',
+  settings.multimodalConfig?.preparseEnabled === false,
+  String(settings.multimodalConfig?.preparseEnabled)
+)
+check(
   '首次加载会播种两套预置方案（Deepseek / Opencode Go）',
   Array.isArray(settings.apiProfiles) &&
     settings.apiProfiles.some((p) => p.name === 'Deepseek') &&

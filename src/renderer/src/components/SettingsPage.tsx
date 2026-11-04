@@ -390,7 +390,7 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
   const [mmBaseUrl, setMmBaseUrl] = useState('')
   const [mmApiKey, setMmApiKey] = useState('')
   const [mmModel, setMmModel] = useState('')
-  const [mmPreparse, setMmPreparse] = useState(true)
+  const [mmPreparse, setMmPreparse] = useState(false)
   const [asrBaseUrl, setAsrBaseUrl] = useState('')
   const [asrApiKey, setAsrApiKey] = useState('')
   const [asrModel, setAsrModel] = useState('')
@@ -422,7 +422,7 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
     setMmBaseUrl(settings?.multimodalConfig.baseUrl ?? '')
     setMmApiKey(settings?.multimodalConfig.apiKey ?? '')
     setMmModel(settings?.multimodalConfig.model ?? '')
-    setMmPreparse(settings?.multimodalConfig.preparseEnabled ?? true)
+    setMmPreparse(settings?.multimodalConfig.preparseEnabled ?? false)
     setAsrBaseUrl(settings?.prefs?.asr_baseUrl ?? '')
     setAsrApiKey(settings?.prefs?.asr_apiKey ?? '')
     setAsrModel(settings?.prefs?.asr_model ?? '')
@@ -1087,7 +1087,7 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
               <>
                 <SettingsCard
                   title="附件先行解析"
-                  description="开启后，图片与文档先交给独立的多模态模型解析，再把文本交给主模型。"
+                  description="默认关闭。开启后，图片与文档先交给独立的多模态模型解析，再把文本交给主模型。"
                 >
                   <label className="check">
                     <input
