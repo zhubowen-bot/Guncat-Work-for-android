@@ -1296,12 +1296,19 @@ console.log('\n30. 设置页')
 const settingsHtml = mod.renderSettings()
 const settingsText = decode(settingsHtml)
 check(
-  '设置页整体可渲染（标题 + 模块导航 + 内容区），且没有保存按钮',
+  '设置页整体可渲染（标题 + 分组导航 + 内容区），且没有保存按钮',
   settingsHtml.includes('settings-page') &&
     settingsHtml.includes('settings-nav') &&
+    settingsHtml.includes('settings-nav__group-title') &&
     settingsText.includes('设置') &&
     !settingsHtml.includes('settings-page__save') &&
     !settingsText.includes('保存中')
+)
+check(
+  '设置页使用分组卡片、滑动开关与单选行',
+  settingsHtml.includes('settings-card__body') &&
+    settingsHtml.includes('settings-toggle') &&
+    settingsHtml.includes('settings-option-list')
 )
 check(
   '设置项拆成独立导航（模型 / 高级参数 / 搜索 / 多模态 / 自动朗读 / 语音）',
@@ -1319,16 +1326,18 @@ check(
   '手机首帧是一级列表：只有逐条入口，没有详情、没有顶栏保存',
   mobileSettingsHtml.includes('settings-nav__item') &&
     mobileSettingsHtml.includes('settings-nav__go') &&
+    mobileSettingsHtml.includes('settings-nav__group-title') &&
     !mobileSettingsHtml.includes('settings-pane') &&
     mobileSettingsText.includes('模型配置') &&
     mobileSettingsText.includes('语音输入') &&
+    mobileSettingsText.includes('修改后自动保存，配置仅存储在本机') &&
     !mobileSettingsHtml.includes('settings-page__save')
 )
 check(
   '首帧只渲染当前选项（模型配置），其他选项内容不出现',
   settingsText.includes('配置方案') &&
-    settingsText.includes('接入方式') &&
-    settingsText.includes('凭据与模型') &&
+    settingsText.includes('接入与密钥') &&
+    settingsText.includes('模型') &&
     !settingsText.includes('数值越低回答越确定') &&
     !settingsText.includes('先行解析附件') &&
     !settingsText.includes('开启后每轮回答生成完会自动念一遍') &&

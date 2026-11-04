@@ -20,6 +20,7 @@ import {
   IconCode,
   IconGlobe,
   IconImage,
+  IconInfo,
   IconMic,
   IconPlus,
   IconRefresh,
@@ -146,9 +147,8 @@ export function credentialHint(state: CredentialStateDto | undefined): string {
  * 原版写「手机直连」，桌面端就是本机直连）。
  */
 const SEARCH_INTRO =
-  '内置 local_web_search 工具（本机兜底搜索）：本机直连搜索引擎/搜索 API，' +
-  '与服务端联网搜索开关互不影响、可同时存在。默认会优先走服务端搜索，' +
-  '本机通道只在服务端搜索不可用/无结果或你明确要求时才被调用。'
+  '内置 local_web_search 工具：本机直连搜索引擎或搜索 API，与服务端联网搜索互不影响。' +
+  '服务端搜索不可用、无结果，或你明确要求时，才会调用本机通道。'
 
 /**
  * 本地联网搜索配置在偏好里的键名（存在 Preferences 里的一段 JSON）。
@@ -302,10 +302,12 @@ type SettingsSectionId =
   | 'voice'
   | 'shell'
 
+type SettingsGroupId = 'model' | 'capability' | 'voice' | 'system'
+
 interface SettingsNavItem {
   id: SettingsSectionId
   label: string
-  hint: string
+  group: SettingsGroupId
   icon: ReactNode
 }
 
@@ -355,6 +357,42 @@ function SettingsCard(props: { title: string; description?: string; children: Re
       </header>
       <div className="settings-card__body">{props.children}</div>
     </section>
+  )
+}
+
+/** 设置页开关：整行可点，视觉上是移动端常见的滑动开关。 */
+function SettingsToggle(props: {
+  title: string
+  description?: string
+  checked: boolean
+  onChange: (checked: boolean) => void
+}) {
+  return (
+    <label className="settings-toggle">
+      <span className="settings-toggle__text">
+        <strong>{props.title}</strong>
+        {props.description !== undefined ? <small>{props.description}</small> : null}
+      </span>
+      <input
+        className="settings-toggle__input"
+        type="checkbox"
+        checked={props.checked}
+        onChange={(e) => props.onChange(e.target.checked)}
+      />
+      <span className="settings-toggle__track" aria-hidden="true" />
+    </label>
+  )
+}
+
+/** 提示块：用于接入方式、搜索、语音等需要解释但不该抢字段注意力的说明。 */
+function SettingsNotice(props: { children: ReactNode }) {
+  return (
+    <div className="settings-notice">
+      <span className="settings-notice__icon" aria-hidden="true">
+        <IconInfo size={15} />
+      </span>
+      <div>{props.children}</div>
+    </div>
   )
 }
 
@@ -695,37 +733,88 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
   // 真正补头由主进程的 LLMProtocol 统一做（聊天 / 工作流 / 自动审查 / 附件上传都走它）。
   const isOpencode = /^https?:\/\/opencode\.ai\/inference(?:\/|$)/i.test(draft.baseUrl.trim())
 
+  function providerShort(id: string): string {
+    return providerCopy(id).label.replace(/（.*$/, '').trim()
+  }
+
+  /** 一级列表右侧的摘要：展示当前配置的关键状态，而不是重复固定的副标题。 */
+  function navDetail(item: SettingsNavItem): string {
+    switch (item.id) {
+      case 'model': {
+        const current = profiles.find((p) => p.id === settings?.currentApiProfileId)
+        const name = current?.id === settings?.currentApiProfileId
+          ? profileName.trim() || current?.name || '未命名配置'
+          : current?.name || '未命名配置'
+        const model = current?.config.model || current?.config.models?.[0] || '未配置模型'
+        return `${name} · ${model}`
+      }
+      case 'advanced': {
+        const parts: string[] = []
+        if (draft.temperature > 0) parts.push(`Temperature ${draft.temperature}`)
+        if (draft.topP > 0) parts.push(`Top P ${draft.topP}`)
+        if (draft.maxTokens > 0) parts.push(`上限 ${draft.maxTokens} Token`)
+        if (draft.extraParams.trim() !== '') parts.push('额外参数')
+        return parts.length === 0 ? '使用模型默认参数' : parts.join(' · ')
+      }
+      case 'search': {
+        const engineLabel =
+          engines.find((engine) => engine.id === search.engine)?.label ?? search.engine
+        return `${engineLabel} · 每次 ${search.maxResults} 条`
+      }
+      case 'multimodal':
+        return mmPreparse ? '已开启 · 附件先行解析' : '已关闭 · 附件直传主模型'
+      case 'autoRead':
+        return autoRead ? '已开启 · 每轮回答自动播报' : '已关闭 · 手动朗读'
+      case 'voice':
+        if (asrModel.trim() !== '') return `转写模型 ${asrModel.trim()}`
+        if (asrBaseUrl.trim() !== '' || asrApiKey.trim() !== '') return '已单独配置转写接口'
+        return '未单独配置 · 复用多模态解析'
+      case 'shell':
+        return shellBack === 'bundled'
+          ? '内置终端 · Termux 用户态'
+          : '系统 Shell · /system/bin/sh'
+    }
+  }
+
   const navItems: SettingsNavItem[] = [
-    { id: 'model', label: '模型配置', hint: '方案与接入', icon: <IconBrain size={17} /> },
-    { id: 'advanced', label: '高级参数', hint: '采样与请求', icon: <IconSettings size={17} /> },
-    { id: 'search', label: '本地联网搜索', hint: '引擎与密钥', icon: <IconGlobe size={17} /> },
-    { id: 'multimodal', label: '多模态解析', hint: '附件先行解析', icon: <IconImage size={17} /> },
-    { id: 'autoRead', label: '自动朗读', hint: '回答自动播报', icon: <IconSpeaker size={17} /> },
-    { id: 'voice', label: '语音输入', hint: '录音转文字', icon: <IconMic size={17} /> }
+    { id: 'model', label: '模型配置', group: 'model', icon: <IconBrain size={20} /> },
+    { id: 'advanced', label: '高级参数', group: 'model', icon: <IconSettings size={20} /> },
+    { id: 'search', label: '本地联网搜索', group: 'capability', icon: <IconGlobe size={20} /> },
+    { id: 'multimodal', label: '多模态解析', group: 'capability', icon: <IconImage size={20} /> },
+    { id: 'autoRead', label: '自动朗读', group: 'voice', icon: <IconSpeaker size={20} /> },
+    { id: 'voice', label: '语音输入', group: 'voice', icon: <IconMic size={20} /> }
   ]
   if (shellAvailable) {
     navItems.push({
       id: 'shell',
       label: '终端执行',
-      hint: '命令执行环境',
-      icon: <IconCode size={17} />
+      group: 'system',
+      icon: <IconCode size={20} />
     })
   }
+
+  const allGroups: Array<{ id: SettingsGroupId; title: string; items: SettingsNavItem[] }> = [
+    { id: 'model', title: '模型', items: navItems.filter((item) => item.group === 'model') },
+    { id: 'capability', title: '能力', items: navItems.filter((item) => item.group === 'capability') },
+    { id: 'voice', title: '声音', items: navItems.filter((item) => item.group === 'voice') },
+    { id: 'system', title: '系统', items: navItems.filter((item) => item.group === 'system') }
+  ]
+  const navGroups = allGroups.filter((group) => group.items.length > 0)
 
   const activeSection = navItems.some((item) => item.id === section) ? section : 'model'
   const activeItem = navItems.find((item) => item.id === activeSection) ?? navItems[0]
 
   const headerTitle = compact && detailOpen ? activeItem.label : '设置'
-  const headerHint = compact
-    ? detailOpen
-      ? '修改会自动保存'
-      : '选择要修改的模块'
-    : '按模块管理模型、搜索、语音与执行环境，修改自动保存'
+  const headerHint = compact ? '' : '按模块管理模型、搜索、语音与执行环境，修改自动保存'
   const showNav = !compact || !detailOpen
   const showPane = !compact || detailOpen
 
   return (
-    <div className="settings-page" aria-label="设置">
+    <div
+      className="settings-page"
+      data-detail={compact ? detailOpen : true}
+      aria-label="设置"
+    >
       <header className="settings-page__head">
         <button
           type="button"
@@ -734,37 +823,44 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
           aria-label={compact && detailOpen ? '返回设置列表' : '返回'}
           onClick={goBack}
         >
-          <IconArrowLeft size={18} />
+          <IconArrowLeft size={19} />
         </button>
         <div className="settings-page__heading">
           <strong>{headerTitle}</strong>
-          <span>{headerHint}</span>
+          {headerHint !== '' ? <span>{headerHint}</span> : null}
         </div>
       </header>
 
       <div className="settings-page__body" data-detail={compact ? detailOpen : true}>
         {showNav ? (
           <nav className="settings-nav" aria-label="设置选项">
-            <div className="settings-nav__title">设置选项</div>
-            {navItems.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className="settings-nav__item"
-                data-active={!compact && item.id === activeSection}
-                aria-current={!compact && item.id === activeSection ? 'page' : undefined}
-                onClick={() => openSection(item.id)}
-              >
-                <span className="settings-nav__icon">{item.icon}</span>
-                <span className="settings-nav__text">
-                  <span>{item.label}</span>
-                  <small>{item.hint}</small>
-                </span>
-                <span className="settings-nav__go" aria-hidden="true">
-                  <IconChevronRight size={16} />
-                </span>
-              </button>
+            {navGroups.map((group) => (
+              <div className="settings-nav__group" key={group.id}>
+                <div className="settings-nav__group-title">{group.title}</div>
+                <div className="settings-nav__group-card">
+                  {group.items.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className="settings-nav__item"
+                      data-active={!compact && item.id === activeSection}
+                      aria-current={!compact && item.id === activeSection ? 'page' : undefined}
+                      onClick={() => openSection(item.id)}
+                    >
+                      <span className="settings-nav__icon">{item.icon}</span>
+                      <span className="settings-nav__text">
+                        <span>{item.label}</span>
+                        <small>{navDetail(item)}</small>
+                      </span>
+                      <span className="settings-nav__go" aria-hidden="true">
+                        <IconChevronRight size={16} />
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
+            <p className="settings-nav__footnote">修改后自动保存，配置仅存储在本机</p>
           </nav>
         ) : null}
 
@@ -783,52 +879,74 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
                   title="配置方案"
                   description="可以并存多套 API 配置，并在其间一键切换；新建方案会复制当前方案的内容。"
                 >
-                  <div className="field field--row">
-                    <div>
-                      <label>配置方案</label>
-                      <Picker
-                        variant="field"
-                        ariaLabel="选择配置方案"
-                        value={settings?.currentApiProfileId ?? ''}
-                        options={profiles.map((p) => ({ value: p.id, label: p.name }))}
-                        onChange={(value) => void switchProfile(value)}
-                      />
-                    </div>
-                    <div>
-                      <label>配置名称</label>
-                      <input
-                        value={profileName}
-                        placeholder="未命名配置"
-                        onChange={(e) => {
-                          setProfileName(e.target.value)
-                          scheduleSave()
-                        }}
-                      />
-                    </div>
+                  <div className="settings-option-list" role="radiogroup" aria-label="配置方案">
+                    {profiles.length === 0 ? (
+                      <div className="settings-option-empty">还没有配置方案</div>
+                    ) : (
+                      profiles.map((p) => {
+                        const active = p.id === settings?.currentApiProfileId
+                        const model = p.config.model || p.config.models?.[0] || ''
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            className="settings-option"
+                            data-active={active}
+                            role="radio"
+                            aria-checked={active}
+                            onClick={() => void switchProfile(p.id)}
+                          >
+                            <span className="settings-option__mark">
+                              {active ? <IconCheck size={13} /> : null}
+                            </span>
+                            <span className="settings-option__text">
+                              <strong>{p.name || '未命名配置'}</strong>
+                              <small>
+                                {providerShort(p.config.provider)}
+                                {model !== '' ? ` · ${model}` : ' · 未配置模型'}
+                              </small>
+                            </span>
+                            {p.config.apiKey.trim() === '' ? (
+                              <span className="settings-option__badge">未配置 Key</span>
+                            ) : null}
+                          </button>
+                        )
+                      })
+                    )}
                   </div>
-                  <div className="settings-actions">
-                    <button className="btn" onClick={() => void addProfile()}>
-                      <IconPlus size={15} />
-                      新建配置
-                    </button>
-                    <button
-                      className="btn btn--danger"
-                      disabled={profiles.length <= 1}
-                      title={profiles.length <= 1 ? '至少要保留一个配置方案' : '删除当前配置方案'}
-                      onClick={() => void removeProfile()}
-                    >
-                      <IconTrash size={15} />
-                      删除当前配置
-                    </button>
+                  <button
+                    type="button"
+                    className="settings-option-add"
+                    onClick={() => void addProfile()}
+                  >
+                    <IconPlus size={16} />
+                    新建配置
+                  </button>
+                </SettingsCard>
+
+                <SettingsCard
+                  title="配置名称"
+                  description="用于在模型选择器中区分不同的配置方案。"
+                >
+                  <div className="field">
+                    <input
+                      value={profileName}
+                      placeholder="未命名配置"
+                      aria-label="配置名称"
+                      onChange={(e) => {
+                        setProfileName(e.target.value)
+                        scheduleSave()
+                      }}
+                    />
                   </div>
                 </SettingsCard>
 
                 <SettingsCard
-                  title="接入方式"
-                  description="按服务商支持的能力选择协议；不确定时使用 OpenAI Completions。"
+                  title="接入与密钥"
+                  description="按服务商支持的能力选择协议，并填写对应的服务地址与密钥。"
                 >
                   <div className="field">
-                    <label>接入方式</label>
+                    <label>接入协议</label>
                     <Picker
                       variant="field"
                       ariaLabel="选择接入方式"
@@ -845,42 +963,30 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
                       placeholder={provider.baseUrlPlaceholder}
                       onChange={(e) => update('baseUrl', e.target.value)}
                     />
-                    {isOpencode ? (
-                      <div className="field__hint">
-                        OpenCode 网关要求每个请求携带会话头 <code>x-opencode-session</code>；
-                        本应用会按对话自动附带，不需要手动填写。Go 套餐的 Base URL 是
-                        <code>https://opencode.ai/inference/go</code>。
-                        注意：同一个方案只能用一种协议，当前按「{provider.label}」发请求。
-                        deepseek-v4.1-flash 支持 Anthropic Messages 与 OpenAI Responses，
-                        不支持 OpenAI Chat Completions；本预置按 Anthropic Messages 接入，
-                        换协议请另建方案。
-                      </div>
-                    ) : null}
                   </div>
 
-                  {/* 协议路径后缀补全开关：自建网关/代理常需要关掉它 */}
-                  <label className="check">
-                    <input
-                      type="checkbox"
-                      checked={draft.autoSuffix}
-                      onChange={(e) => update('autoSuffix', e.target.checked)}
-                    />
-                    <span>
-                      自动补全协议路径后缀
-                      <em>
-                        {draft.autoSuffix
-                          ? `开启后按接入方式自动拼接路径后缀（如 ${provider.suffix}）`
-                          : '关闭后严格按上面填写的 Base URL 发起请求，适合非标准路径的自建网关/代理'}
-                      </em>
-                    </span>
-                  </label>
-                </SettingsCard>
+                  {isOpencode ? (
+                    <SettingsNotice>
+                      OpenCode 网关会自动附带 <code>x-opencode-session</code>，无需手动填写。
+                      Go 套餐地址为 <code>https://opencode.ai/inference/go</code>；同一个方案只能用一种协议。
+                      deepseek-v4.1-flash 仅支持 Anthropic Messages 与 OpenAI Responses，当前按
+                      「{provider.label}」发请求。
+                    </SettingsNotice>
+                  ) : null}
 
-                <SettingsCard
-                  title="凭据与模型"
-                  description="API Key 只保存在本机，不会上传；同一服务商的多个模型共用地址与 Key。"
-                >
-                  <div className="field">
+                  {/* 协议路径后缀补全开关：自建网关/代理常需要关掉它 */}
+                  <SettingsToggle
+                    title="自动补全 API 路径"
+                    description={
+                      draft.autoSuffix
+                        ? `开启后按接入方式自动拼接路径后缀（如 ${provider.suffix}）`
+                        : '关闭后严格按上面填写的 Base URL 发起请求，适合非标准路径的自建网关/代理'
+                    }
+                    checked={draft.autoSuffix}
+                    onChange={(checked) => update('autoSuffix', checked)}
+                  />
+
+                  <div className="field settings-field--separated">
                     <label>API Key</label>
                     <input
                       type="password"
@@ -890,72 +996,86 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
                     />
                     <div className="field__hint">{credentialHint(settings?.credentialState)}</div>
                   </div>
+                </SettingsCard>
 
-                  {/* 一个服务商多个模型：Base URL / Key 只配一次，模型之间点一下就切换 */}
-                  <div className="field">
-                    <label>模型（可添加多个）</label>
-                    <div className="settings-models" role="radiogroup" aria-label="模型列表">
-                      {draft.models.length === 0 ? (
-                        <div className="settings-models__empty">还没有模型，先在下面添加一个</div>
-                      ) : (
-                        draft.models.map((name) => {
-                          const active = name === draft.model
-                          return (
-                            <div className="settings-model" data-active={active} key={name}>
-                              <button
-                                type="button"
-                                className="settings-model__pick"
-                                role="radio"
-                                aria-checked={active}
-                                title={active ? '当前模型' : `切换到 ${name}`}
-                                onClick={() => update('model', name)}
-                              >
-                                <span className="settings-model__name">{name}</span>
-                                {active ? (
-                                  <span className="settings-model__badge">
-                                    <IconCheck size={11} />
-                                    当前
-                                  </span>
-                                ) : null}
-                              </button>
-                              <button
-                                type="button"
-                                className="icon-btn settings-model__remove"
-                                title={`删除模型 ${name}`}
-                                onClick={() => removeModel(name)}
-                              >
-                                <IconTrash size={14} />
-                              </button>
-                            </div>
-                          )
-                        })
-                      )}
-                    </div>
-                    <div className="settings-model-add">
-                      <input
-                        value={newModel}
-                        placeholder={provider.modelPlaceholder}
-                        aria-label="要添加的模型名称"
-                        onChange={(e) => setNewModel(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault()
-                            addModel()
-                          }
-                        }}
-                      />
-                      <button className="btn" onClick={addModel} disabled={newModel.trim() === ''}>
-                        添加模型
-                      </button>
-                    </div>
-                    <div className="field__hint">
-                      点模型行把它设为当前模型；发送时使用当前模型。
-                    </div>
+                {/* 一个服务商多个模型：Base URL / Key 只配一次，模型之间点一下就切换 */}
+                <SettingsCard
+                  title="模型"
+                  description="同一服务商的多个模型共用上面的地址与 Key，点选即切换当前模型。"
+                >
+                  <div className="settings-option-list" role="radiogroup" aria-label="模型列表">
+                    {draft.models.length === 0 ? (
+                      <div className="settings-option-empty">还没有模型，先在下面添加一个</div>
+                    ) : (
+                      draft.models.map((name) => {
+                        const active = name === draft.model
+                        return (
+                          <div className="settings-option" data-active={active} key={name}>
+                            <button
+                              type="button"
+                              className="settings-option__main"
+                              role="radio"
+                              aria-checked={active}
+                              title={active ? '当前模型' : `切换到 ${name}`}
+                              onClick={() => update('model', name)}
+                            >
+                              <span className="settings-option__mark">
+                                {active ? <IconCheck size={13} /> : null}
+                              </span>
+                              <span className="settings-option__text">
+                                <strong>{name}</strong>
+                                {active ? <small>当前模型</small> : null}
+                              </span>
+                            </button>
+                            <button
+                              type="button"
+                              className="icon-btn settings-option__action"
+                              title={`删除模型 ${name}`}
+                              onClick={() => removeModel(name)}
+                            >
+                              <IconTrash size={14} />
+                            </button>
+                          </div>
+                        )
+                      })
+                    )}
+                  </div>
+                  <div className="settings-model-add">
+                    <input
+                      value={newModel}
+                      placeholder={provider.modelPlaceholder}
+                      aria-label="要添加的模型名称"
+                      onChange={(e) => setNewModel(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          addModel()
+                        }
+                      }}
+                    />
+                    <button
+                      className="btn btn--primary"
+                      onClick={addModel}
+                      disabled={newModel.trim() === ''}
+                    >
+                      添加
+                    </button>
                   </div>
                 </SettingsCard>
 
                 {/* 接入方式说明（原版 getHint() 828-839 的三段文案，随接入方式变化）。 */}
-                <div className="settings-note">{provider.hint}</div>
+                <SettingsNotice>{provider.hint}</SettingsNotice>
+
+                <button
+                  type="button"
+                  className="settings-danger"
+                  disabled={profiles.length <= 1}
+                  title={profiles.length <= 1 ? '至少要保留一个配置方案' : '删除当前配置方案'}
+                  onClick={() => void removeProfile()}
+                >
+                  <IconTrash size={15} />
+                  删除当前配置
+                </button>
               </>
             ) : null}
 
@@ -1023,9 +1143,9 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
 
             {activeSection === 'search' ? (
               <>
-                <div className="settings-note">{SEARCH_INTRO}</div>
+                <SettingsNotice>{SEARCH_INTRO}</SettingsNotice>
                 <SettingsCard
-                  title="搜索引擎"
+                  title="搜索通道"
                   description="选择本机直连的搜索通道；不同引擎的密钥与端点各自独立。"
                 >
                   <div className="field field--row">
@@ -1086,30 +1206,25 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
             {activeSection === 'multimodal' ? (
               <>
                 <SettingsCard
-                  title="附件先行解析"
+                  title="附件解析"
                   description="默认关闭。开启后，图片与文档先交给独立的多模态模型解析，再把文本交给主模型。"
                 >
-                  <label className="check">
-                    <input
-                      type="checkbox"
-                      checked={mmPreparse}
-                      onChange={(e) => {
-                        setMmPreparse(e.target.checked)
-                        scheduleSave()
-                      }}
-                    />
-                    <span>
-                      先行解析附件
-                      <em>
-                        {mmPreparse
-                          ? '已开启：先由下方独立 API 解析，再将文本交给主模型'
-                          : '已关闭：图片和文档将直接传给当前接入方式的主模型'}
-                      </em>
-                    </span>
-                  </label>
+                  <SettingsToggle
+                    title="先行解析附件"
+                    description={
+                      mmPreparse
+                        ? '已开启：先由下方独立 API 解析，再将文本交给主模型'
+                        : '已关闭：图片和文档将直接传给当前接入方式的主模型'
+                    }
+                    checked={mmPreparse}
+                    onChange={(checked) => {
+                      setMmPreparse(checked)
+                      scheduleSave()
+                    }}
+                  />
 
-                  <div className="field__hint">
-                    默认使用 GLM-4.6V-Flash（免费API调用，请在智谱官网获取API Key），推荐使用
+                  <div className="field__hint settings-field--separated">
+                    默认使用 GLM-4.6V-Flash（免费 API，请在智谱官网获取 Key），推荐使用
                     Doubao-Seed-2.0-mini 等轻量多模态模型。
                   </div>
                 </SettingsCard>
@@ -1165,29 +1280,25 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
                 title="朗读行为"
                 description="只在一轮回答生成完成时触发，不影响历史消息。"
               >
-                <label className="check">
-                  <input
-                    type="checkbox"
-                    checked={autoRead}
-                    onChange={(e) => setAutoRead(e.target.checked)}
-                  />
-                  <span>
-                    开启自动朗读
-                    <em>
-                      开启后每轮回答生成完会自动念一遍（音色与语速在朗读控制条里调）；
-                      关掉时正在念的会立刻停下
-                    </em>
-                  </span>
-                </label>
+                <SettingsToggle
+                  title="开启自动朗读"
+                  description={
+                    autoRead
+                      ? '每轮回答生成完会自动念一遍；音色与语速在朗读控制条里调整'
+                      : '关闭时不会自动播放，正在朗读的内容也会立刻停下'
+                  }
+                  checked={autoRead}
+                  onChange={setAutoRead}
+                />
               </SettingsCard>
             ) : null}
 
             {activeSection === 'voice' ? (
               <>
-                <div className="settings-note">
-                  当前版本没有端侧识别可用，走 OpenAI 兼容的 /audio/transcriptions 接口。
-                  留空则复用「多模态解析」的地址与 Key。
-                </div>
+                <SettingsNotice>
+                  当前版本没有端侧识别可用，走 OpenAI 兼容的 <code>/audio/transcriptions</code>{' '}
+                  接口。留空则复用「多模态解析」的地址与 Key。
+                </SettingsNotice>
                 <SettingsCard
                   title="转写服务"
                   description="三个字段都可留空；留空时按占位提示回落到多模态解析配置。"
@@ -1234,36 +1345,48 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
 
             {activeSection === 'shell' && shellAvailable ? (
               <>
-                <div className="settings-note">
-                  工作模式里的 <code>run_command</code> 默认走<b>随包内置的 Termux 用户态</b>：
-                  真正的 bash、coreutils、grep/sed/awk/tar，不需要另外安装 Termux。
-                  命令在你的会话工作区真实目录里执行，执行前的文件会先落地、执行后再同步回工作区。
-                </div>
+                <SettingsNotice>
+                  工作模式里的 <code>run_command</code> 默认走随包内置的 Termux 用户态：
+                  bash、coreutils、grep/sed/awk/tar 都可直接使用，不需要另外安装 Termux。
+                  命令在会话工作区真实目录里执行，执行前落地、执行后同步回工作区。
+                </SettingsNotice>
 
                 <SettingsCard
                   title="执行后端"
                   description="切换后下一条命令生效；两种后端使用同一份工作区镜像。"
                 >
-                  <div className="settings-segment" role="radiogroup" aria-label="终端后端">
+                  <div className="settings-option-list" role="radiogroup" aria-label="终端后端">
                     <button
                       type="button"
+                      className="settings-option"
+                      data-active={shellBack === 'bundled'}
                       role="radio"
                       aria-checked={shellBack === 'bundled'}
-                      data-active={shellBack === 'bundled'}
                       onClick={() => chooseShellBackend('bundled')}
                     >
-                      <span>内置终端</span>
-                      <small>随包 Termux 用户态</small>
+                      <span className="settings-option__mark">
+                        {shellBack === 'bundled' ? <IconCheck size={13} /> : null}
+                      </span>
+                      <span className="settings-option__text">
+                        <strong>内置终端</strong>
+                        <small>随包 Termux 用户态</small>
+                      </span>
                     </button>
                     <button
                       type="button"
+                      className="settings-option"
+                      data-active={shellBack === 'system'}
                       role="radio"
                       aria-checked={shellBack === 'system'}
-                      data-active={shellBack === 'system'}
                       onClick={() => chooseShellBackend('system')}
                     >
-                      <span>系统 Shell</span>
-                      <small>Android 自带 /system/bin/sh</small>
+                      <span className="settings-option__mark">
+                        {shellBack === 'system' ? <IconCheck size={13} /> : null}
+                      </span>
+                      <span className="settings-option__text">
+                        <strong>系统 Shell</strong>
+                        <small>Android 自带 /system/bin/sh</small>
+                      </span>
                     </button>
                   </div>
 
