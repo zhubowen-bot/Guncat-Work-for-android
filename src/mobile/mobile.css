@@ -398,6 +398,11 @@ body.platform-android code {
     color: var(--text);
   }
 
+  .settings-page__back svg {
+    width: 24px;
+    height: 24px;
+  }
+
   .settings-page__heading span {
     display: none;
   }
@@ -450,9 +455,9 @@ body.platform-android code {
   }
 
   .settings-nav__item {
-    gap: 14px;
-    min-height: 78px;
-    padding: 14px 16px;
+    gap: 15px;
+    min-height: 84px;
+    padding: 15px 16px;
     border-radius: 0;
     background: transparent;
     color: var(--text);
@@ -473,9 +478,14 @@ body.platform-android code {
   }
 
   .settings-nav__icon {
+    width: 36px;
+    height: 36px;
+    color: var(--accent);
+  }
+
+  .settings-nav__icon svg {
     width: 28px;
     height: 28px;
-    color: var(--accent);
   }
 
   .settings-nav__item[data-active='true'] .settings-nav__icon {
@@ -594,8 +604,13 @@ body.platform-android code {
   }
 
   .settings-option {
-    min-height: 52px;
+    min-height: 56px;
     padding: 10px;
+  }
+
+  .settings-option__mark {
+    width: 26px;
+    height: 26px;
   }
 
   .settings-option-add {
@@ -606,6 +621,13 @@ body.platform-android code {
 
   .settings-model-add {
     gap: 10px;
+  }
+
+  .settings-card__body .settings-model-add input {
+    height: 48px;
+    padding: 0 14px;
+    border-radius: 13px;
+    font-size: 16px;
   }
 
   .settings-model-add .btn {

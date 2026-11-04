@@ -389,7 +389,7 @@ function SettingsNotice(props: { children: ReactNode }) {
   return (
     <div className="settings-notice">
       <span className="settings-notice__icon" aria-hidden="true">
-        <IconInfo size={15} />
+        <IconInfo size={16} />
       </span>
       <div>{props.children}</div>
     </div>
@@ -777,19 +777,19 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
   }
 
   const navItems: SettingsNavItem[] = [
-    { id: 'model', label: '模型配置', group: 'model', icon: <IconBrain size={20} /> },
-    { id: 'advanced', label: '高级参数', group: 'model', icon: <IconSettings size={20} /> },
-    { id: 'search', label: '本地联网搜索', group: 'capability', icon: <IconGlobe size={20} /> },
-    { id: 'multimodal', label: '多模态解析', group: 'capability', icon: <IconImage size={20} /> },
-    { id: 'autoRead', label: '自动朗读', group: 'voice', icon: <IconSpeaker size={20} /> },
-    { id: 'voice', label: '语音输入', group: 'voice', icon: <IconMic size={20} /> }
+    { id: 'model', label: '模型配置', group: 'model', icon: <IconBrain size={22} /> },
+    { id: 'advanced', label: '高级参数', group: 'model', icon: <IconSettings size={22} /> },
+    { id: 'search', label: '本地联网搜索', group: 'capability', icon: <IconGlobe size={22} /> },
+    { id: 'multimodal', label: '多模态解析', group: 'capability', icon: <IconImage size={22} /> },
+    { id: 'autoRead', label: '自动朗读', group: 'voice', icon: <IconSpeaker size={22} /> },
+    { id: 'voice', label: '语音输入', group: 'voice', icon: <IconMic size={22} /> }
   ]
   if (shellAvailable) {
     navItems.push({
       id: 'shell',
       label: '终端执行',
       group: 'system',
-      icon: <IconCode size={20} />
+      icon: <IconCode size={22} />
     })
   }
 
@@ -823,7 +823,7 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
           aria-label={compact && detailOpen ? '返回设置列表' : '返回'}
           onClick={goBack}
         >
-          <IconArrowLeft size={19} />
+          <IconArrowLeft size={22} />
         </button>
         <div className="settings-page__heading">
           <strong>{headerTitle}</strong>
@@ -853,7 +853,7 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
                         <small>{navDetail(item)}</small>
                       </span>
                       <span className="settings-nav__go" aria-hidden="true">
-                        <IconChevronRight size={16} />
+                        <IconChevronRight size={18} />
                       </span>
                     </button>
                   ))}
@@ -897,7 +897,7 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
                             onClick={() => void switchProfile(p.id)}
                           >
                             <span className="settings-option__mark">
-                              {active ? <IconCheck size={13} /> : null}
+                              {active ? <IconCheck size={14} /> : null}
                             </span>
                             <span className="settings-option__text">
                               <strong>{p.name || '未命名配置'}</strong>
@@ -1020,7 +1020,7 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
                               onClick={() => update('model', name)}
                             >
                               <span className="settings-option__mark">
-                                {active ? <IconCheck size={13} /> : null}
+                                {active ? <IconCheck size={14} /> : null}
                               </span>
                               <span className="settings-option__text">
                                 <strong>{name}</strong>
@@ -1033,7 +1033,7 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
                               title={`删除模型 ${name}`}
                               onClick={() => removeModel(name)}
                             >
-                              <IconTrash size={14} />
+                              <IconTrash size={15} />
                             </button>
                           </div>
                         )
@@ -1365,7 +1365,7 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
                       onClick={() => chooseShellBackend('bundled')}
                     >
                       <span className="settings-option__mark">
-                        {shellBack === 'bundled' ? <IconCheck size={13} /> : null}
+                        {shellBack === 'bundled' ? <IconCheck size={14} /> : null}
                       </span>
                       <span className="settings-option__text">
                         <strong>内置终端</strong>
@@ -1381,7 +1381,7 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
                       onClick={() => chooseShellBackend('system')}
                     >
                       <span className="settings-option__mark">
-                        {shellBack === 'system' ? <IconCheck size={13} /> : null}
+                        {shellBack === 'system' ? <IconCheck size={14} /> : null}
                       </span>
                       <span className="settings-option__text">
                         <strong>系统 Shell</strong>

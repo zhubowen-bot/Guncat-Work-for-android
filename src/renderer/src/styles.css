@@ -3619,9 +3619,14 @@ select {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   color: var(--text-muted);
+}
+
+.settings-nav__icon svg {
+  width: 22px;
+  height: 22px;
 }
 
 .settings-nav__item[data-active='true'] .settings-nav__icon {
@@ -3656,6 +3661,11 @@ select {
 
 .settings-nav__go {
   display: none;
+}
+
+.settings-nav__go svg {
+  width: 18px;
+  height: 18px;
 }
 
 .settings-nav__footnote {
@@ -3938,8 +3948,8 @@ select {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   border: 1.5px solid var(--text-quaternary);
   border-radius: 50%;
   color: #fff;
@@ -4034,6 +4044,24 @@ select {
 
 .settings-model-add input {
   flex: 1;
+  min-width: 0;
+  height: 44px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: var(--bg-sunken);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.4;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+
+.settings-model-add input:focus {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent);
+  background: var(--bg-elevated);
 }
 
 .settings-model-add .btn {
