@@ -129,7 +129,7 @@ PDF 三件套（`parse_document` / `search_pdf` / `pdf_to_images`）与桌面端
 | 内置终端（默认） | `abcd/bin/bash --noprofile --norc -c <command>` | Termux 用户态：bash、coreutils、grep/sed/awk、tar、curl、apt、**Python 3.14、pip、Git** | 工作区的设备镜像目录 |
 | 系统 Shell（兜底） | `/system/bin/sh -c <command>`（mksh）+ toybox | 管道/重定向/通配符 + 系统命令；无 Python/Git | 工作区的设备镜像目录 |
 
-后端选择存在 `localStorage.guncat.shellBackend`，设置页「终端命令执行 (Shell)」可切换。
+后端选择存在 `localStorage.guncat.shellBackend`，设置页「终端执行」可切换。
 默认内置终端 —— 用户不需要安装 Termux。
 
 ### 4.2 为什么内置终端能执行：路径与 targetSdk

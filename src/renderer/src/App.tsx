@@ -6,7 +6,7 @@ import { Composer } from './components/Composer'
 import { Timeline } from './components/Timeline'
 import { WorkspacePanel } from './components/WorkspacePanel'
 import { Picker } from './components/Picker'
-import { SettingsDialog } from './components/SettingsDialog'
+import { SettingsPage } from './components/SettingsPage'
 import { SpeechBar } from './components/SpeechBar'
 import { agentById, isVirtualAgentId } from './conversations'
 import { AgentGlyph } from './components/AgentGlyph'
@@ -81,6 +81,7 @@ export default function App() {
   const artifacts = useStore((s) => s.artifacts)
   const openTableOcr = useStore((s) => s.openTableOcr)
   const settings = useStore((s) => s.settings)
+  const settingsOpen = useStore((s) => s.settingsOpen)
   const reloadSettings = useStore((s) => s.reloadSettings)
   const profiles = settings?.apiProfiles ?? []
   const currentProfile = profiles.find((p) => p.id === settings?.currentApiProfileId)
@@ -287,167 +288,170 @@ export default function App() {
         void intakeFiles(paths)
       }}
     >
-      {dragging ? (
-        <div className="dropzone">
-          <div className="dropzone__box">松开即可把文件导入当前会话工作区</div>
-        </div>
-      ) : null}
-      {sidebarOpen ? (
-        <div className="mobile-backdrop" onClick={closeSidebar} aria-hidden="true" />
-      ) : null}
-      <Sidebar />
-
-      <main className="main">
-        <div className="topbar">
-          <button
-            className="mobile-icon-btn mobile-menu-btn"
-            aria-label="打开会话列表"
-            onClick={openSidebar}
-          >
-            <IconSidebar size={20} />
-          </button>
-          <div className="topbar__title">
-            <strong>{active?.title || engine?.name || '新会话'}</strong>
-          </div>
-          <button
-            className="mobile-icon-btn mobile-workspace-btn"
-            aria-label={showWorkspace ? '关闭工作区' : '打开工作区'}
-            data-active={showWorkspace}
-            onClick={() => toggleWorkspace()}
-          >
-            <IconFolder size={20} />
-          </button>
-
-          {/* 能力预设（推理强度）：对齐原版 ChatPage 输入区「模型」胶囊弹层下半部分。
-              档位按形态分叉，且是**两个独立字段、两个偏好键**：
-                工作模式 极高(max) / 均衡(high) / 快速(low)，缺省 high；
-                交互模式 均衡(high) / 快速(low) / 关闭(off)，缺省 **low**（首答速度优先）。
-              此前这个值被写死在主进程里，工作模式永远拿不到 Max 档；
-              交互模式的「关闭」也被错写成了 'none'。 */}
-          {mode !== 'chat' ? (
-            <Picker
-              variant="plain"
-              triggerClassName="topbar__effort"
-              prefix="推理"
-              title="推理强度（越高越慢，长程复杂任务建议拉满）"
-              ariaLabel="选择推理强度"
-              value={mode === 'interactive' ? interactiveEffort : reasoningEffort}
-              disabled={running}
-              options={
-                mode === 'interactive'
-                  ? [
-                      { value: 'high', label: '均衡' },
-                      { value: 'low', label: '快速' },
-                      { value: 'off', label: '关闭' }
-                    ]
-                  : [
-                      { value: 'max', label: '极高' },
-                      { value: 'high', label: '均衡' },
-                      { value: 'low', label: '快速' }
-                    ]
-              }
-              onChange={(value) =>
-                mode === 'interactive' ? setInteractiveEffort(value) : setReasoningEffort(value)
-              }
-            />
+      {settingsOpen ? <SettingsPage /> : (
+        <>
+          {dragging ? (
+            <div className="dropzone">
+              <div className="dropzone__box">松开即可把文件导入当前会话工作区</div>
+            </div>
           ) : null}
-          {/* 模型胶囊（对齐原版 ChatPage 输入区左下角那颗）：直接在这儿换配置，
-              不必进设置。原版弹层上半部分就是配置列表 —— 这里用一个下拉等价表达。 */}
-          {currentModelValue !== '' ? (
-            <Picker
-              variant="plain"
-              triggerClassName="topbar__model"
-              title="当前模型（同一服务商可配多个模型，切换即换模型）"
-              ariaLabel="选择模型"
-              value={currentModelValue}
-              disabled={running}
-              options={modelOptions}
-              onChange={(value) => void switchModel(value)}
-            />
+          {sidebarOpen ? (
+            <div className="mobile-backdrop" onClick={closeSidebar} aria-hidden="true" />
           ) : null}
-          {/* 表格提取：原版唯一不依赖对话的独立工具页，入口在顶栏（桌面端没有 pages/ 概念） */}
-          <button
-            className="toggle"
-            title="表格提取（选一张表格图片，用视觉模型识别成 HTML 表格）"
-            onClick={() => openTableOcr(true)}
-          >
-            <IconTable size={14} />
-            表格提取
-          </button>
-          {/* 深度思考开关：**只在聊天模式给**。
-              原版 ChatPage 在 agentLoopMode（工作/交互）下不渲染它 —— 那两种形态的思考由
-              「智能体的默认值（效率/轻简模式默认关、专家模式默认开）」与交互模式的
-              「关闭(Off)」档位决定，再多一个开关只会和档位打架。 */}
-          {mode === 'chat' ? (
-            <button
-              className="toggle"
-              data-on={thinkingEnabled}
-              onClick={() => setThinking(!thinkingEnabled)}
-              title="深度思考（按各协议显式控制）"
-            >
-              <IconBrain size={14} />
-              深度思考
-            </button>
-          ) : null}
-          <button
-            className="toggle"
-            data-on={webSearchEnabled}
-            onClick={() => setWebSearch(!webSearchEnabled)}
-            title="服务端联网搜索（本地内置搜索工具始终可用）"
-          >
-            <IconGlobe size={14} />
-            联网搜索
-          </button>
-        </div>
+          <Sidebar />
 
-        <div className="timeline" ref={scrollRef}>
-          <div className="timeline__inner">
-            {active === null || active.messages.length === 0 ? (
-              <>
-                <EmptyState mode={mode} engine={engine} />
-                {/* 新建会话页的形态胶囊：交互 / 工作一键切换（聊天形态不显示） */}
-                <ModeSwitch />
-              </>
-            ) : (
-              <>
-                <Timeline
-                  messages={active.messages}
-                  mode={mode}
-                  running={running}
-                  lastAssistantId={lastAssistantId}
-                  onEditToInput={fillDraft}
+          <main className="main">
+            <div className="topbar">
+              <button
+                className="mobile-icon-btn mobile-menu-btn"
+                aria-label="打开会话列表"
+                onClick={openSidebar}
+              >
+                <IconSidebar size={20} />
+              </button>
+              <div className="topbar__title">
+                <strong>{active?.title || engine?.name || '新会话'}</strong>
+              </div>
+              <button
+                className="mobile-icon-btn mobile-workspace-btn"
+                aria-label={showWorkspace ? '关闭工作区' : '打开工作区'}
+                data-active={showWorkspace}
+                onClick={() => toggleWorkspace()}
+              >
+                <IconFolder size={20} />
+              </button>
+
+              {/* 能力预设（推理强度）：对齐原版 ChatPage 输入区「模型」胶囊弹层下半部分。
+                  档位按形态分叉，且是**两个独立字段、两个偏好键**：
+                    工作模式 极高(max) / 均衡(high) / 快速(low)，缺省 high；
+                    交互模式 均衡(high) / 快速(low) / 关闭(off)，缺省 **low**（首答速度优先）。
+                  此前这个值被写死在主进程里，工作模式永远拿不到 Max 档；
+                  交互模式的「关闭」也被错写成了 'none'。 */}
+              {mode !== 'chat' ? (
+                <Picker
+                  variant="plain"
+                  triggerClassName="topbar__effort"
+                  prefix="推理"
+                  title="推理强度（越高越慢，长程复杂任务建议拉满）"
+                  ariaLabel="选择推理强度"
+                  value={mode === 'interactive' ? interactiveEffort : reasoningEffort}
+                  disabled={running}
+                  options={
+                    mode === 'interactive'
+                      ? [
+                          { value: 'high', label: '均衡' },
+                          { value: 'low', label: '快速' },
+                          { value: 'off', label: '关闭' }
+                        ]
+                      : [
+                          { value: 'max', label: '极高' },
+                          { value: 'high', label: '均衡' },
+                          { value: 'low', label: '快速' }
+                        ]
+                  }
+                  onChange={(value) =>
+                    mode === 'interactive' ? setInteractiveEffort(value) : setReasoningEffort(value)
+                  }
                 />
-                {/* 产物汇总卡挂在对话流末尾（对齐原版 ChatPage 把 WorkArtifactsCard
-                    放在时间线之后）：聊天模式没有产物概念，不给。 */}
-                {mode !== 'chat' && artifacts !== null && !running ? (
-                  <WorkArtifactsCard artifacts={artifacts} onPreview={openWorkspaceFile} />
-                ) : null}
-              </>
-            )}
-          </div>
-        </div>
+              ) : null}
+              {/* 模型胶囊（对齐原版 ChatPage 输入区左下角那颗）：直接在这儿换配置，
+                  不必进设置。原版弹层上半部分就是配置列表 —— 这里用一个下拉等价表达。 */}
+              {currentModelValue !== '' ? (
+                <Picker
+                  variant="plain"
+                  triggerClassName="topbar__model"
+                  title="当前模型（同一服务商可配多个模型，切换即换模型）"
+                  ariaLabel="选择模型"
+                  value={currentModelValue}
+                  disabled={running}
+                  options={modelOptions}
+                  onChange={(value) => void switchModel(value)}
+                />
+              ) : null}
+              {/* 表格提取：原版唯一不依赖对话的独立工具页，入口在顶栏（桌面端没有 pages/ 概念） */}
+              <button
+                className="toggle"
+                title="表格提取（选一张表格图片，用视觉模型识别成 HTML 表格）"
+                onClick={() => openTableOcr(true)}
+              >
+                <IconTable size={14} />
+                表格提取
+              </button>
+              {/* 深度思考开关：**只在聊天模式给**。
+                  原版 ChatPage 在 agentLoopMode（工作/交互）下不渲染它 —— 那两种形态的思考由
+                  「智能体的默认值（效率/轻简模式默认关、专家模式默认开）」与交互模式的
+                  「关闭(Off)」档位决定，再多一个开关只会和档位打架。 */}
+              {mode === 'chat' ? (
+                <button
+                  className="toggle"
+                  data-on={thinkingEnabled}
+                  onClick={() => setThinking(!thinkingEnabled)}
+                  title="深度思考（按各协议显式控制）"
+                >
+                  <IconBrain size={14} />
+                  深度思考
+                </button>
+              ) : null}
+              <button
+                className="toggle"
+                data-on={webSearchEnabled}
+                onClick={() => setWebSearch(!webSearchEnabled)}
+                title="服务端联网搜索（本地内置搜索工具始终可用）"
+              >
+                <IconGlobe size={14} />
+                联网搜索
+              </button>
+            </div>
 
-        <Composer
-          running={running}
-          mode={mode}
-          onSend={(text, attachmentPaths) => void send(text, attachmentPaths)}
-          onSteer={steer}
-          onAbort={() => void abort()}
-        />
-      </main>
+            <div className="timeline" ref={scrollRef}>
+              <div className="timeline__inner">
+                {active === null || active.messages.length === 0 ? (
+                  <>
+                    <EmptyState mode={mode} engine={engine} />
+                    {/* 新建会话页的形态胶囊：交互 / 工作一键切换（聊天形态不显示） */}
+                    <ModeSwitch />
+                  </>
+                ) : (
+                  <>
+                    <Timeline
+                      messages={active.messages}
+                      mode={mode}
+                      running={running}
+                      lastAssistantId={lastAssistantId}
+                      onEditToInput={fillDraft}
+                    />
+                    {/* 产物汇总卡挂在对话流末尾（对齐原版 ChatPage 把 WorkArtifactsCard
+                        放在时间线之后）：聊天模式没有产物概念，不给。 */}
+                    {mode !== 'chat' && artifacts !== null && !running ? (
+                      <WorkArtifactsCard artifacts={artifacts} onPreview={openWorkspaceFile} />
+                    ) : null}
+                  </>
+                )}
+              </div>
+            </div>
 
-      {showWorkspace ? <WorkspacePanel /> : null}
+            <Composer
+              running={running}
+              mode={mode}
+              onSend={(text, attachmentPaths) => void send(text, attachmentPaths)}
+              onSteer={steer}
+              onAbort={() => void abort()}
+            />
+          </main>
 
-      {/* 文件预览弹层只渲染这一份：工作区面板与产物汇总卡点开的都是 store 里的同一个目标
-          （弹层不能挤进 300 多像素宽的面板里，正文根本读不了） */}
-      <WorkspacePreviewOverlay />
-      {/* 导出 / 分享弹层只渲染这一份：工作区、单文件、消息 Word 共用 */}
-      <TransferSheet />
+          {showWorkspace ? <WorkspacePanel /> : null}
 
-      <SettingsDialog />
-      <TableOcrDialog />
-      <ImageLightbox />
-      <SpeechBar />
+          {/* 文件预览弹层只渲染这一份：工作区面板与产物汇总卡点开的都是 store 里的同一个目标
+              （弹层不能挤进 300 多像素宽的面板里，正文根本读不了） */}
+          <WorkspacePreviewOverlay />
+          {/* 导出 / 分享弹层只渲染这一份：工作区、单文件、消息 Word 共用 */}
+          <TransferSheet />
+
+          <TableOcrDialog />
+          <ImageLightbox />
+          <SpeechBar />
+        </>
+      )}
       <Notice />
     </div>
   )

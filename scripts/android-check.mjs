@@ -525,9 +525,14 @@ try {
   await page.waitForTimeout(400)
   await page.click('.foot-btn:last-child')
   await page.waitForTimeout(400)
-  check('全屏设置页', await page.locator('.dialog').isVisible())
+  check('全屏设置页', await page.locator('.settings-page').isVisible())
+  check(
+    '设置首屏是一级列表（逐条入口，详情不在首帧）',
+    (await page.locator('.settings-nav__item').count()) >= 6 &&
+      (await page.locator('.settings-pane').count()) === 0
+  )
   await page.screenshot({ path: path.join(SHOTS, 'settings.png') })
-  await page.click('.dialog__head .icon-btn')
+  await page.click('.settings-page__back')
   await page.waitForTimeout(300)
 
   const shell = await page.evaluate(() => {

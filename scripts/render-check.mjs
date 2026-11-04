@@ -1291,43 +1291,63 @@ check(
   mdWithImage.slice(mdWithImage.indexOf('<img'), mdWithImage.indexOf('<img') + 80)
 )
 
-// --- 设置面板（对齐原版 views/SettingsPanel.ets） ---
-console.log('\n30. 设置面板')
+// --- 设置页（对齐原版 views/SettingsPanel.ets） ---
+console.log('\n30. 设置页')
 const settingsHtml = mod.renderSettings()
 const settingsText = decode(settingsHtml)
 check(
-  '面板整体可渲染（标题 + 表单主体）',
-  settingsHtml.includes('dialog__body') && settingsText.includes('设置')
+  '设置页整体可渲染（标题 + 模块导航 + 内容区），且没有保存按钮',
+  settingsHtml.includes('settings-page') &&
+    settingsHtml.includes('settings-nav') &&
+    settingsText.includes('设置') &&
+    !settingsHtml.includes('settings-page__save') &&
+    !settingsText.includes('保存中')
 )
 check(
-  '设置页所有配置块都是可折叠小节（高级参数 / 搜索 / 多模态 / 自动朗读 / 语音输入）',
-  settingsText.includes('高级模型参数') &&
+  '设置项拆成独立导航（模型 / 高级参数 / 搜索 / 多模态 / 自动朗读 / 语音）',
+  settingsText.includes('模型配置') &&
+    settingsText.includes('高级参数') &&
     settingsText.includes('本地联网搜索') &&
-    settingsText.includes('多模态解析 API (可选)') &&
-    settingsText.includes('自动朗读回答') &&
-    settingsText.includes('语音输入（录音转文字）')
+    settingsText.includes('多模态解析') &&
+    settingsText.includes('自动朗读') &&
+    settingsText.includes('语音输入') &&
+    settingsHtml.includes('settings-nav__item')
+)
+const mobileSettingsHtml = mod.renderSettingsMobile()
+const mobileSettingsText = decode(mobileSettingsHtml)
+check(
+  '手机首帧是一级列表：只有逐条入口，没有详情、没有顶栏保存',
+  mobileSettingsHtml.includes('settings-nav__item') &&
+    mobileSettingsHtml.includes('settings-nav__go') &&
+    !mobileSettingsHtml.includes('settings-pane') &&
+    mobileSettingsText.includes('模型配置') &&
+    mobileSettingsText.includes('语音输入') &&
+    !mobileSettingsHtml.includes('settings-page__save')
 )
 check(
-  '小节缺省全部收起（高级参数、自动朗读、语音输入的首帧内容都不出现）',
-  !settingsText.includes('数值越低回答越确定') &&
+  '首帧只渲染当前选项（模型配置），其他选项内容不出现',
+  settingsText.includes('配置方案') &&
+    settingsText.includes('接入方式') &&
+    settingsText.includes('凭据与模型') &&
+    !settingsText.includes('数值越低回答越确定') &&
     !settingsText.includes('先行解析附件') &&
     !settingsText.includes('开启后每轮回答生成完会自动念一遍') &&
     !settingsText.includes('转写 Base URL') &&
     !settingsHtml.includes('settings-section__body'),
-  '开合状态由 data-open 与条件渲染共同决定'
+  '切换选项才换内容，不再把所有配置堆在一页'
 )
 check(
-  '开合指示是 SVG 图标而不是几何符号（check-emoji 会拦 ▲ / ▼）',
-  settingsHtml.includes('settings-section__caret') &&
+  '设置页用 SVG 图标而不是几何符号（check-emoji 会拦 ▲ / ▼）',
+  settingsHtml.includes('settings-nav__icon') &&
     !settingsHtml.includes('▲') &&
     !settingsHtml.includes('▼')
 )
 check(
   'Base URL 占位符按当前接入方式给出',
   settingsHtml.includes('https://api.openai.com/v1 或 https://api.deepseek.com')
-) 
+)
 check(
-  '底部接入方式提示就是原版 completions 那一段',
+  '接入方式提示随配置变化（模型配置页底部）',
   settingsText.includes('通用API接入方式') &&
     settingsText.includes('建议切换 Responses API 或 Anthropic API 选项')
 )

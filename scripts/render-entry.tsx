@@ -59,13 +59,13 @@ import {
 } from '@renderer/components/MentionPopup'
 import { AttachmentBar } from '@renderer/components/AttachmentBar'
 import {
-  SettingsDialog,
+  SettingsPage,
   credentialHint,
   normalizeApiConfig,
   normalizeMultimodal,
   providerCopy,
   searchEngineHint
-} from '@renderer/components/SettingsDialog'
+} from '@renderer/components/SettingsPage'
 import {
   COMMAND_PERMISSIONS,
   TaskGoalCard,
@@ -566,15 +566,20 @@ export function renderSidebar(): string {
 }
 
 /**
- * 设置面板（对齐原版 views/SettingsPanel.ets）。
+ * 设置页（对齐原版 views/SettingsPanel.ets）。
  *
- * 为什么能在这里渲染：面板平时由 store 的 settingsOpen 控制，而 SSR 下 zustand
- * 只会读到初始状态（false），整块不渲染 —— 所以 SettingsDialog 把「开合」提成了
- * 可选 props，显式传 open 就能把首帧形态钉住（三个小节默认收起等）。
+ * 为什么能在这里渲染：设置页平时由 store 的 settingsOpen 控制，而 SSR 下 zustand
+ * 只会读到初始状态（false），整块不渲染 —— 所以 SettingsPage 把「开合」提成了
+ * 可选 props，显式传 open 就能把首帧形态钉住（默认停在模型配置选项）。
  * useEffect 在 SSR 里不执行，因此不会真的去调 window.guncat。
  */
 export function renderSettings(): string {
-  return renderToStaticMarkup(createElement(SettingsDialog, { open: true }))
+  return renderToStaticMarkup(createElement(SettingsPage, { open: true }))
+}
+
+/** 手机首帧：一级列表；用于钉住「先列表、点进去才是详情」的口径。 */
+export function renderSettingsMobile(): string {
+  return renderToStaticMarkup(createElement(SettingsPage, { open: true, compact: true }))
 }
 
 /**

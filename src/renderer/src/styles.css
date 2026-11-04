@@ -3525,68 +3525,245 @@ select {
   background: transparent;
 }
 
-/* ===== 设置面板：可折叠小节 ===== */
-
-/* 对齐原版 SettingsPanel.ets 的三个折叠区（高级模型参数 / 本地联网搜索 / 多模态解析 API）。
-   标题整行可点：14px Medium 次要色，上下各 14px、与上一项留 12px，右侧 12px 开合指示。
-   不直接复用侧栏的 .sidebar__label--toggle —— 那是侧栏的行高与配色，
-   搬进对话框里字重和间距都不对，改一处还会影响另一处。 */
-.settings-section {
-  width: 100%;
+/* ===== 独立设置页 =====
+   设置从弹窗改成整页：左侧模块导航、右侧单块内容、右上角统一保存。
+   一屏只呈现一个模块，不再把所有配置堆进同一张表单。 */
+.settings-page {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  background: var(--bg);
+  overflow: hidden;
 }
 
-.settings-section__head {
+.settings-page__head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 60px;
+  padding: 8px 20px;
+  border-bottom: 1px solid var(--divider);
+  background: var(--bg-elevated);
+}
+
+.settings-page__back {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+}
+
+.settings-page__heading {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.settings-page__heading strong {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.settings-page__heading span {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-page__body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+}
+
+/* 左侧模块导航：一项一个设置页，当前项用浅底与左侧色条标出 */
+.settings-nav {
+  min-height: 0;
+  padding: 18px 12px 28px;
+  border-right: 1px solid var(--divider);
+  background: var(--sidebar-fill);
+  overflow-y: auto;
+}
+
+.settings-nav__title {
+  padding: 0 10px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+}
+
+.settings-nav__item {
+  position: relative;
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 14px 0;
-  margin-top: 12px;
-  border: 0;
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 10px;
   color: var(--text-muted);
+  text-align: left;
+  transition: background 0.12s, color 0.12s;
 }
 
-.hoverable .settings-section__head:hover {
+.hoverable .settings-nav__item:hover {
+  background: var(--item-hover);
   color: var(--text);
 }
 
-.settings-section__title {
-  flex: 1;
+.settings-nav__item[data-active='true'] {
+  background: var(--item-active);
+  color: var(--text);
 }
 
-/* 开合指示：data-open 翻转 180 度（与 Sidebar 的 chevron 同一套写法） */
-.settings-section__caret {
+.settings-nav__item[data-active='true']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.settings-nav__icon {
+  flex: none;
   display: inline-flex;
   align-items: center;
-  transition: transform 0.15s;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  border: 1px solid var(--divider);
 }
 
-.settings-section__caret[data-open='true'] {
-  transform: rotate(180deg);
+.settings-nav__item[data-active='true'] .settings-nav__icon {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: transparent;
 }
 
-.settings-section__body {
-  padding-bottom: 8px;
+.settings-nav__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 
-/* 表单底部的接入方式说明（原版 getHint() 的三段文案）：
-   12px 次要色 —— 比字段级提示（11px faint）更值得看一眼，但不抢字段本身的注意力 */
-.settings-hint {
-  margin-top: 8px;
-  font-size: 12px;
-  line-height: 1.5;
+.settings-nav__text > span {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-nav__text small {
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 二级入口的箭头只在手机一级列表里出现；桌面端左侧导航保持纯文字层级 */
+.settings-nav__go {
+  display: none;
+}
+
+/* 右侧内容区：独立滚动，内容宽度收在 760px，宽屏下不把字段拉成一条长线 */
+.settings-pane {
+  min-height: 0;
+  padding: 30px 36px 56px;
+  background: var(--bg-sunken);
+  overflow-y: auto;
+}
+
+.settings-pane__inner {
+  width: min(760px, 100%);
+  margin: 0 auto;
+}
+
+.settings-pane__head {
+  margin-bottom: 18px;
+}
+
+.settings-pane__head h2 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.settings-pane__head p {
+  margin: 7px 0 0;
+  font-size: 12.5px;
+  line-height: 1.6;
   color: var(--text-muted);
 }
 
-/* ===== 设置面板：统一的表单节奏 =====
-   输入框 / 选择器 / 按钮共用 36px 高度；字段间距、分组间距全部走类，
-   不再用行内 style 临时凑 —— 行内 margin 正是「有的框大有的框小」的来源。 */
-.settings-form .field:last-child {
+/* 卡片：一页里的字段按主题分组，边框与底色代替分割线 */
+.settings-card {
+  margin-bottom: 14px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-elevated);
+}
+
+.settings-card__head {
+  margin-bottom: 15px;
+}
+
+.settings-card__head h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.settings-card__head p {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-faint);
+}
+
+.settings-card__body .field:last-child {
+  margin-bottom: 0;
+}
+
+/* 提示块：比字段级 hint 更重，但不抢卡片标题 */
+.settings-note {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.settings-note:last-child {
   margin-bottom: 0;
 }
 
@@ -3594,7 +3771,10 @@ select {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin: -2px 0 16px;
+}
+
+.settings-card .settings-actions {
+  margin-top: 14px;
 }
 
 .settings-actions .btn {
@@ -3602,32 +3782,86 @@ select {
   min-width: 104px;
 }
 
-.settings-inline {
-  display: flex;
-  flex-wrap: wrap;
+/* 终端后端：两个互斥选项做成整块分段控件 */
+.settings-segment {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
-  margin: 4px 0 10px;
+  margin-bottom: 16px;
 }
 
-.settings-inline .btn {
-  height: 36px;
+.settings-segment button {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  padding: 11px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-sunken);
+  color: var(--text-muted);
+  text-align: left;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
 }
 
-.settings-gap-top {
-  margin-top: 12px;
+.hoverable .settings-segment button:hover {
+  border-color: var(--text-faint);
 }
 
-.settings-gap-bottom {
-  margin-bottom: 12px;
+.settings-segment button[data-active='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
-.settings-gap-bottom-sm {
-  margin-bottom: 6px;
+.settings-segment button span {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
 }
 
-.settings-hint--lead {
-  margin-top: 0;
-  margin-bottom: 12px;
+.settings-segment button small {
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--text-faint);
+}
+
+.settings-segment button[data-active='true'] small {
+  color: var(--accent);
+  opacity: 0.8;
+}
+
+.settings-kv {
+  margin: 0 0 16px;
+  padding: 0;
+  border: 1px solid var(--divider);
+  border-radius: 10px;
+  background: var(--bg-sunken);
+}
+
+.settings-kv > div {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 12px;
+  padding: 9px 12px;
+}
+
+.settings-kv > div + div {
+  border-top: 1px solid var(--divider);
+}
+
+.settings-kv dt {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.settings-kv dd {
+  margin: 0;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
 }
 
 /* 模型列表：一行一个模型，点行即切换当前模型；删除钮固定在右端 */
@@ -3718,7 +3952,8 @@ select {
   padding: 0 12px;
 }
 
-.settings-form code {
+.settings-page code,
+.settings-card code {
   font-family: 'Cascadia Code', Consolas, 'Courier New', monospace;
   font-size: 11.5px;
   color: var(--text-muted);
