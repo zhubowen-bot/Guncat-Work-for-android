@@ -95,10 +95,15 @@ function GuncatUiSegment({
   const [tick, setTick] = useState(0)
   const refresh = useCallback(() => setTick((t) => t + 1), [])
 
-  // 绑定值变化时把状态写回消息（去抖，避免拖动滑块时刷屏）
+  // 绑定值变化时把状态写回消息（去抖，避免拖动滑块时刷屏）。
+  //
+  // 只在**用户真的动过控件**（tick > 0）时写回：此前这个 effect 在挂载时也会跑一次，
+  // 而流式生成时每次内容更新都会重建 program/state、反复排一个 400ms 的写回定时器。
+  // 定时器拿到的是旧一帧的正文，若它恰好落在生成结束之后，就会用较短的正文覆盖完整消息
+  //（表现就是卡片文字/副标题少了后半截）。现在它只跟 tick 走，内容更新不再触发写回。
   const timerRef = useRef<number | null>(null)
   useEffect(() => {
-    if (onStateChange === undefined) {
+    if (onStateChange === undefined || tick === 0) {
       return
     }
     if (timerRef.current !== null) {
@@ -112,9 +117,9 @@ function GuncatUiSegment({
         window.clearTimeout(timerRef.current)
       }
     }
-    // tick 变化代表用户动过控件
+    // 只认用户操作：state 会随流式内容重建，不能把它放进依赖里反复触发写回
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tick, state, onStateChange])
+  }, [tick])
 
   // 用当前绑定值重新物化：表达式里的 $变量要按新值重算
   const root: UiElement | null = useMemo(

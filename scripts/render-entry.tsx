@@ -974,6 +974,7 @@ export function renderCardTextMarkdown(): string {
     'root = Card([',
     '  CardHeader("**季度**复盘", "同比 **+18.6%** · [明细](https://example.com/sales)"),',
     '  Callout("info", "**结论**", "营收 **1,284 万**"),',
+    '  InlineHeader("[来源]: https://example.com/source", "[说明]: https://example.com/desc"),',
     '  InlineHeader("**明细**", "按 `区域` 拆分"),',
     '  Text("text", "**文本**", "副标题 **加粗**"),',
     '  BoldText("text", "**重点**", "说明 `代码`"),',

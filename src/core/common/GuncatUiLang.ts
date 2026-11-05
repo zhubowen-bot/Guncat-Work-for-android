@@ -32,7 +32,10 @@ export class UiLimits {
   static readonly MAX_DEPTH: number = 24;
   static readonly MAX_ARRAY: number = 600;
   static readonly MAX_CHILDREN: number = 200;
-  static readonly MAX_TEXT: number = 4000;
+  // 单个文本字段的上限与整份程序同宽：程序总量已由 MAX_SOURCE 兜底，
+  // 再按字段砍到 4000 会让长正文/长副标题在没有任何提示的情况下丢掉后半段。
+  // 保留这个常量是为了让调用点仍有明确的边界，不再做「悄悄截断」。
+  static readonly MAX_TEXT: number = 200000;
   static readonly MAX_TITLE: number = 200;
   static readonly MAX_BINDINGS: number = 64;
   static readonly MAX_RENDER_NODES: number = 400;
@@ -86,6 +89,9 @@ export class UiToken {
   num: number = 0;
   // 该 token 结束处的源码偏移(用于流式语句切分)
   end: number = 0;
+  // 字符串 token 的起始偏移与定界符(引号修复时按起点重切)
+  start: number = 0;
+  quote: string = '';
 
   static make(t: number, end: number): UiToken {
     let tok: UiToken = new UiToken();
@@ -130,9 +136,16 @@ function endsValue(t: number): boolean {
     t === UiTk.IDENT || t === UiTk.COMP || t === UiTk.STATE || t === UiTk.AT;
 }
 
+export class UiStringScan {
+  value: string = '';
+  // 扫描结束后的源码偏移(含收尾引号；未闭合时为源码末尾)
+  end: number = 0;
+}
+
 export class UiLexer {
-  // 把源码切成 token 流(末尾一定带 EOF)
-  static lex(src: string): UiToken[] {
+  // 把源码切成 token 流(末尾一定带 EOF)。
+  // stringEnds: 字符串起点 → 强制结束偏移(引号修复用；null 表示按常规规则扫描)。
+  static lex(src: string, stringEnds: Record<number, number> | null = null): UiToken[] {
     let toks: UiToken[] = [];
     let i: number = 0;
     let n: number = src.length;
@@ -277,58 +290,31 @@ export class UiLexer {
         i++;
         continue;
       }
-      if (c === '"') {
+      if (c === '"' || c === '\'') {
         let start: number = i;
-        i++;
-        let closed: boolean = false;
-        while (i < n) {
-          let ch: string = src.charAt(i);
-          if (ch === '\\') {
-            i += 2;
-          } else if (ch === '"') {
-            i++;
-            closed = true;
-            break;
-          } else {
-            i++;
-          }
+        // 引号修复: 调用方可以按字符串起点强制指定结束位置(含定界引号)。
+        let forced: number = stringEnds === null ? -1 : (stringEnds[start] === undefined ? -1 : stringEnds[start]);
+        if (forced > start && forced <= n) {
+          let value: string = UiLexer.decodeQuoted(src.substring(start, forced), c, true);
+          i = forced;
+          let tok: UiToken = UiToken.text(UiTk.STR, value, i);
+          tok.start = start;
+          tok.quote = c;
+          toks.push(tok);
+          continue;
         }
-        let raw: string = src.substring(start, i);
-        let value: string = UiLexer.decodeDoubleQuoted(raw, closed);
-        toks.push(UiToken.text(UiTk.STR, value, i));
-        continue;
-      }
-      if (c === '\'') {
-        i++;
-        let out: string = '';
-        while (i < n) {
-          let ch: string = src.charAt(i);
-          if (ch === '\\') {
-            i++;
-            if (i < n) {
-              let esc: string = src.charAt(i);
-              if (esc === '\'') {
-                out = out + '\'';
-              } else if (esc === '\\') {
-                out = out + '\\';
-              } else if (esc === 'n') {
-                out = out + '\n';
-              } else if (esc === 't') {
-                out = out + '\t';
-              } else {
-                out = out + esc;
-              }
-              i++;
-            }
-          } else if (ch === '\'') {
-            i++;
-            break;
-          } else {
-            out = out + ch;
-            i++;
-          }
+        // 定界符前紧挨着一个词、后面又是合法边界时，它更可能是正文里的“收尾引号”
+        // (例如单引号字符串里的 Today's)：跳过它，不要把它当成新字符串的开头。
+        if (UiLexer.isStrayClosingQuote(src, i)) {
+          i++;
+          continue;
         }
-        toks.push(UiToken.text(UiTk.STR, out, i));
+        let scan: UiStringScan = UiLexer.scanString(src, start, -1);
+        let tok2: UiToken = UiToken.text(UiTk.STR, scan.value, scan.end);
+        tok2.start = start;
+        tok2.quote = c;
+        toks.push(tok2);
+        i = scan.end;
         continue;
       }
       if (c === '-') {
@@ -417,25 +403,186 @@ export class UiLexer {
     return toks;
   }
 
-  // 双引号字符串: 优先按 JSON 解码(支持 \n \t \" \\ \uXXXX), 失败则退化为剥引号
-  private static decodeDoubleQuoted(raw: string, closed: boolean): string {
-    let candidate: string = closed ? raw : raw + '"';
-    try {
-      let parsed: Object = JSON.parse(candidate) as Object;
-      if (typeof parsed === 'string') {
-        return parsed as string;
+  // 引号字符本身可能是正文(例如 Today's、中文里的“强调”)，不能一见引号就收口。
+  // 只有「后面紧跟合法边界」才算字符串结束；否则继续当正文扫描。
+  // 单独抽出来，splitSource 复用同一套规则，避免切行与词法各走一套。
+  static isCloseBoundaryAt(src: string, quoteIndex: number): boolean {
+    let j: number = quoteIndex + 1;
+    let n: number = src.length;
+    while (j < n) {
+      let c: string = src.charAt(j);
+      if (c === ' ' || c === '\t' || c === '\r') {
+        j++;
+        continue;
       }
-    } catch (e) {
-      // 落到下面的宽松解码
+      break;
     }
+    if (j >= n) {
+      return true;
+    }
+    let c2: string = src.charAt(j);
+    if (c2 === '\n' || c2 === '#') {
+      return true;
+    }
+    if (c2 === '/' && j + 1 < n && src.charAt(j + 1) === '/') {
+      return true;
+    }
+    return ',)]}?:.+-*/%=!<>&|;['.indexOf(c2) >= 0;
+  }
+
+  static isWordAt(src: string, index: number): boolean {
+    if (index < 0 || index >= src.length) {
+      return false;
+    }
+    let code: number = src.charCodeAt(index);
+    return isWordCode(code) || code > 127;
+  }
+
+  // 没有开引号、却「紧跟在词后面 + 后面是合法边界」的引号，多半是正文里漏转义的收尾引号。
+  static isStrayClosingQuote(src: string, index: number): boolean {
+    let p: number = index - 1;
+    while (p >= 0 && (src.charAt(p) === ' ' || src.charAt(p) === '\t')) {
+      p--;
+    }
+    if (p < 0 || !UiLexer.isWordAt(src, p)) {
+      return false;
+    }
+    return UiLexer.isCloseBoundaryAt(src, index);
+  }
+
+  // 同一行后面还有没有同种引号(用于区分「路径末尾的反斜杠 + 收尾引号」与「转义引号」)
+  static hasLaterQuoteOnLine(src: string, from: number, quote: string): boolean {
+    let i: number = from + 1;
+    while (i < src.length) {
+      let c: string = src.charAt(i);
+      if (c === '\n') {
+        return false;
+      }
+      if (c === '\\') {
+        i += 2;
+        continue;
+      }
+      if (c === quote) {
+        return true;
+      }
+      i++;
+    }
+    return false;
+  }
+
+  // 从 start 处的引号开始扫描一个字符串。forcedEnd > 0 时按调用方给定的收尾位置强制切。
+  private static scanString(src: string, start: number, forcedEnd: number): UiStringScan {
+    let out: UiStringScan = new UiStringScan();
+    let quote: string = src.charAt(start);
+    let n: number = src.length;
+    if (forcedEnd > start && forcedEnd <= n) {
+      out.value = UiLexer.decodeQuoted(src.substring(start, forcedEnd), quote, true);
+      out.end = forcedEnd;
+      return out;
+    }
+    let i: number = start + 1;
+    let value: string = '';
+    while (i < n) {
+      let ch: string = src.charAt(i);
+      if (ch === '\\') {
+        if (i + 1 >= n) {
+          value = value + '\\';
+          i++;
+          break;
+        }
+        let next: string = src.charAt(i + 1);
+        if (next === quote) {
+          // Windows 路径结尾的 C:\dir\ 与「转义引号」形状相同：
+          // 后面是合法边界、且本行再没有同种引号时，按「反斜杠是正文 + 这里就是收尾」处理。
+          if (UiLexer.isCloseBoundaryAt(src, i + 1) && !UiLexer.hasLaterQuoteOnLine(src, i + 1, quote)) {
+            value = value + '\\';
+            i++;
+            continue;
+          }
+          value = value + quote;
+          i += 2;
+          continue;
+        }
+        let esc: string[] = UiLexer.decodeEscape(src, i);
+        value = value + esc[0];
+        i = parseInt(esc[1], 10);
+        continue;
+      }
+      if (ch === quote) {
+        if (UiLexer.isCloseBoundaryAt(src, i)) {
+          i++;
+          break;
+        }
+        value = value + ch;
+        i++;
+        continue;
+      }
+      value = value + ch;
+      i++;
+    }
+    out.value = value;
+    out.end = i;
+    return out;
+  }
+
+  // 解码一个反斜杠转义；未知转义保留反斜杠(Windows 路径不能把 \U 吃掉)
+  private static decodeEscape(src: string, slash: number): string[] {
+    let n: number = src.length;
+    if (slash + 1 >= n) {
+      return ['\\', (slash + 1).toString()];
+    }
+    let c: string = src.charAt(slash + 1);
+    if (c === 'n') {
+      return ['\n', (slash + 2).toString()];
+    }
+    if (c === 't') {
+      return ['\t', (slash + 2).toString()];
+    }
+    if (c === 'r') {
+      return ['\r', (slash + 2).toString()];
+    }
+    if (c === 'b') {
+      return ['\b', (slash + 2).toString()];
+    }
+    if (c === 'f') {
+      return ['\f', (slash + 2).toString()];
+    }
+    if (c === '\\' || c === '"' || c === '\'' || c === '/') {
+      return [c, (slash + 2).toString()];
+    }
+    if (c === 'u' && slash + 5 < n) {
+      let hex: string = src.substring(slash + 2, slash + 6);
+      if (/^[0-9a-fA-F]{4}$/.test(hex)) {
+        return [String.fromCharCode(parseInt(hex, 16)), (slash + 6).toString()];
+      }
+    }
+    return ['\\' + c, (slash + 2).toString()];
+  }
+
+  // 通用解码: raw 含首尾引号(closed)或只含首引号(未闭合)。
+  // 内部未转义的引号按正文字符保留 —— 这正是「引号漏转义」时保住后半句文本的关键。
+  private static decodeQuoted(raw: string, quote: string, closed: boolean): string {
     let body: string = raw;
-    if (body.length > 0 && body.charAt(0) === '"') {
+    if (body.length > 0 && body.charAt(0) === quote) {
       body = body.substring(1);
     }
-    if (body.length > 0 && body.charAt(body.length - 1) === '"') {
+    if (closed && body.length > 0 && body.charAt(body.length - 1) === quote) {
       body = body.substring(0, body.length - 1);
     }
-    return body;
+    let out: string = '';
+    let i: number = 0;
+    while (i < body.length) {
+      let c: string = body.charAt(i);
+      if (c === '\\') {
+        let esc: string[] = UiLexer.decodeEscape(body, i);
+        out = out + esc[0];
+        i = parseInt(esc[1], 10);
+        continue;
+      }
+      out = out + c;
+      i++;
+    }
+    return out;
   }
 }
 
@@ -480,11 +627,20 @@ export class UiAst {
 }
 
 // 解析器: 语句流 → AST(带位置参数映射由 materialize 阶段完成)
+export class UiExpressionResult {
+  ast: UiAst = UiAst.of('Null');
+  // 表达式是否把 token 全部吃完；没吃完说明这一行结构可疑
+  consumed: number = 0;
+  // 是否出现过缺逗号 / 无法识别 token 等结构异常
+  anomaly: boolean = false;
+}
+
 export class UiParser {
   private toks: UiToken[] = [];
   private pos: number = 0;
   private depth: number = 0;
   private errors: string[] = [];
+  private anomaly: boolean = false;
 
   private static readonly PREC_TERNARY: number = 1;
   private static readonly PREC_OR: number = 2;
@@ -498,12 +654,26 @@ export class UiParser {
 
   // 解析一段表达式 token 序列(不含尾部 NL / EOF)
   static expression(tokens: UiToken[], errors: string[]): UiAst {
+    return UiParser.parseExpression(tokens, errors).ast;
+  }
+
+  static parseExpression(tokens: UiToken[], errors: string[]): UiExpressionResult {
     let p: UiParser = new UiParser();
     p.toks = tokens;
     p.errors = errors;
     p.pos = 0;
-    let node: UiAst = p.parseExpr(0);
-    return node;
+    let result: UiExpressionResult = new UiExpressionResult();
+    result.ast = p.parseExpr(0);
+    result.consumed = p.pos;
+    result.anomaly = p.anomaly;
+    while (p.pos < tokens.length && (tokens[p.pos].t === UiTk.NL || tokens[p.pos].t === UiTk.EOF)) {
+      p.pos++;
+    }
+    if (p.pos < tokens.length) {
+      result.anomaly = true;
+      result.consumed = p.pos;
+    }
+    return result;
   }
 
   private cur(): UiToken {
@@ -645,6 +815,7 @@ export class UiParser {
       return inner;
     }
     // 无法识别的 token: 前进一格避免死循环
+    this.anomaly = true;
     this.adv();
     return UiAst.of('Null');
   }
@@ -670,8 +841,9 @@ export class UiParser {
       if (this.cur().t === UiTk.COMMA) {
         this.adv();
       } else if (this.cur().t !== UiTk.RP && this.cur().t !== UiTk.EOF) {
-        // 缺逗号: 参考实现会在碰到 ) 时停止; 这里前进一格防止死循环
-        this.adv();
+        // 缺逗号: 不丢弃当前 token，下一轮把它当下一个参数继续解析。
+        // 模型把逗号写成全角「，」时词法器会跳过它，旧实现会在这里把副标题整个丢掉。
+        this.anomaly = true;
       }
     }
     this.eat(UiTk.RP);
@@ -691,7 +863,7 @@ export class UiParser {
       if (this.cur().t === UiTk.COMMA) {
         this.adv();
       } else if (this.cur().t !== UiTk.RB && this.cur().t !== UiTk.EOF) {
-        this.adv();
+        this.anomaly = true;
       }
     }
     this.eat(UiTk.RB);
@@ -706,12 +878,15 @@ export class UiParser {
     while (this.cur().t !== UiTk.RC && this.cur().t !== UiTk.EOF) {
       let keyTok: UiToken = this.cur();
       if (keyTok.t !== UiTk.STR && keyTok.t !== UiTk.IDENT && keyTok.t !== UiTk.COMP) {
+        this.anomaly = true;
         this.adv();
         continue;
       }
       this.adv();
       if (this.cur().t === UiTk.COLON) {
         this.adv();
+      } else {
+        this.anomaly = true;
       }
       let value: UiAst = this.parseExpr(0);
       if (node.keys.length < UiLimits.MAX_ARRAY) {
@@ -720,6 +895,8 @@ export class UiParser {
       }
       if (this.cur().t === UiTk.COMMA) {
         this.adv();
+      } else if (this.cur().t !== UiTk.RC && this.cur().t !== UiTk.EOF) {
+        this.anomaly = true;
       }
     }
     this.eat(UiTk.RC);
@@ -824,6 +1001,8 @@ export class UiStatement {
 export class UiSplitResult {
   statements: UiStatement[] = [];
   errors: string[] = [];
+  // 解析过程中是否出现过「缺逗号 / 多出 token」这类结构异常（引号修复的触发信号）
+  clean: boolean = true;
   // 末尾是否有「写到一半」的语句(流式中)
   pendingTail: string = '';
   pendingStart: number = 0;
@@ -866,6 +1045,16 @@ export class UiStatements {
       while (pos < n && tokens[pos].t !== UiTk.EOF) {
         let tt: number = tokens[pos].t;
         if (tt === UiTk.NL && depth <= 0 && ternary <= 0) {
+          // 行尾是运算符/逗号/等号时，下一行是续行(模型偶尔会把长字符串 + 拼接拆成两行)。
+          let prevT: number = exprToks.length > 0 ? exprToks[exprToks.length - 1].t : UiTk.NL;
+          if (prevT === UiTk.PLUS || prevT === UiTk.MINUS || prevT === UiTk.STAR ||
+            prevT === UiTk.SLASH || prevT === UiTk.PERCENT || prevT === UiTk.EQ ||
+            prevT === UiTk.NEQ || prevT === UiTk.GT || prevT === UiTk.LT ||
+            prevT === UiTk.GTE || prevT === UiTk.LTE || prevT === UiTk.AND ||
+            prevT === UiTk.OR || prevT === UiTk.ASSIGN || prevT === UiTk.COMMA) {
+            pos++;
+            continue;
+          }
           let peek: number = pos + 1;
           while (peek < n && tokens[peek].t === UiTk.NL) {
             peek++;
@@ -897,7 +1086,11 @@ export class UiStatements {
         let stmt: UiStatement = new UiStatement();
         stmt.id = id;
         stmt.isState = isState;
-        stmt.expr = UiParser.expression(exprToks, errors);
+        let parsed: UiExpressionResult = UiParser.parseExpression(exprToks, errors);
+        stmt.expr = parsed.ast;
+        if (parsed.anomaly) {
+          out.clean = false;
+        }
         out.statements.push(stmt);
       }
     }
@@ -912,23 +1105,31 @@ export class UiStatements {
     let depth: number = 0;
     let ternary: number = 0;
     let inStr: string = '';
-    let esc: boolean = false;
     let stmtStart: number = 0;
     for (let i: number = 0; i < src.length; i++) {
       let c: string = src.charAt(i);
-      if (esc) {
-        esc = false;
-        continue;
-      }
       if (inStr !== '') {
         if (c === '\\') {
-          esc = true;
-        } else if (c === inStr) {
+          let next: string = i + 1 < src.length ? src.charAt(i + 1) : '';
+          if (next === inStr && UiLexer.isCloseBoundaryAt(src, i + 1) &&
+            !UiLexer.hasLaterQuoteOnLine(src, i + 1, inStr)) {
+            // 路径末尾的反斜杠 + 收尾引号
+            inStr = '';
+            i++;
+            continue;
+          }
+          i++;
+          continue;
+        }
+        if (c === inStr && UiLexer.isCloseBoundaryAt(src, i)) {
           inStr = '';
         }
         continue;
       }
       if (c === '"' || c === '\'') {
+        if (UiLexer.isStrayClosingQuote(src, i)) {
+          continue;
+        }
         inStr = c;
         continue;
       }
@@ -950,8 +1151,12 @@ export class UiStatements {
       }
       if (c === '\n' && depth <= 0 && ternary <= 0) {
         let body: string = src.substring(stmtStart, i);
-        UiStatements.appendSource(body, errors, out.statements);
-        stmtStart = i + 1;
+        if (!UiStatements.endsWithContinuation(body)) {
+          if (!UiStatements.appendSource(body, errors, out.statements)) {
+            out.clean = false;
+          }
+          stmtStart = i + 1;
+        }
       }
     }
     out.pendingStart = stmtStart;
@@ -960,17 +1165,157 @@ export class UiStatements {
     return out;
   }
 
-  private static appendSource(body: string, errors: string[], out: UiStatement[]): void {
+  // 整份源码切分(含末尾未换行的最后一行)；解析异常的行会尝试引号修复。
+  static splitAll(src: string, errors: string[]): UiSplitResult {
+    let out: UiSplitResult = UiStatements.splitSource(src);
+    let tail: string = out.pendingTail;
+    if (tail.trim() !== '') {
+      if (!UiStatements.appendSource(tail, out.errors, out.statements)) {
+        out.clean = false;
+      }
+      out.pendingTail = '';
+    }
+    for (let i: number = 0; i < out.errors.length; i++) {
+      errors.push(out.errors[i]);
+    }
+    return out;
+  }
+
+  // 行尾是运算符/等号/逗号 → 下一行是续行(模型把长字符串 + 拼接拆行时很常见)
+  private static endsWithContinuation(body: string): boolean {
+    let t: string = body.trim();
+    if (t === '' || t.charAt(0) === '#' ||
+      (t.length > 1 && t.charAt(0) === '/' && t.charAt(1) === '/')) {
+      return false;
+    }
+    let last: string = t.charAt(t.length - 1);
+    return '+-*/%=&|?:,'.indexOf(last) >= 0;
+  }
+
+  private static appendSource(body: string, errors: string[], out: UiStatement[]): boolean {
     let trimmed: string = body.trim();
     if (trimmed === '') {
-      return;
+      return true;
     }
-    let toks: UiToken[] = UiLexer.lex(trimmed);
-    let part: UiSplitResult = UiStatements.split(toks, errors);
+    let part: UiSplitResult = UiStatements.parseBody(trimmed, null);
+    if (!part.clean) {
+      let repaired: UiSplitResult | null = UiStatements.repairBody(trimmed);
+      if (repaired !== null) {
+        part = repaired;
+      }
+    }
+    for (let i: number = 0; i < part.errors.length; i++) {
+      errors.push(part.errors[i]);
+    }
     for (let i: number = 0; i < part.statements.length; i++) {
       part.statements[i].raw = trimmed;
       out.push(part.statements[i]);
     }
+    return part.clean;
+  }
+
+  private static parseBody(body: string, stringEnds: Record<number, number> | null): UiSplitResult {
+    let errs: string[] = [];
+    let toks: UiToken[] = UiLexer.lex(body, stringEnds);
+    let part: UiSplitResult = UiStatements.split(toks, errs);
+    part.errors = errs;
+    return part;
+  }
+
+  // 引号修复: 常规词法已经能吃掉 Today's、中文“强调”、路径结尾反斜杠这类；
+  // 剩下的歧义(如 He said "Hi," then left)表现为“缺逗号”，这里尝试把某个字符串
+  // 的收尾位置往后挪，直到整行能干净解析。只在常规解析出现异常时触发。
+  private static repairBody(body: string): UiSplitResult | null {
+    let baseToks: UiToken[] = UiLexer.lex(body);
+    let starts: number[] = [];
+    let normalEnd: Record<number, number> = {};
+    let normalQuote: Record<number, string> = {};
+    for (let i: number = 0; i < baseToks.length; i++) {
+      let tok: UiToken = baseToks[i];
+      if (tok.t === UiTk.STR && tok.quote !== '' && tok.start >= 0) {
+        if (normalEnd[tok.start] === undefined) {
+          starts.push(tok.start);
+        }
+        normalEnd[tok.start] = tok.end;
+        normalQuote[tok.start] = tok.quote;
+      }
+    }
+    if (starts.length === 0) {
+      return null;
+    }
+    let candidates: Record<number, number[]> = {};
+    for (let i: number = 0; i < starts.length; i++) {
+      let start: number = starts[i];
+      candidates[start] = UiStatements.quoteCandidates(body, start, normalQuote[start], normalEnd[start]);
+    }
+    let attempts: number = 0;
+    let overrides: Record<number, number> = {};
+    // 先试单个字符串延长(覆盖绝大多数情况)
+    for (let i: number = 0; i < starts.length; i++) {
+      let start: number = starts[i];
+      let list: number[] = candidates[start];
+      for (let j: number = 0; j < list.length; j++) {
+        if (attempts >= 96) {
+          return null;
+        }
+        attempts++;
+        overrides[start] = list[j];
+        let probe: UiSplitResult = UiStatements.parseBody(body, overrides);
+        if (probe.clean) {
+          return probe;
+        }
+        delete overrides[start];
+      }
+    }
+    // 再试两个字符串同时延长(两个字段都漏转义时)
+    for (let i: number = 0; i < starts.length; i++) {
+      for (let k: number = i + 1; k < starts.length; k++) {
+        let a: number = starts[i];
+        let b: number = starts[k];
+        let la: number[] = candidates[a];
+        let lb: number[] = candidates[b];
+        for (let ai: number = 0; ai < la.length; ai++) {
+          for (let bi: number = 0; bi < lb.length; bi++) {
+            if (attempts >= 128) {
+              return null;
+            }
+            attempts++;
+            overrides[a] = la[ai];
+            overrides[b] = lb[bi];
+            let probe2: UiSplitResult = UiStatements.parseBody(body, overrides);
+            if (probe2.clean) {
+              return probe2;
+            }
+          }
+        }
+        delete overrides[a];
+        delete overrides[b];
+      }
+    }
+    return null;
+  }
+
+  // 一个字符串起点之后所有可能的收尾位置(含源码末尾)
+  private static quoteCandidates(body: string, start: number, quote: string, normalEnd: number): number[] {
+    let out: number[] = [];
+    let i: number = start + 1;
+    while (i < body.length && out.length < 40) {
+      if (body.charAt(i) === '\\') {
+        i += 2;
+        continue;
+      }
+      if (body.charAt(i) === quote) {
+        let end: number = i + 1;
+        if (end > normalEnd && end <= body.length) {
+          out.push(end);
+        }
+      }
+      i++;
+    }
+    if (body.length > normalEnd && out.length < 40) {
+      out.push(body.length);
+    }
+    return out;
   }
 }
 
@@ -986,22 +1331,30 @@ export class UiAutoClose {
     let out: UiAutoClose = new UiAutoClose();
     let stack: string[] = [];
     let inStr: string = '';
-    let esc: boolean = false;
     for (let i: number = 0; i < input.length; i++) {
       let c: string = input.charAt(i);
-      if (esc) {
-        esc = false;
-        continue;
-      }
       if (inStr !== '') {
         if (c === '\\') {
-          esc = true;
-        } else if (c === inStr) {
+          let next: string = i + 1 < input.length ? input.charAt(i + 1) : '';
+          if (next === inStr && UiLexer.isCloseBoundaryAt(input, i + 1) &&
+            !UiLexer.hasLaterQuoteOnLine(input, i + 1, inStr)) {
+            // 路径末尾的反斜杠 + 收尾引号
+            inStr = '';
+            i++;
+            continue;
+          }
+          i++;
+          continue;
+        }
+        if (c === inStr && UiLexer.isCloseBoundaryAt(input, i)) {
           inStr = '';
         }
         continue;
       }
       if (c === '"' || c === '\'') {
+        if (UiLexer.isStrayClosingQuote(input, i)) {
+          continue;
+        }
         inStr = c;
         continue;
       }
@@ -1029,9 +1382,6 @@ export class UiAutoClose {
     }
     let text: string = input;
     if (inStr !== '') {
-      if (esc) {
-        text = text + '\\';
-      }
       text = text + inStr;
     }
     for (let j: number = stack.length - 1; j >= 0; j--) {
@@ -1058,13 +1408,23 @@ export class UiPreprocess {
         let c: string = line.charAt(i);
         if (inStr !== '') {
           if (c === '\\') {
+            let next: string = i + 1 < line.length ? line.charAt(i + 1) : '';
+            if (next === inStr && UiLexer.isCloseBoundaryAt(line, i + 1) &&
+              !UiLexer.hasLaterQuoteOnLine(line, i + 1, inStr)) {
+              inStr = '';
+            }
             i++;
-          } else if (c === inStr) {
+            continue;
+          }
+          if (c === inStr && UiLexer.isCloseBoundaryAt(line, i)) {
             inStr = '';
           }
           continue;
         }
         if (c === '"' || c === '\'') {
+          if (UiLexer.isStrayClosingQuote(line, i)) {
+            continue;
+          }
           inStr = c;
           continue;
         }
@@ -1080,6 +1440,85 @@ export class UiPreprocess {
       out.push(cut >= 0 ? line.substring(0, cut).trim() : line);
     }
     return out.join('\n');
+  }
+
+  // 全角标点在字符串外等价成 ASCII：模型偶尔把 `CardHeader("标题"，"副标题")` 写成全角逗号，
+  // 词法器会直接跳过它，旧解析器于是把后一个参数丢掉(副标题整段消失)。
+  // 字符串内的全角标点是正文，原样保留。
+  static isFullWidthBoundaryAt(src: string, quoteIndex: number): boolean {
+    let j: number = quoteIndex + 1;
+    while (j < src.length) {
+      let c: string = src.charAt(j);
+      if (c === ' ' || c === '\t' || c === '\r') {
+        j++;
+        continue;
+      }
+      break;
+    }
+    if (j >= src.length) {
+      return false;
+    }
+    return '，：（）？＝＋－＊／；'.indexOf(src.charAt(j)) >= 0;
+  }
+
+  static normalizeSyntax(input: string): string {
+    if (input === '') {
+      return input;
+    }
+    let out: string = '';
+    let inStr: string = '';
+    let i: number = 0;
+    while (i < input.length) {
+      let c: string = input.charAt(i);
+      if (inStr !== '') {
+        if (c === '\\' && i + 1 < input.length) {
+          out = out + c + input.charAt(i + 1);
+          i += 2;
+          continue;
+        }
+        if (c === inStr && (UiLexer.isCloseBoundaryAt(input, i) || UiPreprocess.isFullWidthBoundaryAt(input, i))) {
+          inStr = '';
+        }
+        out = out + c;
+        i++;
+        continue;
+      }
+      if (c === '"' || c === '\'') {
+        if (!UiLexer.isStrayClosingQuote(input, i)) {
+          inStr = c;
+        }
+        out = out + c;
+        i++;
+        continue;
+      }
+      if (c === '，') {
+        out = out + ',';
+      } else if (c === '：') {
+        out = out + ':';
+      } else if (c === '（') {
+        out = out + '(';
+      } else if (c === '）') {
+        out = out + ')';
+      } else if (c === '？') {
+        out = out + '?';
+      } else if (c === '！') {
+        out = out + '!';
+      } else if (c === '＝') {
+        out = out + '=';
+      } else if (c === '＋') {
+        out = out + '+';
+      } else if (c === '－') {
+        out = out + '-';
+      } else if (c === '＊') {
+        out = out + '*';
+      } else if (c === '／') {
+        out = out + '/';
+      } else {
+        out = out + c;
+      }
+      i++;
+    }
+    return out;
   }
 }
 
@@ -1185,7 +1624,7 @@ export class GuncatUiLang {
       text = text.substring(0, UiLimits.MAX_SOURCE);
       program.errors.push('界面程序过长, 已截断到 ' + UiLimits.MAX_SOURCE.toString() + ' 字符');
     }
-    let cleaned: string = UiPreprocess.stripComments(text).trim();
+    let cleaned: string = UiPreprocess.normalizeSyntax(UiPreprocess.stripComments(text)).trim();
     if (cleaned === '') {
       return program;
     }
@@ -1194,6 +1633,16 @@ export class GuncatUiLang {
     let errors: string[] = [];
     let toks: UiToken[] = UiLexer.lex(closed.text);
     let split: UiSplitResult = UiStatements.split(toks, errors);
+    // 结构异常(引号漏转义导致缺逗号/多出 token)时，按行重切并尝试引号修复。
+    // 正常程序仍走上面的整份词法，性能不受影响。
+    if (!split.clean) {
+      let altErrors: string[] = [];
+      let alt: UiSplitResult = UiStatements.splitAll(closed.text, altErrors);
+      if (alt.statements.length >= split.statements.length && alt.statements.length > 0) {
+        split = alt;
+        errors = altErrors;
+      }
+    }
     if (split.statements.length === 0) {
       program.errors = errors;
       return program;
@@ -2998,9 +3447,15 @@ export class GuncatUiFences {
       text.charAt(i + 1) === '`' && text.charAt(i + 2) === '`';
   }
 
-  // 跳过从 i 开始的双引号字符串(返回字符串结束后的位置); 非字符串返回 i
+  // 跳过从 i 开始的字符串(返回字符串结束后的位置); 非字符串返回 i。
+  // 两种引号都要认，并且和词法器用同一套「收尾边界」规则：
+  // 单引号字符串里的 Today's、路径末尾反斜杠都不能被误当成收尾。
   private static skipString(text: string, i: number): number {
-    if (text.charAt(i) !== '"') {
+    let quote: string = text.charAt(i);
+    if (quote !== '"' && quote !== '\'') {
+      return i;
+    }
+    if (UiLexer.isStrayClosingQuote(text, i)) {
       return i;
     }
     let j: number = i + 1;
@@ -3008,7 +3463,7 @@ export class GuncatUiFences {
       let c: string = text.charAt(j);
       if (c === '\\') {
         j += 2;
-      } else if (c === '"') {
+      } else if (c === quote && UiLexer.isCloseBoundaryAt(text, j)) {
         return j + 1;
       } else {
         j++;

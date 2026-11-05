@@ -547,6 +547,79 @@ async function main(): Promise<void> {
   check('未知组件被丢弃并给出诊断', unknownProgram.errors.length > 0, unknownProgram.errors.join('；'))
   check('未知组件不影响同一块的其它组件', unknownChildren.length === 1, `${unknownChildren.length} 个子元素`)
 
+  // 文本字段截断：模型偶尔漏转义引号 / 用单引号包英文撇号 / 路径以反斜杠结尾。
+  // 这些都不该让副标题只剩前半句，更不该吞掉后面的组件。
+  const quoteCases: Array<{ name: string; source: string; subtitle: string }> = [
+    {
+      name: '正文引号漏转义',
+      source: 'root = Card([h, b])\nh = CardHeader("标题", "本月"增长"明显")\nb = TextContent("后续")',
+      subtitle: '本月"增长"明显'
+    },
+    {
+      name: '单引号里的英文撇号',
+      source: "root = Card([h, b])\nh = CardHeader('标题', 'It's a test, with more text')\nb = TextContent('后续')",
+      subtitle: "It's a test, with more text"
+    },
+    {
+      name: '引号后跟逗号',
+      source: 'root = Card([h, b])\nh = CardHeader("标题", "He said "Hi," then left")\nb = TextContent("后续")',
+      subtitle: 'He said "Hi," then left'
+    },
+    {
+      name: 'Windows 路径以反斜杠结尾',
+      source: 'root = Card([h, b])\nh = CardHeader("路径", "C:\\Users\\name\\")\nb = TextContent("后续")',
+      subtitle: 'C:\\Users\\name\\'
+    }
+  ]
+  for (const item of quoteCases) {
+    const parsed = UiLang.parse(item.source)
+    const rendered = UiLang.render(parsed, null)
+    const children = (rendered?.props['children'] as unknown[]) ?? []
+    const header = children[0] as never
+    const subtitle = header === undefined ? '' : UiNodeRef.str(header, 'subtitle', '')
+    const tail = children[1] as never
+    check(`${item.name}：副标题不截断`, subtitle === item.subtitle, JSON.stringify(subtitle))
+    check(`${item.name}：后续组件仍在`, children.length === 2 && UiNodeRef.str(tail, 'text', '') === '后续')
+  }
+
+  // 全角逗号/括号：模型中文输出里很常见，旧词法器会直接跳过分隔符并把后一个参数丢掉
+  const fullWidthProgram = UiLang.parse(
+    'root = Card([h, b])\nh = CardHeader（"标题"，"副标题后半"）\nb = TextContent("后续")'
+  )
+  const fullWidthRoot = UiLang.render(fullWidthProgram, null)
+  const fullWidthChildren = (fullWidthRoot?.props['children'] as unknown[]) ?? []
+  const fullWidthHeader = fullWidthChildren[0] as never
+  check(
+    '全角逗号/括号不再丢副标题',
+    fullWidthHeader !== undefined && UiNodeRef.str(fullWidthHeader, 'subtitle', '') === '副标题后半',
+    fullWidthHeader === undefined ? '无标题' : UiNodeRef.str(fullWidthHeader, 'subtitle', '')
+  )
+  check(
+    '全角分隔符之后的组件仍在',
+    fullWidthChildren.length === 2 && UiNodeRef.str(fullWidthChildren[1] as never, 'text', '') === '后续'
+  )
+
+  // 顶层 + 拼接跨行（模型把长字符串拆成两行）
+  const continuation = UiLang.parse('sub = "前半" +\n  "后半"\nroot = Card([h])\nh = CardHeader("标题", sub)')
+  const continuationRoot = UiLang.render(continuation, null)
+  const continuationHeader = ((continuationRoot?.props['children'] as unknown[]) ?? [])[0] as never
+  check(
+    '顶层 + 拼接跨行不丢后半句',
+    continuationHeader !== undefined && UiNodeRef.str(continuationHeader, 'subtitle', '') === '前半后半',
+    continuationHeader === undefined ? '无标题' : UiNodeRef.str(continuationHeader, 'subtitle', '')
+  )
+
+  // 单个文本字段不再被 4000 字上限悄悄砍掉
+  const longTail = '结尾锚点'
+  const longProgram = UiLang.parse(
+    'root = Card([t])\nt = TextContent("' + '甲'.repeat(5000) + longTail + '")'
+  )
+  const longRoot = UiLang.render(longProgram, null)
+  const longChildren = (longRoot?.props['children'] as unknown[]) ?? []
+  const longChild = longChildren.length > 0 ? (longChildren[0] as never) : null
+  const longText = longChild === null ? '' : UiNodeRef.str(longChild, 'text', '')
+  check('长文本字段保留到结尾锚点', longText.endsWith(longTail), `${longText.length} 字`)
+
   // ===== 15. Office 工具链（走真实的工具分发，而不是直接调生成器） =====
   section('15. Office 工具链（WorkToolRunner 端到端）')
 

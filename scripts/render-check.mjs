@@ -633,6 +633,11 @@ check(
   cardMd.includes('href="https://example.com/sales"') && cardMd.includes('>明细</a>')
 )
 check(
+  '短字段里的链接引用定义不会整行消失（卡片字段不是文档引用表）',
+  cardMd.includes('[来源]:') && cardMd.includes('[说明]:'),
+  cardMd.includes('[来源]:') ? '按正文保留' : '被 Markdown 吃掉'
+)
+check(
   '交互元素里的链接降级为文字（不产生嵌套 <a>）',
   !cardMd.includes('https://example.com/button') && cardMd.includes('按钮链接')
 )

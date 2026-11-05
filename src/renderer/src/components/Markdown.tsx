@@ -148,7 +148,8 @@ function MarkdownRenderer({
   inline: boolean
   links: boolean
 }): React.ReactElement {
-  const prepared = sanitizeMarkdownForRender(text)
+  const sanitized = sanitizeMarkdownForRender(text)
+  const prepared = inline ? escapeInlineDefinitions(sanitized) : sanitized
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkMath]}
@@ -161,6 +162,23 @@ function MarkdownRenderer({
       {prepared}
     </ReactMarkdown>
   )
+}
+
+/**
+ * 短文本字段里禁止 Markdown 的「链接引用定义」语法。
+ *
+ * 事故形状：副标题恰好写成 `[来源]: https://…` 时，CommonMark 会把它当成引用定义整行吃掉，
+ * 界面上一个字都不剩。卡片字段是一段要显示给用户看的文字，不是文档的引用表，
+ * 因此把行首的 `[label]:` 转义成普通字符，保证内容至少原样可见。
+ */
+function escapeInlineDefinitions(text: string): string {
+  if (text.indexOf('[') < 0) {
+    return text
+  }
+  return text
+    .split('\n')
+    .map((line) => line.replace(/^(\s*)\[([^\]]+)\]:/, '$1\\[$2]:'))
+    .join('\n')
 }
 
 export const Markdown = memo(function Markdown({ text }: Props) {
