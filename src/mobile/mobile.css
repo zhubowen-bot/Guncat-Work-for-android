@@ -813,10 +813,12 @@ body.platform-android code {
   }
 
   .usage-page__head {
-    flex-wrap: wrap;
-    min-height: 64px;
     padding: calc(env(safe-area-inset-top) + 8px) 12px 8px 8px;
+  }
+
+  .usage-page__head-inner {
     gap: 8px;
+    min-height: 52px;
   }
 
   .usage-page__back {
@@ -840,19 +842,34 @@ body.platform-android code {
     display: none;
   }
 
-  .usage-page__actions {
-    width: 100%;
-    justify-content: flex-end;
-    order: 3;
-  }
-
-  .usage-page__action {
-    height: 34px;
-    font-size: 11.5px;
-  }
-
   .usage-page__body {
     padding: 4px 14px calc(36px + env(safe-area-inset-bottom));
+  }
+
+  .usage-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+
+  .usage-toolbar__filters {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .usage-toolbar__group {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .usage-toolbar__actions {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 12px;
+    padding-top: 6px;
+    border-top: 1px solid var(--divider);
   }
 
   .usage-summary {
@@ -886,11 +903,6 @@ body.platform-android code {
 
   .usage-card__head h2 {
     font-size: 15px;
-  }
-
-  .usage-card__tools {
-    width: 100%;
-    justify-content: space-between;
   }
 
   .usage-segmented {

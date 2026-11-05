@@ -304,7 +304,7 @@ type SettingsSectionId =
   | 'shell'
   | 'usage'
 
-type SettingsGroupId = 'model' | 'capability' | 'voice' | 'system'
+type SettingsGroupId = 'model' | 'capability' | 'voice' | 'usage' | 'system'
 
 interface SettingsNavItem {
   id: SettingsSectionId
@@ -789,7 +789,7 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
     { id: 'multimodal', label: '多模态解析', group: 'capability', icon: <IconImage size={22} /> },
     { id: 'autoRead', label: '自动朗读', group: 'voice', icon: <IconSpeaker size={22} /> },
     { id: 'voice', label: '语音输入', group: 'voice', icon: <IconMic size={22} /> },
-    { id: 'usage', label: '用量与成本', group: 'system', icon: <IconChart size={22} /> }
+    { id: 'usage', label: '用量与成本', group: 'usage', icon: <IconChart size={22} /> }
   ]
   if (shellAvailable) {
     navItems.push({
@@ -804,6 +804,7 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
     { id: 'model', title: '模型', items: navItems.filter((item) => item.group === 'model') },
     { id: 'capability', title: '能力', items: navItems.filter((item) => item.group === 'capability') },
     { id: 'voice', title: '声音', items: navItems.filter((item) => item.group === 'voice') },
+    { id: 'usage', title: '用量', items: navItems.filter((item) => item.group === 'usage') },
     { id: 'system', title: '系统', items: navItems.filter((item) => item.group === 'system') }
   ]
   const navGroups = allGroups.filter((group) => group.items.length > 0)

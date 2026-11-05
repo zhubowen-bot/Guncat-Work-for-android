@@ -4583,12 +4583,17 @@ select {
 
 .usage-page__head {
   flex: none;
+  padding: 12px 30px;
+  background: var(--bg-sunken);
+}
+
+.usage-page__head-inner {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 68px;
-  padding: 12px 30px;
-  background: var(--bg-sunken);
+  width: min(1180px, 100%);
+  min-height: 44px;
+  margin: 0 auto;
 }
 
 .usage-page__back {
@@ -4627,27 +4632,6 @@ select {
   white-space: nowrap;
 }
 
-.usage-page__actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.usage-page__action {
-  height: 34px;
-  padding: 0 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--bg-elevated);
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.hoverable .usage-page__action:hover:not(:disabled) {
-  color: var(--text);
-  border-color: var(--text-quaternary);
-}
-
 .usage-page__body {
   flex: 1;
   min-height: 0;
@@ -4676,6 +4660,64 @@ select {
 
 .usage-error span {
   flex: 1;
+}
+
+/* 全局筛选：服务商与主指标同时影响汇总、热力图与模型占比 */
+.usage-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.usage-toolbar__filters {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.usage-toolbar__group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.usage-toolbar__label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-faint);
+}
+
+.usage-toolbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.usage-action-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  transition: background 0.12s, color 0.12s;
+}
+
+.hoverable .usage-action-link:hover:not(:disabled) {
+  background: var(--item-hover);
+  color: var(--text);
+}
+
+.usage-action-link:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 /* 汇总卡 */
@@ -4722,7 +4764,15 @@ select {
   color: var(--accent);
 }
 
+.usage-summary-card__value {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+}
+
 .usage-summary-card strong {
+  min-width: 0;
   font-size: 25px;
   line-height: 1.15;
   font-weight: 600;
@@ -4731,6 +4781,14 @@ select {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.usage-summary-card__value em {
+  flex: none;
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-faint);
 }
 
 .usage-summary-card > span {
@@ -4775,13 +4833,6 @@ select {
   font-size: 11px;
   line-height: 1.55;
   color: var(--text-faint);
-}
-
-.usage-card__tools {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
 }
 
 .usage-segmented {
@@ -5210,6 +5261,7 @@ select {
 .usage-providers {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
   gap: 14px;
   margin-bottom: 18px;
 }
@@ -5235,31 +5287,9 @@ select {
 
 .usage-provider__head > div {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 2px;
   min-width: 0;
-}
-
-.usage-provider__mark {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 11px;
-  background: var(--bg-sunken);
-  color: var(--text-muted);
-}
-
-.usage-provider__mark[data-provider='deepseek'] {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-.usage-provider__mark[data-provider='opencode'] {
-  background: color-mix(in srgb, var(--ok) 12%, var(--bg-sunken));
-  color: var(--ok);
 }
 
 .usage-provider__head h3 {

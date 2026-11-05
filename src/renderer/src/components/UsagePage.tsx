@@ -45,13 +45,11 @@ import type {
 import { useStore } from '../store'
 import {
   IconArrowLeft,
-  IconBrain,
   IconCalendar,
   IconChart,
   IconClock,
   IconClose,
   IconDownload,
-  IconGlobe,
   IconInfo,
   IconRefresh,
   IconTrendUp,
@@ -200,12 +198,14 @@ function monthDays(today: string): number {
 function SummaryCard({
   label,
   value,
+  unit,
   sub,
   icon,
   accent
 }: {
   label: string
   value: string
+  unit: string
   sub: string
   icon: ReactNode
   accent?: boolean
@@ -216,10 +216,26 @@ function SummaryCard({
         <span className="usage-summary-card__icon">{icon}</span>
         {label}
       </div>
-      <strong>{value}</strong>
+      <div className="usage-summary-card__value">
+        <strong>{value}</strong>
+        {unit !== '' ? <em>{unit}</em> : null}
+      </div>
       <span>{sub}</span>
     </div>
   )
+}
+
+function summaryView(metrics: UsageMetrics, metric: UsageMetric): { value: string; unit: string; sub: string } {
+  const cny: string = formatCnyAmount(usdToCny(metrics.equivalentUsd))
+  const tokens: string = formatCompactTokens(totalTokens(metrics))
+  const requests: string = formatInteger(metrics.requests)
+  if (metric === 'tokens') {
+    return { value: tokens, unit: 'tokens', sub: `${cny} · ${requests} 次请求` }
+  }
+  if (metric === 'requests') {
+    return { value: requests, unit: '次', sub: `${cny} · ${tokens} tokens` }
+  }
+  return { value: cny, unit: '', sub: `${tokens} tokens · ${requests} 次请求` }
 }
 
 function MetricSwitch({
@@ -555,6 +571,23 @@ export function UsagePage() {
     }
   }, [monthMetrics, today])
 
+  const forecastView = useMemo(() => {
+    const cny: string = formatCnyAmount(usdToCny(forecast.costUsd))
+    const tokens: string = formatCompactTokens(forecast.tokens)
+    const requests: string = formatInteger(forecast.requests)
+    if (metric === 'tokens') {
+      return { value: tokens, unit: 'tokens', sub: `${cny} · ${requests} 次请求` }
+    }
+    if (metric === 'requests') {
+      return { value: requests, unit: '次', sub: `${cny} · ${tokens} tokens` }
+    }
+    return { value: cny, unit: '', sub: `预计 ${tokens} tokens · ${requests} 次请求` }
+  }, [forecast, metric])
+
+  const todayView = summaryView(todayMetrics, metric)
+  const weekView = summaryView(weekMetrics, metric)
+  const monthView = summaryView(monthMetrics, metric)
+
   const heatmap = useMemo(
     () =>
       today === '' ? null : buildUsageHeatmap(dayBuckets, providerFilter, metric, today),
@@ -750,39 +783,20 @@ export function UsagePage() {
   return (
     <div className="usage-page">
       <header className="usage-page__head">
-        <button
-          type="button"
-          className="icon-btn usage-page__back"
-          title="返回"
-          aria-label="返回"
-          onClick={() => openUsage(false)}
-        >
-          <IconArrowLeft size={21} />
-        </button>
-        <div className="usage-page__heading">
-          <strong>用量与成本</strong>
-          <span>本地统计 · 不扫描会话历史 · 无后台轮询</span>
-        </div>
-        <div className="usage-page__actions">
+        <div className="usage-page__head-inner">
           <button
             type="button"
-            className="btn btn--ghost usage-page__action"
-            title="重新读取本地用量账本"
-            onClick={() => void reloadOverview()}
-            disabled={loading}
+            className="icon-btn usage-page__back"
+            title="返回"
+            aria-label="返回"
+            onClick={() => openUsage(false)}
           >
-            <IconRefresh size={15} />
-            刷新
+            <IconArrowLeft size={21} />
           </button>
-          <button
-            type="button"
-            className="btn btn--ghost usage-page__action"
-            title="按日明细导出 CSV"
-            onClick={() => void exportCsv()}
-          >
-            <IconDownload size={15} />
-            导出 CSV
-          </button>
+          <div className="usage-page__heading">
+            <strong>用量与成本</strong>
+            <span>本地统计 · 不扫描会话历史 · 无后台轮询</span>
+          </div>
         </div>
       </header>
 
@@ -797,30 +811,68 @@ export function UsagePage() {
           </div>
         ) : null}
 
+        <div className="usage-toolbar">
+          <div className="usage-toolbar__filters">
+            <div className="usage-toolbar__group">
+              <span className="usage-toolbar__label">服务商</span>
+              <ProviderSwitch provider={providerFilter} onChange={setProviderFilter} />
+            </div>
+            <div className="usage-toolbar__group">
+              <span className="usage-toolbar__label">主指标</span>
+              <MetricSwitch metric={metric} onChange={setMetric} />
+            </div>
+          </div>
+          <div className="usage-toolbar__actions">
+            <button
+              type="button"
+              className="usage-action-link"
+              title="重新读取本地用量账本"
+              onClick={() => void reloadOverview()}
+              disabled={loading}
+            >
+              <IconRefresh size={14} />
+              刷新
+            </button>
+            <button
+              type="button"
+              className="usage-action-link"
+              title="按日明细导出 CSV"
+              onClick={() => void exportCsv()}
+            >
+              <IconDownload size={14} />
+              导出 CSV
+            </button>
+          </div>
+        </div>
+
         <section className="usage-summary" aria-label="用量汇总">
           <SummaryCard
             label="今日"
-            value={formatCnyAmount(usdToCny(todayMetrics.equivalentUsd))}
-            sub={`${formatCompactTokens(totalTokens(todayMetrics))} tokens · ${formatInteger(todayMetrics.requests)} 次请求`}
+            value={todayView.value}
+            unit={todayView.unit}
+            sub={todayView.sub}
             icon={<IconCalendar size={16} />}
             accent
           />
           <SummaryCard
             label="近 7 天"
-            value={formatCnyAmount(usdToCny(weekMetrics.equivalentUsd))}
-            sub={`${formatCompactTokens(totalTokens(weekMetrics))} tokens · ${formatInteger(weekMetrics.requests)} 次请求`}
+            value={weekView.value}
+            unit={weekView.unit}
+            sub={weekView.sub}
             icon={<IconClock size={16} />}
           />
           <SummaryCard
             label="本月"
-            value={formatCnyAmount(usdToCny(monthMetrics.equivalentUsd))}
-            sub={`${formatCompactTokens(totalTokens(monthMetrics))} tokens · ${formatInteger(monthMetrics.requests)} 次请求`}
+            value={monthView.value}
+            unit={monthView.unit}
+            sub={monthView.sub}
             icon={<IconChart size={16} />}
           />
           <SummaryCard
             label="本月预计"
-            value={formatCnyAmount(usdToCny(forecast.costUsd))}
-            sub={`预计 ${formatCompactTokens(forecast.tokens)} tokens · ${formatInteger(forecast.requests)} 次请求`}
+            value={forecastView.value}
+            unit={forecastView.unit}
+            sub={forecastView.sub}
             icon={<IconTrendUp size={16} />}
           />
         </section>
@@ -836,11 +888,9 @@ export function UsagePage() {
                 {' · '}
                 最近 53 周
                 {heatmap !== null ? ` · ${heatmap.start} 至 ${heatmap.end}` : ''}
+                {' · '}
+                按{METRIC_LABEL[metric]}着色
               </p>
-            </div>
-            <div className="usage-card__tools">
-              <ProviderSwitch provider={providerFilter} onChange={setProviderFilter} />
-              <MetricSwitch metric={metric} onChange={setMetric} />
             </div>
           </header>
           {heatmap === null || loading ? (
@@ -886,13 +936,8 @@ export function UsagePage() {
           <article className="usage-provider" data-configured={deepseekEnabled}>
             <header className="usage-provider__head">
               <div>
-                <span className="usage-provider__mark" data-provider="deepseek">
-                  <IconBrain size={17} />
-                </span>
-                <div>
-                  <h3>DeepSeek</h3>
-                  <p>官方价目 · 峰谷计价 · 按请求开始时间归属</p>
-                </div>
+                <h3>DeepSeek</h3>
+                <p>官方价目 · 峰谷计价 · 按请求开始时间归属</p>
               </div>
               <span className="usage-status" data-enabled={deepseekEnabled}>
                 {deepseekEnabled ? '已启用' : '未启用'}
@@ -951,13 +996,8 @@ export function UsagePage() {
           <article className="usage-provider" data-configured={opencodeEnabled}>
             <header className="usage-provider__head">
               <div>
-                <span className="usage-provider__mark" data-provider="opencode">
-                  <IconGlobe size={17} />
-                </span>
-                <div>
-                  <h3>OpenCode Go</h3>
-                  <p>套餐额度与等价按量成本均以网关返回为准</p>
-                </div>
+                <h3>OpenCode Go</h3>
+                <p>套餐额度与等价按量成本均以网关返回为准</p>
               </div>
               <span className="usage-status" data-enabled={opencodeEnabled}>
                 {opencodeEnabled ? '已启用' : '未启用'}
