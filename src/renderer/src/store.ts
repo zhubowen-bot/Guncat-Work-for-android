@@ -181,6 +181,8 @@ interface State {
   artifacts: WorkArtifactsDto | null
   notice: Notice | null
   settingsOpen: boolean
+  /** 「用量与成本」独立页面是否打开（入口在设置页与侧栏底部） */
+  usageOpen: boolean
   /**
    * 右侧工作区面板是否展开。
    * 原版侧栏底部就有「工作区」入口，且只看 `isWide && detailsOpen`、**不判模式** ——
@@ -234,6 +236,8 @@ interface State {
   applyAgentThinkingDefault(): Promise<void>
   setWebSearch(value: boolean): void
   openSettings(open: boolean): void
+  /** 打开/关闭独立的「用量与成本」页面 */
+  openUsage(open: boolean): void
   toggleWorkspace(open?: boolean): void
   /** 手机端左侧会话抽屉（桌面端侧栏常驻，这个状态不产生视觉影响） */
   sidebarOpen: boolean
@@ -468,6 +472,7 @@ export const useStore = create<State>((set, get) => {
     artifacts: null,
     notice: null,
     settingsOpen: false,
+    usageOpen: false,
     workspaceOpen:
       typeof window === 'undefined' || !window.matchMedia('(max-width: 860px)').matches,
     sidebarOpen: false,
@@ -732,7 +737,13 @@ export const useStore = create<State>((set, get) => {
     },
 
     openSettings(open) {
-      set({ settingsOpen: open })
+      // 打开设置时收起用量页，避免两个整页同时处于打开状态
+      set({ settingsOpen: open, usageOpen: open ? false : get().usageOpen })
+    },
+
+    openUsage(open) {
+      // 手机端从侧栏进入时先把抽屉收掉，避免页面下方还压着一层遮罩
+      set({ usageOpen: open, sidebarOpen: open ? false : get().sidebarOpen })
     },
 
     openSidebar() {

@@ -7,6 +7,7 @@ import { Timeline } from './components/Timeline'
 import { WorkspacePanel } from './components/WorkspacePanel'
 import { Picker } from './components/Picker'
 import { SettingsPage } from './components/SettingsPage'
+import { UsagePage } from './components/UsagePage'
 import { SpeechBar } from './components/SpeechBar'
 import { agentById, isVirtualAgentId } from './conversations'
 import { AgentGlyph } from './components/AgentGlyph'
@@ -82,6 +83,7 @@ export default function App() {
   const openTableOcr = useStore((s) => s.openTableOcr)
   const settings = useStore((s) => s.settings)
   const settingsOpen = useStore((s) => s.settingsOpen)
+  const usageOpen = useStore((s) => s.usageOpen)
   const reloadSettings = useStore((s) => s.reloadSettings)
   const profiles = settings?.apiProfiles ?? []
   const currentProfile = profiles.find((p) => p.id === settings?.currentApiProfileId)
@@ -288,7 +290,7 @@ export default function App() {
         void intakeFiles(paths)
       }}
     >
-      {settingsOpen ? <SettingsPage /> : (
+      {usageOpen ? <UsagePage /> : settingsOpen ? <SettingsPage /> : (
         <>
           {dragging ? (
             <div className="dropzone">

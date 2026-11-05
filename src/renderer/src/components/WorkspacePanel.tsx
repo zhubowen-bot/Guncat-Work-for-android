@@ -14,6 +14,7 @@ import type {
   WorkspaceInfoDto
 } from '@ipc/contract'
 import { Constants } from '@core/common/Constants'
+import { formatCnyAmount, formatCompactTokens, usdToCny } from '@core/common/UsagePricing'
 import { useStore } from '../store'
 import { Picker } from './Picker'
 import {
@@ -75,12 +76,18 @@ export function TaskStatsCard({
   elapsedSec,
   speed,
   cacheHit,
-  toolCalls
+  toolCalls,
+  turnTokens,
+  turnCostUsd
 }: {
   elapsedSec: number
   speed: number
   cacheHit: number
   toolCalls: number
+  /** 本轮 tokens（运行时统计上下文，不写进消息存档） */
+  turnTokens: number
+  /** 本轮费用（美元；展示时折算人民币） */
+  turnCostUsd: number
 }) {
   return (
     <div className="statcard">
@@ -89,6 +96,8 @@ export function TaskStatsCard({
       <StatRow label="输出速度" value={speed > 0 ? `${Math.round(speed)} 字符/秒` : '—'} />
       <StatRow label="缓存命中" value={cacheHit >= 0 ? `${Math.round(cacheHit * 100)}%` : '—'} />
       <StatRow label="工具调用轮数" value={String(toolCalls)} />
+      <StatRow label="本轮 tokens" value={formatCompactTokens(turnTokens)} />
+      <StatRow label="本轮费用" value={formatCnyAmount(usdToCny(turnCostUsd))} />
     </div>
   )
 }
@@ -770,6 +779,8 @@ export function WorkspacePanel() {
         speed={lastSpeed}
         cacheHit={lastCacheHit}
         toolCalls={toolCalls}
+        turnTokens={stats?.turnTokens ?? 0}
+        turnCostUsd={stats?.turnCostUsd ?? 0}
       />
 
       {/* 当前目标卡（对齐原版 DetailsPanelView 的目标卡）。

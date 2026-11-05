@@ -5,6 +5,7 @@ import { MultimodalConfig } from '../model/MultimodalConfig';
 import { Constants } from '../common/Constants';
 import { ParsedFileResult } from '../common/Types';
 import { arrayBufferToBase64 } from '../common/Utils';
+import { UsageService } from './UsageService';
 
 const PARSE_SYSTEM_PROMPT: string = '请仅解析用户上传的文件内容，完整地返回文件中包含的信息。不要回答具体问题，不要执行额外任务，不要对原始信息进行压缩，只返回文件内容的解析结果。';
 
@@ -105,6 +106,7 @@ export class MultimodalService {
       messages: [systemMsg, userMsg]
     };
     let bodyStr: string = JSON.stringify(body);
+    let startedAt: number = Date.now();
 
     let httpRequest: http.HttpRequest = http.createHttp();
     try {
@@ -138,6 +140,19 @@ export class MultimodalService {
       if (typeof json !== 'object' || json === null) {
         throw new Error('多模态解析返回为空');
       }
+      // 多模态解析同样是真实的 LLM API 调用：拿到响应就记账（即使后续内容校验失败，
+      // tokens 也已经被服务端计费）。统计失败由 UsageService 内部静默吞掉。
+      let rawUsage: Object = (json as Record<string, Object>)['usage'];
+      UsageService.recordDirect(
+        baseUrl,
+        model,
+        'completions',
+        startedAt,
+        typeof rawUsage === 'object' && rawUsage !== null
+          ? (rawUsage as Record<string, Object>)
+          : null,
+        true
+      );
       let choices: Object = (json as Record<string, Object>)['choices'];
       if (!(choices instanceof Array) || choices.length === 0) {
         throw new Error('多模态解析返回为空');

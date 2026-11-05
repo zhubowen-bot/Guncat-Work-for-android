@@ -26,6 +26,8 @@ export class Constants {
   static readonly LS_KEY_AUTO_READ_ENABLED: string = 'guncat_auto_read_enabled';
   static readonly LS_KEY_CURRENT_AGENT_ID: string = 'guncat_current_agent';
   static readonly LS_KEY_CURRENT_CONV_ID: string = 'guncat_current_conv';
+  /** 用量页的本月预算（人民币，字符串型偏好） */
+  static readonly LS_KEY_USAGE_BUDGET_CNY: string = 'guncat_usage_budget_cny';
   // 表格识别页当前选择的配置 ('multimodal' / 'main'), 决定引用多模态解析还是主模型配置
   static readonly LS_KEY_TABLE_OCR_PROVIDER: string = 'table_ocr_provider';
 

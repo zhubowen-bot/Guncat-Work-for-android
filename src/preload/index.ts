@@ -57,6 +57,16 @@ const api = {
       ipcRenderer.invoke(INVOKE.settingsSearchEngines)
   },
 
+  /** 用量与成本：本地聚合快照 / 手动余额刷新 / CSV 导出 */
+  usage: {
+    overview: (): Promise<import('../ipc/contract').UsageOverviewDto> =>
+      ipcRenderer.invoke(INVOKE.usageOverview),
+    refreshBalance: (force?: boolean): Promise<import('../ipc/contract').UsageBalanceSnapshot> =>
+      ipcRenderer.invoke(INVOKE.usageRefreshBalance, force === true),
+    exportCsv: (provider?: string): Promise<import('../ipc/contract').TransferResultDto> =>
+      ipcRenderer.invoke(INVOKE.usageExportCsv, provider ?? 'all')
+  },
+
   agents: {
     list: (): Promise<AgentDto[]> => ipcRenderer.invoke(INVOKE.agentsList)
   },

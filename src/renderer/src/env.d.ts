@@ -53,6 +53,12 @@ export interface GuncatApi {
     /** 本地联网搜索的引擎目录（渲染层据此渲染选项，不必自己维护一份引擎表） */
     searchEngines(): Promise<SearchEngineDto[]>
   }
+  /** 用量与成本：本地聚合快照 / 手动余额刷新 / CSV 导出 */
+  usage: {
+    overview(): Promise<import('@ipc/contract').UsageOverviewDto>
+    refreshBalance(force?: boolean): Promise<import('@ipc/contract').UsageBalanceSnapshot>
+    exportCsv(provider?: string): Promise<TransferResultDto>
+  }
   agents: {
     list(): Promise<AgentDto[]>
   }

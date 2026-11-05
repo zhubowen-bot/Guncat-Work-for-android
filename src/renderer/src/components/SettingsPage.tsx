@@ -15,6 +15,7 @@ import { useSpeech } from '../speech/speechStore'
 import {
   IconArrowLeft,
   IconBrain,
+  IconChart,
   IconCheck,
   IconChevronRight,
   IconCode,
@@ -301,6 +302,7 @@ type SettingsSectionId =
   | 'autoRead'
   | 'voice'
   | 'shell'
+  | 'usage'
 
 type SettingsGroupId = 'model' | 'capability' | 'voice' | 'system'
 
@@ -318,7 +320,8 @@ const SECTION_LEAD: Record<SettingsSectionId, string> = {
   multimodal: '用独立的多模态模型先行解析附件，再把文本交给主模型。',
   autoRead: '每轮回答生成完成后自动朗读；音色与语速在朗读控制条中调整。',
   voice: '录音转文字使用的 OpenAI 兼容转写接口。',
-  shell: '选择 run_command 使用的命令环境；切换只影响之后执行的命令。'
+  shell: '选择 run_command 使用的命令环境；切换只影响之后执行的命令。',
+  usage: '查看每日 token、费用与峰谷明细；所有统计都在本机完成。'
 }
 
 /**
@@ -411,6 +414,7 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
   const storeOpen = useStore((s) => s.settingsOpen)
   const open = openOverride ?? storeOpen
   const openSettings = useStore((s) => s.openSettings)
+  const openUsage = useStore((s) => s.openUsage)
   const settings = useStore((s) => s.settings)
   const reloadSettings = useStore((s) => s.reloadSettings)
   const pushNotice = useStore((s) => s.pushNotice)
@@ -773,6 +777,8 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
         return shellBack === 'bundled'
           ? '内置终端 · Termux 用户态'
           : '系统 Shell · /system/bin/sh'
+      case 'usage':
+        return '每日 Token 与费用 · 本地统计'
     }
   }
 
@@ -782,7 +788,8 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
     { id: 'search', label: '本地联网搜索', group: 'capability', icon: <IconGlobe size={22} /> },
     { id: 'multimodal', label: '多模态解析', group: 'capability', icon: <IconImage size={22} /> },
     { id: 'autoRead', label: '自动朗读', group: 'voice', icon: <IconSpeaker size={22} /> },
-    { id: 'voice', label: '语音输入', group: 'voice', icon: <IconMic size={22} /> }
+    { id: 'voice', label: '语音输入', group: 'voice', icon: <IconMic size={22} /> },
+    { id: 'usage', label: '用量与成本', group: 'system', icon: <IconChart size={22} /> }
   ]
   if (shellAvailable) {
     navItems.push({
@@ -845,7 +852,13 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
                       className="settings-nav__item"
                       data-active={!compact && item.id === activeSection}
                       aria-current={!compact && item.id === activeSection ? 'page' : undefined}
-                      onClick={() => openSection(item.id)}
+                      onClick={() => {
+                        if (item.id === 'usage') {
+                          openUsage(true)
+                          return
+                        }
+                        openSection(item.id)
+                      }}
                     >
                       <span className="settings-nav__icon">{item.icon}</span>
                       <span className="settings-nav__text">

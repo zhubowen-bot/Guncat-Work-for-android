@@ -2,6 +2,20 @@
 // 主进程是业务状态的唯一权威（对话、工作区、Agent Loop 都在主进程跑），
 // 渲染进程只持有镜像并通过事件保持同步，因此这里定义的都是可结构化克隆的纯数据 DTO。
 
+export type {
+  UsageBalanceInfo,
+  UsageBalanceSnapshot,
+  UsageDayDto,
+  UsageDayModelDto,
+  UsageMetrics,
+  UsageMetricKey,
+  UsageOverviewDto,
+  UsagePricingInfoDto,
+  UsageProvider,
+  UsageRunTotals,
+  UsageWindow
+} from '../core/common/UsageTypes'
+
 export const INVOKE = {
   /** 设置：读取全部配置 */
   settingsLoad: 'settings:load',
@@ -134,7 +148,14 @@ export const INVOKE = {
    */
   fileTransfer: 'file:transfer',
   /** 端侧增强：语音输入（录音 → 转写） */
-  asrTranscribe: 'asr:transcribe'
+  asrTranscribe: 'asr:transcribe',
+
+  /** 用量与成本：打开页面时读取聚合快照（本地，无网络） */
+  usageOverview: 'usage:overview',
+  /** DeepSeek 余额对账（手动刷新；页面打开时由主进程做 10 分钟节流） */
+  usageRefreshBalance: 'usage:refreshBalance',
+  /** 按日明细 CSV 导出（先弹保存位置） */
+  usageExportCsv: 'usage:exportCsv'
 } as const
 
 export const EVENT = 'guncat:event'
@@ -216,6 +237,12 @@ export interface ConversationStatsDto {
   cacheHit: number
   /** 最近一次任务的工具调用轮数 */
   rounds: number
+  /** 本轮 tokens（来自运行时统计上下文，不写进消息/会话存档） */
+  turnTokens: number
+  /** 本轮费用（美元；OpenCode 用等价按量成本） */
+  turnCostUsd: number
+  /** 本轮实际 API 请求数 */
+  turnRequests: number
   /** 当前目标；没有目标时为 null */
   goal: GoalDto | null
 }

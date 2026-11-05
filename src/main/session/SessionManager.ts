@@ -78,6 +78,7 @@ import type { PluginManifestResult } from '@core/common/PluginManifestLoader'
 import { MultimodalService } from '@core/service/MultimodalService'
 import { FileUploadService } from '@core/service/FileUploadService'
 import { image } from '@core/platform/kit/ImageKit'
+import { UsageService } from '@core/service/UsageService'
 
 import type {
   AgentDto,
@@ -571,7 +572,9 @@ export class SessionManager {
     Constants.LS_KEY_WEB_SEARCH_ENABLED,
     // 当前智能体 / 当前会话：原版每次切换都会落盘（其他路径只读不依赖，但存档不该停在过期的对象上）
     Constants.LS_KEY_CURRENT_AGENT_ID,
-    Constants.LS_KEY_CURRENT_CONV_ID
+    Constants.LS_KEY_CURRENT_CONV_ID,
+    // 用量页预算（人民币）：只在渲染层使用，但要能随设置一起读回
+    Constants.LS_KEY_USAGE_BUDGET_CNY
   ]
 
   private async loadStringPrefs(): Promise<Record<string, string>> {
@@ -852,12 +855,17 @@ export class SessionManager {
     const average = (values: number[]): number =>
       values.length === 0 ? -1 : values.reduce((a, b) => a + b, 0) / values.length
     const goal = GoalService.read(this.workspaceRoot(conversationId))
+    // 本轮费用/tokens 来自 UsageService 的运行期累加器（不写消息存档）。
+    const turnUsage = UsageService.runTotals(LLMProtocol.conversationSessionId(conversationId))
     return {
       elapsedMs:
         stats === undefined || stats.finishedAt === 0 ? 0 : stats.finishedAt - stats.startedAt,
       speed: stats === undefined ? -1 : average(stats.speeds),
       cacheHit: stats === undefined ? -1 : average(stats.hits),
       rounds: stats === undefined ? 0 : stats.rounds,
+      turnTokens: turnUsage.tokens,
+      turnCostUsd: turnUsage.costUsd,
+      turnRequests: turnUsage.requests,
       goal:
         goal === null
           ? null
@@ -1112,6 +1120,7 @@ export class SessionManager {
     const history: Message[] = conv.messages.slice(0, -1)
     handle.busy = true
     handle.abort = new AbortSignal()
+    UsageService.beginRun(config.sessionId)
 
     const callbacks: StreamCallbacks = new StreamCallbacks()
     // 正文跨轮累积（原版 assistantMsg.content += delta 的同一口径）：
@@ -1309,6 +1318,7 @@ export class SessionManager {
       failure = (e as Error)?.message ?? String(e)
     } finally {
       handle.busy = false
+      UsageService.endRun(config.sessionId)
       // 收尾时把失败原因落到正文里（`onError` 已经即时刷过一次，但那一次可能被
       // 后续的流式增量覆盖掉，这里以最终态再钉一遍）。正文为空就直接写这句，
       // 否则空一行再接 —— 与原版 handleStreamError 的两分支一致。
@@ -1482,6 +1492,7 @@ export class SessionManager {
     handle.busy = true
     handle.abort = new AbortSignal()
     this.beginRunStats(conv.id)
+    UsageService.beginRun(config.sessionId)
     // 压缩环境要在 handle.abort 换成新实例之后再建，否则压缩请求会挂到上一次运行的中断信号上
     const compactionEnv: WorkCompactionEnv = { config, request, reasoningEffort, abort: handle.abort }
 
@@ -1816,6 +1827,7 @@ export class SessionManager {
     } finally {
       handle.busy = false
       this.finishRunStats(conv.id)
+      UsageService.endRun(config.sessionId)
       // ===== 收尾标注（原版 finalizeWorkTurn 3147-3160 / appendTurnNote 3162-3166）=====
       // 手动停止 / 输出顶到上限 / 步数耗尽，都在这一轮的最后一条 assistant 正文末尾
       // 追加一句说明。界面据此把折叠栏的「已完成」改成「已停止」，

@@ -21,7 +21,7 @@ import type { PluginManifestResult } from '../src/core/common/PluginManifestLoad
 import { filesDir, cacheDir, tempDir } from '../src/core/platform/appPaths'
 import { StorageManager } from '../src/core/data/StorageManager'
 import { ChatService, resolveEndpointUrl, buildChatCompletionsBody,
-  buildAnthropicBody } from '../src/core/service/ChatService'
+  buildAnthropicBody, extractAnthropicUsage, deriveStreamStats } from '../src/core/service/ChatService'
 import { AgentLoopService, LoopMessage, ToolImageAttachment,
   LoopTurnCallbacks } from '../src/core/service/AgentLoopService'
 import { SSEAdapterFactory } from '../src/core/service/SSEAdapterFactory'
@@ -33,6 +33,28 @@ import { Conversation } from '../src/core/model/Conversation'
 import { Message } from '../src/core/model/Message'
 import { ToolRegistry } from '../src/core/common/ToolRegistry'
 import { GuncatUiLang } from '../src/core/common/GuncatUiLang'
+import {
+  addUsageRecordToLedger,
+  aggregateUsageRange,
+  buildUsageCsv,
+  buildUsageHeatmap,
+  createEmptyUsageLedger,
+  cropUsageLedger
+} from '../src/core/common/UsageAggregate'
+import {
+  USD_CNY_RATE,
+  priceDeepSeekUsage
+} from '../src/core/common/UsagePricing'
+import {
+  beijingDateKey,
+  buildUsageRecord,
+  mergeUsageObjects,
+  normalizeUsageTokens,
+  usagePeriodAt,
+  usageTotalInputTokens
+} from '../src/core/common/UsageProtocol'
+import type { UsageLedgerFile, UsageRecord } from '../src/core/common/UsageTypes'
+import { UsageService } from '../src/core/service/UsageService'
 import { DataPipeline } from '../src/core/common/DataPipeline'
 import { runJs } from '../src/core/platform/native/libguncatjs'
 import { http as guncatHttp } from '../src/core/platform/kit/NetworkKit'
@@ -1340,6 +1362,292 @@ async function main(): Promise<void> {
   check('两次请求都到了服务端', truncAttempts === 2, String(truncAttempts))
   check('重试后拿到完整回答（不是半截）', truncTurn.content === '完整回答', truncTurn.content)
   stopServer(truncServer)
+
+  // ===== 22. 用量与成本统计 =====
+  //
+  // 这些断言只依赖纯逻辑：协议归一化、峰谷边界、日聚合、裁剪、CSV、热力图。
+  // 不联网、不启动 Electron，跑的就是生产代码本身。
+  section('22. 用量与成本 · 三协议归一化与峰谷')
+
+  const beijingMs = (year: number, month: number, day: number, hour: number, minute: number): number =>
+    Date.UTC(year, month - 1, day, hour - 8, minute)
+
+  const anthStart = {
+    type: 'message_start',
+    message: {
+      usage: {
+        input_tokens: 100,
+        cache_creation_input_tokens: 50,
+        cache_read_input_tokens: 1000,
+        output_tokens: 0
+      }
+    }
+  }
+  const anthDelta = { type: 'message_delta', usage: { output_tokens: 200 } }
+  const anthMerged = mergeUsageObjects(
+    mergeUsageObjects(null, extractAnthropicUsage(JSON.stringify(anthStart))),
+    extractAnthropicUsage(JSON.stringify(anthDelta))
+  )
+  const anthTokens = normalizeUsageTokens('anthropic', anthMerged).tokens
+  check('Anthropic 命中 = cache_read', anthTokens.inputHit === 1000, String(anthTokens.inputHit))
+  check('Anthropic 未命中 = input_tokens（不含缓存）', anthTokens.inputMiss === 100, String(anthTokens.inputMiss))
+  check('Anthropic 写入 = cache_creation', anthTokens.cacheWrite === 50, String(anthTokens.cacheWrite))
+  check('Anthropic 输出 = output_tokens', anthTokens.output === 200, String(anthTokens.output))
+  check('Anthropic message_start 的 usage 不再被丢弃',
+    extractAnthropicUsage(JSON.stringify(anthStart)) !== null)
+  check('Anthropic 上下文预算使用总输入（命中+未命中+写入）',
+    usageTotalInputTokens('anthropic', anthMerged) === 1150,
+    String(usageTotalInputTokens('anthropic', anthMerged)))
+  const anthStats = deriveStreamStats(anthMerged, 1000, 'anthropic')
+  check('Anthropic 速度按输出 tokens 计算', Math.abs(anthStats[0] - 200) < 0.001, String(anthStats[0]))
+  check('Anthropic 缓存命中率包含缓存读取',
+    anthStats[1] > 0.86 && anthStats[1] < 0.87, String(anthStats[1]))
+
+  const respTokens = normalizeUsageTokens('responses', {
+    input_tokens: 1200,
+    output_tokens: 300,
+    input_tokens_details: { cached_tokens: 800 }
+  }).tokens
+  check('Responses 命中 = cached_tokens', respTokens.inputHit === 800, String(respTokens.inputHit))
+  check('Responses 未命中 = input_tokens - cached',
+    respTokens.inputMiss === 400, String(respTokens.inputMiss))
+  check('Responses 输出 = output_tokens', respTokens.output === 300, String(respTokens.output))
+
+  const compTokens = normalizeUsageTokens('completions', {
+    prompt_tokens: 1000,
+    prompt_cache_hit_tokens: 600,
+    prompt_cache_miss_tokens: 400,
+    completion_tokens: 200
+  }).tokens
+  check('Completions 优先使用 prompt_cache_hit/miss',
+    compTokens.inputHit === 600 && compTokens.inputMiss === 400 && compTokens.output === 200,
+    JSON.stringify(compTokens))
+  const compFallback = normalizeUsageTokens('completions', {
+    prompt_tokens: 1000,
+    prompt_tokens_details: { cached_tokens: 250 },
+    completion_tokens: 100
+  }).tokens
+  check('Completions 回落 prompt_tokens - cached',
+    compFallback.inputHit === 250 && compFallback.inputMiss === 750 && compFallback.output === 100,
+    JSON.stringify(compFallback))
+
+  const ocRaw = {
+    prompt_tokens: 1200,
+    completion_tokens: 300,
+    cost: 0,
+    opencode: {
+      billing_source: 'go',
+      list_cost: 0.00412,
+      allowance: 0.00412,
+      tokens: {
+        input: 1200,
+        output: 300,
+        reasoning: 120,
+        cache_read: 8000,
+        cache_write_5m: 0,
+        cache_write_1h: 0
+      }
+    }
+  }
+  const ocTokens = normalizeUsageTokens('anthropic', ocRaw).tokens
+  check('OpenCode 优先 usage.opencode.tokens',
+    ocTokens.inputHit === 8000 && ocTokens.inputMiss === 1200 && ocTokens.output === 300,
+    JSON.stringify(ocTokens))
+  const ocRecord = buildUsageRecord(
+    'anthropic',
+    ocRaw,
+    'https://opencode.ai/inference/go',
+    'deepseek-v4.1-flash',
+    beijingMs(2026, 11, 5, 10, 0),
+    { success: true }
+  )
+  check('OpenCode 按 Base URL 识别，不按模型名套 DeepSeek 峰谷价', ocRecord.provider === 'opencode-go')
+  check('OpenCode Go 套餐内 cost 可以为 0', ocRecord.costUsd === 0)
+  check('OpenCode allowance 单独记账', ocRecord.allowanceUsd === 0.00412, String(ocRecord.allowanceUsd))
+  check('OpenCode list_cost 作为等价成本',
+    ocRecord.listCostUsd === 0.00412 && ocRecord.equivalentUsd === 0.00412)
+  check('OpenCode billing_source=go', ocRecord.billingSource === 'go')
+
+  const peakCost = priceDeepSeekUsage(
+    'deepseek-flash',
+    'peak',
+    { inputHit: 1000000, inputMiss: 1000000, cacheWrite: 0, output: 1000000 },
+    0
+  )
+  const offpeakCost = priceDeepSeekUsage(
+    'deepseek-flash',
+    'offpeak',
+    { inputHit: 1000000, inputMiss: 1000000, cacheWrite: 0, output: 1000000 },
+    0
+  )
+  const proCost = priceDeepSeekUsage(
+    'deepseek-v4-pro',
+    'peak',
+    { inputHit: 1000000, inputMiss: 1000000, cacheWrite: 0, output: 1000000 },
+    0
+  )
+  check('Flash 高峰价：0.04 + 2 + 8 = 10.04 元',
+    Math.abs(peakCost.costCny - 10.04) < 0.000001, String(peakCost.costCny))
+  check('Flash 空闲价是高峰的一半', Math.abs(offpeakCost.costCny - 5.02) < 0.000001, String(offpeakCost.costCny))
+  check('Pro 高峰价：0.3 + 9 + 27 = 36.3 元',
+    Math.abs(proCost.costCny - 36.3) < 0.000001, String(proCost.costCny))
+  const searchCost = priceDeepSeekUsage(
+    'deepseek-flash',
+    'peak',
+    { inputHit: 0, inputMiss: 0, cacheWrite: 0, output: 0 },
+    1000
+  )
+  check('服务端搜索按 5 元 / 1000 次单独计价',
+    Math.abs(searchCost.costCny - 5) < 0.000001, String(searchCost.costCny))
+
+  const thursday = (hour: number, minute: number): number => beijingMs(2026, 11, 5, hour, minute)
+  check('峰谷边界 08:59 = 空闲', usagePeriodAt(thursday(8, 59)) === 'offpeak')
+  check('峰谷边界 09:00 = 高峰', usagePeriodAt(thursday(9, 0)) === 'peak')
+  check('峰谷边界 11:59 = 高峰', usagePeriodAt(thursday(11, 59)) === 'peak')
+  check('峰谷边界 12:00 = 空闲', usagePeriodAt(thursday(12, 0)) === 'offpeak')
+  check('峰谷边界 13:59 = 空闲', usagePeriodAt(thursday(13, 59)) === 'offpeak')
+  check('峰谷边界 14:00 = 高峰', usagePeriodAt(thursday(14, 0)) === 'peak')
+  check('峰谷边界 17:59 = 高峰', usagePeriodAt(thursday(17, 59)) === 'peak')
+  check('峰谷边界 18:00 = 空闲', usagePeriodAt(thursday(18, 0)) === 'offpeak')
+  check('周末全天空闲', usagePeriodAt(beijingMs(2026, 11, 7, 10, 0)) === 'offpeak')
+  check('法定节假日全天空闲', usagePeriodAt(beijingMs(2026, 10, 1, 10, 0)) === 'offpeak')
+  check('跨天请求按开始时间归属 23:59',
+    beijingDateKey(beijingMs(2026, 11, 5, 23, 59)) === '2026-11-05')
+  check('跨天请求按开始时间归属 00:00',
+    beijingDateKey(beijingMs(2026, 11, 6, 0, 0)) === '2026-11-06')
+  check('UTC+8 日期归属（UTC 16:30 = 北京时间次日 00:30）',
+    beijingDateKey(Date.UTC(2026, 10, 5, 16, 30)) === '2026-11-06')
+
+  section('22b. 用量与成本 · 日聚合 / 裁剪 / CSV / 热力图')
+
+  const dsLedger: UsageLedgerFile = createEmptyUsageLedger()
+  const dsRaw = {
+    input_tokens: 100,
+    cache_read_input_tokens: 1000,
+    cache_creation_input_tokens: 50,
+    output_tokens: 200
+  }
+  const recordAt = (startedAt: number, model: string = 'deepseek-flash'): UsageRecord =>
+    buildUsageRecord(
+      'anthropic',
+      dsRaw,
+      'https://api.deepseek.com/anthropic',
+      model,
+      startedAt,
+      { success: true, sessionId: 'ses_smoke' }
+    )
+  const r1 = recordAt(thursday(10, 0))
+  const r2 = recordAt(thursday(10, 30))
+  const r3 = recordAt(thursday(20, 0), 'deepseek-v4-pro')
+  addUsageRecordToLedger(dsLedger, r1, beijingDateKey(r1.startedAt), usagePeriodAt(r1.startedAt))
+  addUsageRecordToLedger(dsLedger, r2, beijingDateKey(r2.startedAt), usagePeriodAt(r2.startedAt))
+  addUsageRecordToLedger(dsLedger, r3, beijingDateKey(r3.startedAt), usagePeriodAt(r3.startedAt))
+  const dayAgg = aggregateUsageRange(dsLedger.days, 'all', '2026-11-05', '2026-11-05')
+  check('日聚合同日同模型累加', dayAgg.requests === 3, String(dayAgg.requests))
+  check('日聚合 token 累加', dayAgg.inputHit === 3000, String(dayAgg.inputHit))
+  check('日聚合总额与 providerTotals 同步',
+    dsLedger.totals.requests === 3 &&
+      dsLedger.providerTotals['deepseek'] !== undefined &&
+      dsLedger.providerTotals['deepseek'].requests === 3)
+  check('高峰与空闲分桶',
+    dsLedger.days['2026-11-05']['deepseek']['deepseek-flash'].peak !== undefined &&
+      dsLedger.days['2026-11-05']['deepseek']['deepseek-v4-pro'].offpeak !== undefined)
+
+  const missingRecord = buildUsageRecord(
+    'anthropic',
+    null,
+    'https://api.deepseek.com/anthropic',
+    'deepseek-flash',
+    thursday(10, 0),
+    { success: true }
+  )
+  check('缺失 usage 被标记且 token/cost 为 0',
+    missingRecord.missingUsage === true &&
+      missingRecord.inputHit === 0 &&
+      missingRecord.inputMiss === 0 &&
+      missingRecord.costUsd === 0)
+  addUsageRecordToLedger(dsLedger, missingRecord, '2026-11-05', 'peak')
+  check('缺失 usage 单独计数', dsLedger.totals.missingUsage === 1, String(dsLedger.totals.missingUsage))
+
+  const beforeCropRequests: number = dsLedger.totals.requests
+  dsLedger.days['2024-01-01'] = {
+    deepseek: {
+      'deepseek-flash': {
+        peak: {
+          ...JSON.parse(JSON.stringify(dsLedger.days['2026-11-05']['deepseek']['deepseek-flash'].peak))
+        }
+      }
+    }
+  }
+  const removed = cropUsageLedger(dsLedger, '2026-11-05', 400)
+  check('超过 400 天的日桶被裁剪', removed === 1 && dsLedger.days['2024-01-01'] === undefined, String(removed))
+  check('裁剪不影响全量累计值', dsLedger.totals.requests === beforeCropRequests)
+
+  const csv = buildUsageCsv(dsLedger)
+  check('CSV 带 UTF-8 BOM', csv.charCodeAt(0) === 0xfeff)
+  check('CSV 含表头与日期/服务商/模型', csv.includes('日期,服务商,模型') && csv.includes('DeepSeek') && csv.includes('deepseek-flash'))
+  check('CSV 含高峰与空闲行', csv.includes('高峰') && csv.includes('空闲'))
+  check('CSV 含折算人民币列', csv.includes('折算费用(CNY)'))
+
+  const heat = buildUsageHeatmap(dsLedger.days, 'all', 'cost', '2026-11-05')
+  check('热力图固定 53 周', heat.weeks.length === 53, String(heat.weeks.length))
+  check('热力图每周 7 天', heat.weeks.every((week) => week.days.length === 7))
+  check('热力图周一为第一行',
+    new Date(Date.UTC(
+      Number(heat.weeks[0].days[0].date.substring(0, 4)),
+      Number(heat.weeks[0].days[0].date.substring(5, 7)) - 1,
+      Number(heat.weeks[0].days[0].date.substring(8, 10))
+    )).getUTCDay() === 1)
+  const todayCell = heat.weeks.flatMap((week) => week.days).find((cell) => cell.date === '2026-11-05')
+  check('热力图今天有数据且不是未来', todayCell !== undefined && !todayCell.future && todayCell.value > 0)
+  check('热力图月份标签非空', heat.monthLabels.length > 0)
+
+  const dsCfg = new ApiConfig()
+  dsCfg.provider = 'openai-completions'
+  dsCfg.baseUrl = 'https://api.deepseek.com'
+  dsCfg.model = 'deepseek-flash'
+  const dsBody = buildChatCompletionsBody(dsCfg, null, [], 'hi', false, false)
+  const dsStreamOptions = dsBody['stream_options'] as Record<string, Object> | undefined
+  check('DeepSeek 流式请求补 stream_options.include_usage',
+    dsStreamOptions !== undefined && dsStreamOptions['include_usage'] === true)
+  const customCfg = new ApiConfig()
+  customCfg.provider = 'openai-completions'
+  customCfg.baseUrl = 'https://example.com/v1'
+  customCfg.model = 'custom-model'
+  const customBody = buildChatCompletionsBody(customCfg, null, [], 'hi', false, false)
+  check('自建兼容网关不强行添加 stream_options',
+    customBody['stream_options'] === undefined)
+  const loopDsBody = loopAny.buildCompletionsBody(
+    dsCfg, [LoopMessage.user('hi')], [], false, 'high', false)
+  const loopDsStreamOptions = loopDsBody['stream_options'] as Record<string, Object> | undefined
+  check('Agent Loop 的 completions 同样补 include_usage',
+    loopDsStreamOptions !== undefined && loopDsStreamOptions['include_usage'] === true)
+  check('美元/人民币折算使用固定汇率', USD_CNY_RATE > 0)
+
+  // 真实账本往返：recordDirect → 日桶 → flush → overview。
+  UsageService.beginRun('ses_smoke_usage')
+  UsageService.recordDirect(
+    'https://api.deepseek.com/anthropic',
+    'deepseek-flash',
+    'anthropic',
+    beijingMs(2026, 11, 5, 10, 0),
+    { input_tokens: 10, cache_read_input_tokens: 20, output_tokens: 5 },
+    true,
+    'ses_smoke_usage'
+  )
+  UsageService.flush()
+  const runTotals = UsageService.runTotals('ses_smoke_usage')
+  check('本轮统计上下文累计 tokens 与请求数',
+    runTotals.requests === 1 && runTotals.tokens === 35, JSON.stringify(runTotals))
+  UsageService.endRun('ses_smoke_usage')
+  const overview = await UsageService.overview()
+  check('UsageService 落盘后 overview 能读到日桶',
+    overview.totals.requests >= 1 && overview.days.length >= 1,
+    String(overview.totals.requests))
+  check('UsageService 数据文件在应用私有目录',
+    UsageService.dataFilePath().includes('usage-ledger.json') &&
+      fs.existsSync(UsageService.dataFilePath()))
+  UsageService.flush()
 
   // ===== 结果 =====
   console.log(`\n${'─'.repeat(58)}`)

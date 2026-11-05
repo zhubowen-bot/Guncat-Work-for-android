@@ -11,6 +11,7 @@ import {
 import { useStore } from '../store'
 import { APP_ICON_SRC, AgentGlyph } from './AgentGlyph'
 import {
+  IconChart,
   IconChat,
   IconChevronDown,
   IconChevronRight,
@@ -120,6 +121,7 @@ export function Sidebar() {
   const createConversation = useStore((s) => s.createConversation)
   const deleteConversation = useStore((s) => s.deleteConversation)
   const openSettings = useStore((s) => s.openSettings)
+  const openUsage = useStore((s) => s.openUsage)
   const openTableOcr = useStore((s) => s.openTableOcr)
   const running = useStore((s) => s.running)
   const workspaceOpen = useStore((s) => s.workspaceOpen)
@@ -166,6 +168,9 @@ export function Sidebar() {
           onClick={() => toggleWorkspace()}
         >
           <IconFolder size={19} />
+        </button>
+        <button className="rail__btn" title="用量与成本" onClick={() => openUsage(true)}>
+          <IconChart size={19} />
         </button>
         <button className="rail__btn" title="设置" onClick={() => openSettings(true)}>
           <IconSettings size={19} />
@@ -328,6 +333,17 @@ export function Sidebar() {
         >
           <IconTable size={17} />
           <span>表格</span>
+        </button>
+        <button
+          className="foot-btn"
+          title="用量与成本"
+          onClick={() => {
+            openUsage(true)
+            closeSidebar()
+          }}
+        >
+          <IconChart size={17} />
+          <span>用量</span>
         </button>
         <button
           className="foot-btn"

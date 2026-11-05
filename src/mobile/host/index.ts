@@ -40,6 +40,7 @@ import { AskUserBridge, AskAnswer } from '@core/service/AskUserBridge'
 import { TableOcrService } from '@core/service/TableOcrService'
 import type { TableOcrImage } from '@core/service/TableOcrService'
 import { MultimodalConfig } from '@core/model/MultimodalConfig'
+import { UsageService } from '@core/service/UsageService'
 import { image } from '@core/platform/kit/ImageKit'
 import { sanitizeTableHtml } from '@main/sanitizeHtml'
 import { transcribeAudio } from '@main/asr'
@@ -256,6 +257,34 @@ export function createMobileHost(): MobileHost {
           needsApiKey: search.searchEngineNeedsApiKey(id),
           supportsBaseUrl: search.searchEngineSupportsBaseUrl(id)
         }))
+      }
+    },
+
+    usage: {
+      overview: async () => UsageService.overview(),
+      refreshBalance: async (force?: boolean) =>
+        UsageService.refreshBalance(force === true),
+      exportCsv: async (provider?: string): Promise<TransferResultDto> => {
+        const filter: 'all' | 'deepseek' | 'opencode-go' =
+          provider === 'deepseek' || provider === 'opencode-go' ? provider : 'all'
+        try {
+          const csv: string = UsageService.buildCsv(filter)
+          const bytes = new Uint8Array(Buffer.from(csv, 'utf8'))
+          const saved = await saveBytesToUserLocation(
+            `guncat-usage-${new Date().toISOString().slice(0, 10)}.csv`,
+            'text/csv',
+            bytes
+          )
+          if (saved.ok) {
+            return { status: 'saved', path: saved.path }
+          }
+          if (saved.canceled === true) {
+            return { status: 'canceled' }
+          }
+          return { status: 'error', message: saved.error ?? '导出失败' }
+        } catch (e) {
+          return { status: 'error', message: String(e instanceof Error ? e.message : e) }
+        }
       }
     },
 

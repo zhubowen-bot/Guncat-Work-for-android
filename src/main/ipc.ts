@@ -31,6 +31,7 @@ import { getDataRoot, resourcesDir, makeTempDir } from '@core/platform/appPaths'
 import { image } from '@core/platform/kit/ImageKit'
 import { TableOcrService, TableOcrImage } from '@core/service/TableOcrService'
 import { MultimodalConfig } from '@core/model/MultimodalConfig'
+import { UsageService } from '@core/service/UsageService'
 import { sanitizeTableHtml } from './sanitizeHtml'
 
 function send(event: GuncatEvent): void {
@@ -474,6 +475,36 @@ export function registerIpcHandlers(session: SessionManager): void {
   // ===== 任务统计与当前目标（原版 DetailsPanelView 的统计卡 + 目标卡） =====
   ipcMain.handle(INVOKE.conversationStats, async (_e, conversationId: string) =>
     session.conversationStats(conversationId)
+  )
+
+  // ===== 用量与成本 =====
+  ipcMain.handle(INVOKE.usageOverview, async () => UsageService.overview())
+  ipcMain.handle(INVOKE.usageRefreshBalance, async (_e, force: boolean) =>
+    UsageService.refreshBalance(force === true)
+  )
+  ipcMain.handle(
+    INVOKE.usageExportCsv,
+    async (_e, provider?: string): Promise<TransferResultDto> => {
+      const filter: 'all' | 'deepseek' | 'opencode-go' =
+        provider === 'deepseek' || provider === 'opencode-go' ? provider : 'all'
+      try {
+        const csv: string = UsageService.buildCsv(filter)
+        const window = getMainWindow()
+        const result = await dialog.showSaveDialog(window ?? undefined!, {
+          title: '导出用量明细',
+          defaultPath: `guncat-usage-${new Date().toISOString().slice(0, 10)}.csv`,
+          buttonLabel: '导出',
+          filters: [{ name: 'CSV', extensions: ['csv'] }]
+        })
+        if (result.canceled || result.filePath === undefined) {
+          return { status: 'canceled' }
+        }
+        fs.writeFileSync(result.filePath, csv, 'utf8')
+        return { status: 'saved', path: result.filePath }
+      } catch (e) {
+        return { status: 'error', message: String(e instanceof Error ? e.message : e) }
+      }
+    }
   )
 
   // ===== 产物汇总（对话流末尾的 Codex 风格 Changes 卡） =====

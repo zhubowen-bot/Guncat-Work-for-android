@@ -17,6 +17,7 @@ import { collectFileArgs } from './intake'
 import { installAppIdentity, installApplicationMenu } from './appmenu'
 import { SessionManager } from './session/SessionManager'
 import { CommandService } from '@core/service/CommandService'
+import { UsageService } from '@core/service/UsageService'
 import { createMainWindow, getMainWindow, rendererDir, setPendingFlush, setRendererStalledHandler, setCompatMode, showLoadError } from './window'
 import { serveRenderer, registerAppScheme } from './protocol'
 import { buildCompatArgs, FRESH_PROFILE_FLAG, isCompatMode } from './compat'
@@ -358,6 +359,13 @@ if (!gotLock) {
   })
 
   app.on('will-quit', () => {
+    // 用量账本还有最多 4 秒的防抖窗口：退出前同步冲刷一次，避免最后几笔统计丢失。
+    // 统计失败不影响退出流程。
+    try {
+      UsageService.flush()
+    } catch {
+      // ignore
+    }
     // 后台命令（run_command 的 run_in_background）不会跟着窗口一起没 ——
     // 应用退出时把它们连同进程树收掉，否则用户关掉应用后机器上还留着一堆本应用拉起的进程。
     try {

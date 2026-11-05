@@ -20,6 +20,8 @@ import { LOCAL_SEARCH_TOOL_NAME, LOCAL_SEARCH_TOOL_DESC_CHAT, LOCAL_SEARCH_TOOL_
   LOCAL_SEARCH_QUERY_PROP_DESC } from './LocalWebSearch';
 import { HarnessTools } from './HarnessTools';
 import { connectTimeoutForBody, describeTransportError } from '../common/HttpTimeouts';
+import { normalizeUsageTokens, supportsStreamUsage } from '../common/UsageProtocol';
+import { UsageRequestMeter, UsageService } from './UsageService';
 
 export class StreamAccumulator {
   buffer: ArrayBuffer = new ArrayBuffer(0);
@@ -244,6 +246,11 @@ export function buildChatCompletionsBody(config: ApiConfig, agent: Agent | null,
     messages: messages,
     stream: true
   };
+  // DeepSeek / OpenCode / OpenAI 的流式请求要显式要 usage；其它兼容网关不认这个字段，
+  // 直接加会被部分服务端判成 400，因此按 provider 白名单处理。
+  if (supportsStreamUsage(config.baseUrl)) {
+    body['stream_options'] = { include_usage: true };
+  }
 
   // 本地内置联网搜索 search_web 强制注入(由模型决定是否调用); 服务端联网搜索按开关并存
   let chatTools: Record<string, Object>[] = [];
@@ -1070,7 +1077,8 @@ export function extractResponsesUsage(sseData: string): Record<string, Object> |
       return null;
     }
     let type: Object = (json as Record<string, Object>)['type'];
-    if (typeof type !== 'string' || type !== 'response.completed') {
+    if (typeof type !== 'string' ||
+      (type !== 'response.completed' && type !== 'response.incomplete')) {
       return null;
     }
     let resp: Object = (json as Record<string, Object>)['response'];
@@ -1086,6 +1094,10 @@ export function extractResponsesUsage(sseData: string): Record<string, Object> |
   }
 }
 
+// Anthropic 流式 usage 分两次到达：
+//   message_start.message.usage → input_tokens + cache_creation/read（output_tokens=0）
+//   message_delta.usage         → output_tokens（以及部分网关补的输入字段）
+// 只取 message_delta 会把输入与缓存命中全部丢掉；两处都返回，由请求级 meter 合并。
 export function extractAnthropicUsage(sseData: string): Record<string, Object> | null {
   try {
     let json: Object = JSON.parse(sseData);
@@ -1093,12 +1105,25 @@ export function extractAnthropicUsage(sseData: string): Record<string, Object> |
       return null;
     }
     let type: Object = (json as Record<string, Object>)['type'];
-    if (typeof type !== 'string' || type !== 'message_delta') {
+    if (typeof type !== 'string') {
       return null;
     }
-    let usage: Object = (json as Record<string, Object>)['usage'];
-    if (typeof usage === 'object' && usage !== null) {
-      return usage as Record<string, Object>;
+    if (type === 'message_delta') {
+      let usage: Object = (json as Record<string, Object>)['usage'];
+      if (typeof usage === 'object' && usage !== null) {
+        return usage as Record<string, Object>;
+      }
+      return null;
+    }
+    if (type === 'message_start') {
+      let message: Object = (json as Record<string, Object>)['message'];
+      if (typeof message === 'object' && message !== null) {
+        let usage: Object = (message as Record<string, Object>)['usage'];
+        if (typeof usage === 'object' && usage !== null) {
+          return usage as Record<string, Object>;
+        }
+      }
+      return null;
     }
     return null;
   } catch (e) {
@@ -1106,68 +1131,33 @@ export function extractAnthropicUsage(sseData: string): Record<string, Object> |
   }
 }
 
-// 由 API 返回的 usage 派生 token 速度(tok/s)与缓存命中率(0..1);
-// 只读返回值, 不做自创算法; 无对应字段时返回 -1.
-export function deriveStreamStats(usage: Record<string, Object> | null, elapsedMs: number): number[] {
+// 由 API 返回的 usage 派生 token 速度(tok/s)与缓存命中率(0..1)。
+// 三协议 + OpenCode 的字段差异统一交给 normalizeUsageTokens，避免这里再维护一份口径。
+// protocol 传空串时按字段自动判断（兼容旧调用点）。
+export function deriveStreamStats(usage: Record<string, Object> | null,
+  elapsedMs: number, protocol: string = ''): number[] {
   let speed: number = -1;
   let hit: number = -1;
   if (usage === null) {
     return [speed, hit];
   }
-  let outTokens: number = -1;
-  let completionTokens: Object = usage['completion_tokens'];
-  if (typeof completionTokens === 'number') {
-    outTokens = completionTokens as number;
-  } else {
-    let outputTokens: Object = usage['output_tokens'];
-    if (typeof outputTokens === 'number') {
-      outTokens = outputTokens as number;
+  try {
+    const normalized = normalizeUsageTokens(protocol, usage);
+    const tokens = normalized.tokens;
+    const outTokens: number = tokens.output;
+    const hitTokens: number = tokens.inputHit;
+    const totalTokens: number = tokens.inputHit + tokens.inputMiss + tokens.cacheWrite;
+    if (outTokens > 0 && elapsedMs > 0) {
+      speed = outTokens / (elapsedMs / 1000);
     }
-  }
-  let hitTokens: number = -1;
-  let totalTokens: number = -1;
-  let hitT: Object = usage['prompt_cache_hit_tokens'];
-  let missT: Object = usage['prompt_cache_miss_tokens'];
-  if (typeof hitT === 'number' && typeof missT === 'number') {
-    hitTokens = hitT as number;
-    totalTokens = (hitT as number) + (missT as number);
-  } else {
-    let promptDetails: Object = usage['prompt_tokens_details'];
-    if (typeof promptDetails === 'object' && promptDetails !== null) {
-      let cached: Object = (promptDetails as Record<string, Object>)['cached_tokens'];
-      if (typeof cached === 'number') {
-        hitTokens = cached as number;
-        let promptTokens: Object = usage['prompt_tokens'];
-        totalTokens = typeof promptTokens === 'number' ? (promptTokens as number) : hitTokens;
-      }
-    } else {
-      let inputDetails: Object = usage['input_tokens_details'];
-      if (typeof inputDetails === 'object' && inputDetails !== null) {
-        let cached: Object = (inputDetails as Record<string, Object>)['cached_tokens'];
-        if (typeof cached === 'number') {
-          hitTokens = cached as number;
-          let inputTokens: Object = usage['input_tokens'];
-          totalTokens = typeof inputTokens === 'number' ? (inputTokens as number) : hitTokens;
-        }
-      } else {
-        let cacheRead: Object = usage['cache_read_input_tokens'];
-        let cacheCreate: Object = usage['cache_creation_input_tokens'];
-        let inputT: Object = usage['input_tokens'];
-        if (typeof cacheRead === 'number' || typeof cacheCreate === 'number') {
-          let cr: number = typeof cacheRead === 'number' ? (cacheRead as number) : 0;
-          let cc: number = typeof cacheCreate === 'number' ? (cacheCreate as number) : 0;
-          let inp: number = typeof inputT === 'number' ? (inputT as number) : 0;
-          hitTokens = cr;
-          totalTokens = cr + cc + inp;
-        }
-      }
+    if (hitTokens > 0 && totalTokens > 0) {
+      hit = hitTokens / totalTokens;
+    } else if (normalized.cacheFieldsPresent && totalTokens > 0) {
+      // 服务端明确报了缓存字段但命中为 0：这是 0%，不是“没有数据”
+      hit = 0;
     }
-  }
-  if (outTokens > 0 && elapsedMs > 0) {
-    speed = outTokens / (elapsedMs / 1000);
-  }
-  if (hitTokens >= 0 && totalTokens > 0) {
-    hit = hitTokens / totalTokens;
+  } catch (e) {
+    return [-1, -1];
   }
   return [speed, hit];
 }
@@ -1187,6 +1177,9 @@ export class ChatService {
   ): Promise<ChatStreamResult> {
     let protocol: string = getProtocol(config.provider);
     let url: string = resolveEndpointUrl(config, protocol);
+    // 请求级记账器：startedAt 取请求开始时间（峰谷/计费日期都以它为准）。
+    // 只创建一个轻量对象，不碰磁盘，也不影响流式解析。
+    let usageMeter: UsageRequestMeter = UsageService.beginRequest(config, protocol);
 
     let body: Record<string, Object>;
     if (protocol === 'responses') {
@@ -1248,7 +1241,9 @@ export class ChatService {
         reasoningItems = appendReasoningItem(reasoningItems, itemJson);
       };
       ctx.onUsage = (usageObj: Record<string, Object> | null): void => {
-        let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
+        // Anthropic 的输入与输出分两个事件到达：先合并，再算速度/命中率。
+        let merged: Record<string, Object> | null = usageMeter.observe(usageObj);
+        let stats: number[] = deriveStreamStats(merged, Date.now() - startTime, protocol);
         callbacks.onUsage(stats[0], stats[1]);
       };
       ctx.onComplete = (): void => {
@@ -1458,6 +1453,12 @@ export class ChatService {
     } finally {
       if (abortSignal.aborted) {
         aborted = true;
+      }
+      // 一次响应只记一次账；失败但有 usage 的响应同样计入（服务端已经计费）。
+      try {
+        usageMeter.finish(!aborted && failedMsg === '', aborted);
+      } catch (e) {
+        // 统计失败不影响聊天收尾
       }
       ChatService.activeRequest = null;
       try {
