@@ -613,6 +613,17 @@ body.platform-android code {
     height: 26px;
   }
 
+  /* 交互模式「能力调度」档位行：描述是多行中文，手机上行高更高，
+     26px 的 mark 要相对首行文字再上移一点才不显得偏下；描述字号略放大便于阅读 */
+  .settings-option--tier .settings-option__mark {
+    margin-top: -3px;
+  }
+
+  .settings-tier__desc {
+    font-size: 12.5px;
+    line-height: 1.6;
+  }
+
   .settings-option-add {
     min-height: 48px;
     padding: 14px 10px 2px;

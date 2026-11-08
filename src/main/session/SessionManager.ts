@@ -40,6 +40,7 @@ import { Agent } from '@core/model/Agent'
 import { ToolCallRecord } from '@core/model/ToolCallRecord'
 import { StreamCallbacks, AbortSignal } from '@core/common/Types'
 import { Constants } from '@core/common/Constants'
+import { InteractiveTiers } from '@core/common/InteractiveTiers'
 import { LoopDecisions } from '@core/common/LoopDecisions'
 import { ContextBudget } from '@core/common/ContextBudget'
 import type { BudgetAnchor } from '@core/common/ContextBudget'
@@ -137,6 +138,8 @@ interface WorkCompactionEnv {
   request: WorkRunRequest
   reasoningEffort: string
   abort: AbortSignal
+  /** 本轮交互模式「能力调度」档位(工作模式不看它; 压缩请求要与主循环同前缀, 必须一起带上) */
+  tierId: string
 }
 
 /**
@@ -199,6 +202,9 @@ export class SessionManager {
     // 技能库与工具表都是按需惰性同步的（见 WorkSkillService.ensureToolSkills），
     // 这里只做智能体加载与对话读取。
     this.agents = await AgentLoader.loadAllAgents(ctx)
+    // 交互模式「能力调度」档位主体提示词(resources/interactive-tier-*.md)：
+    // 必须在任何交互模式请求之前读进内存；读失败的档位由 AgentLoopService 回退轻简档。
+    await AgentLoader.loadInteractiveTierPrompts(ctx)
     try {
       this.conversations = await StorageManager.loadConversations(ctx)
     } catch {
@@ -1464,8 +1470,12 @@ export class SessionManager {
     // 上面已经 push 了本轮的 user 消息，所以历史取到倒数第二条为止。
     const prior: Message[] = conv.messages.slice(0, conv.messages.length - 1)
 
+    // 交互模式「能力调度」档位：每次任务开始时从偏好读取（设置页切档后下一轮生效），
+    // 未知/旧值回退轻简档。工作模式与聊天模式不看它。
+    const tierId: string = await this.interactiveTierId()
+
     const messages: LoopMessage[] = [
-      LoopMessage.system(AgentLoopService.buildWorkSystemPromptFor(request.mode)),
+      LoopMessage.system(AgentLoopService.buildWorkSystemPromptFor(request.mode, tierId)),
       ...AgentLoopService.historyMessages(prior),
       LoopMessage.user(this.expandMentions(conv.id, taskText))
     ]
@@ -1494,7 +1504,7 @@ export class SessionManager {
     this.beginRunStats(conv.id)
     UsageService.beginRun(config.sessionId)
     // 压缩环境要在 handle.abort 换成新实例之后再建，否则压缩请求会挂到上一次运行的中断信号上
-    const compactionEnv: WorkCompactionEnv = { config, request, reasoningEffort, abort: handle.abort }
+    const compactionEnv: WorkCompactionEnv = { config, request, reasoningEffort, abort: handle.abort, tierId }
 
     let assistantMsg: Message | null = null
     let streamed: string = ''
@@ -1919,7 +1929,7 @@ export class SessionManager {
           env.reasoningEffort,
           env.request.webSearchEnabled,
           env.abort,
-          AgentLoopService.toolDefsForMode(mode, env.request.webSearchEnabled)
+          AgentLoopService.toolDefsForMode(mode, env.request.webSearchEnabled, env.tierId)
         )
       } catch (e) {
         // 压缩失败（网络/中断/服务端拒绝）回退为整条裁剪，不把整个任务拖死
@@ -1930,7 +1940,7 @@ export class SessionManager {
           messages,
           oldEnd,
           ContextBudget.truncateSummary(summary.trim()),
-          AgentLoopService.buildWorkSystemPromptFor(mode),
+          AgentLoopService.buildWorkSystemPromptFor(mode, env.tierId),
           LOOP_HEAD_FACTORY
         )
         // 就地替换（而不是把 messages 重新赋值）：messages 被 callbacks 与外层闭包共享，
@@ -2075,14 +2085,13 @@ export class SessionManager {
         abort,
         true,
         Constants.WORK_LLM_RETRY_MAX,
-        // 工具面按模式裁剪（对齐原版 `toolDefsForMode(loopMode, webSearchEnabled)`）：
-        // 交互模式只下发 27 个白名单工具，工作模式返回 null（= 全量 44 个）。
+        // 工具面按模式与档位裁剪（对齐原版 `toolDefsForMode(loopMode, webSearchEnabled, tier)`）：
+        // 交互模式只下发基础白名单（能力调度档位再追加少量工具），工作模式返回 null（= 全量）。
         //
-        // 这一条很关键：交互模式的系统提示词写着「默认一次回答直接给界面, 不调用任何工具；
-        // 一律不用 todo_write / goal_* / schedule_* / subagent / session_search / record_search」，
+        // 这一条很关键：交互模式的系统提示词写着「默认一次回答直接给界面, 不调用任何工具；」，
         // 而此前主循环把**全量**工具面下发给了它 —— 提示词里明令禁止的工具就在工具表里摆着，
         // 模型于是动不动就去读文件、写文件、建目标，交付物从「一份界面」退化成「一段对话」。
-        AgentLoopService.toolDefsForMode(mode, request.webSearchEnabled)
+        AgentLoopService.toolDefsForMode(mode, request.webSearchEnabled, env.tierId)
       )
     } catch (e) {
       const err: Error = e as Error
@@ -2971,6 +2980,26 @@ export class SessionManager {
       return asked
     }
     return request.thinkingEnabled ? 'high' : 'none'
+  }
+
+  /**
+   * 交互模式「能力调度」档位：从偏好读取并规范化。
+   *
+   * 为什么读持久化而不是让渲染进程随请求传：档位是**设备级设置**（设置页里选一次），
+   * 定时任务、子代理、热重载之后的任务也要用同一个值；主进程读一份权威值，
+   * 比每个入口各自传参少一处漂移。切档后下一轮任务自动生效（旧档缓存保留，切回去还能复用）。
+   */
+  private async interactiveTierId(): Promise<string> {
+    try {
+      const raw: string = await StorageManager.loadString(
+        this.ctx(),
+        Constants.LS_KEY_INTERACTIVE_TIER,
+        InteractiveTiers.DEFAULT_ID
+      )
+      return InteractiveTiers.normalize(raw)
+    } catch {
+      return InteractiveTiers.DEFAULT_ID
+    }
   }
 
   private static toApiConfigDto(config: ApiConfig): ApiConfigDto {

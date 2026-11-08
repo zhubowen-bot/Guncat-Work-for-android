@@ -32,6 +32,12 @@ import { ApiConfig } from '../src/core/model/ApiConfig'
 import { Conversation } from '../src/core/model/Conversation'
 import { Message } from '../src/core/model/Message'
 import { ToolRegistry } from '../src/core/common/ToolRegistry'
+import { GuncatUiPrompt } from '../src/core/common/GuncatUiPrompt'
+import { GuncatUiLibrary } from '../src/core/common/GuncatUiLibrary'
+import { PromptBuilder } from '../src/core/common/PromptBuilder'
+import { InteractiveTiers } from '../src/core/common/InteractiveTiers'
+import { InteractiveTierPrompts } from '../src/core/common/InteractiveTierPrompts'
+import { InteractiveTierPrompt } from '../src/core/common/InteractiveTierPrompt'
 import { GuncatUiLang } from '../src/core/common/GuncatUiLang'
 import {
   addUsageRecordToLedger,
@@ -1648,6 +1654,212 @@ async function main(): Promise<void> {
     UsageService.dataFilePath().includes('usage-ledger.json') &&
       fs.existsSync(UsageService.dataFilePath()))
   UsageService.flush()
+
+  // ===== 23. 交互模式 · 能力调度（九档提示词） =====
+  //
+  // 这组断言守四件事：
+  //   1) 九档元数据是单一事实源（顺序/默认/回退/思考强度/追加工具都合法）；
+  //   2) 轻简档 = 旧的交互模式提示词**逐字节**不变（默认档行为与速度不受本次功能影响）；
+  //   3) 八档主体真的从 resources 加载进来了，且过得了迁移质量门（H1 归零 / 有适配标注 / 净增 / 无占位）；
+  //   4) 工具面按档位只增不删，长程维护类工具在任何档位都不下发。
+  section('23. 交互模式 · 能力调度（九档提示词）')
+  const tierIds: string[] = InteractiveTiers.ALL.map((t) => t.id)
+  check('九档齐全且顺序固定',
+    tierIds.join(',') === 'lite,efficiency,expert,classic,paper,legal,research,sift,eval',
+    tierIds.join(','))
+  check('档位 id 唯一', new Set(tierIds).size === tierIds.length)
+  check('默认档为轻简，空串/未知值回退轻简',
+    InteractiveTiers.DEFAULT_ID === 'lite' &&
+      InteractiveTiers.normalize('') === 'lite' &&
+      InteractiveTiers.normalize('nope') === 'lite' &&
+      InteractiveTiers.normalize('expert') === 'expert')
+  const liteTier = InteractiveTiers.byId('lite')
+  check('轻简档没有档位主体文件（它就是原交互模式提示词）', liteTier.promptFile === '')
+  const bodyTiers = InteractiveTiers.ALL.filter((t) => t.promptFile !== '')
+  check('八档都登记了档位主体文件',
+    bodyTiers.length === 8 && bodyTiers.every((t) => t.sourceFile !== '' && t.defaultEffort !== ''),
+    bodyTiers.map((t) => t.promptFile).join(', '))
+  check('默认思考强度都在 off/low/high 域内',
+    InteractiveTiers.ALL.every((t) => InteractiveTiers.isValidEffort(t.defaultEffort)))
+  check('档位追加工具只允许 record_search / todo_write',
+    InteractiveTiers.ALL.every((t) => t.extraTools.every(
+      (n) => n === 'record_search' || n === 'todo_write')))
+
+  // 八份档位主体从 resources 读入内存注册表（与 SessionManager.bootstrap 同一条路径）
+  await AgentLoader.loadInteractiveTierPrompts(ctx)
+  const loadedTierIds: string[] = InteractiveTierPrompts.loadedIds()
+  check('八份档位主体已加载', loadedTierIds.length === 8,
+    loadedTierIds.join(', ') + ` / ${bodyTiers.length}`)
+  check('轻简档不登记主体（body 为空）', InteractiveTierPrompts.body('lite') === '')
+
+  // 迁移质量门：H1 归零（H1 由代码层档位声明承担）、适配标注可 grep、无占位、只加不删、内容锚点
+  const tierGate = { h1: 0, markers: 0, placeholders: 0, growth: 0, anchors: 0 }
+  for (const tier of bodyTiers) {
+    const body: string = InteractiveTierPrompts.body(tier.id)
+    const srcPath = path.join(resourcesRoot, tier.sourceFile)
+    if (!fs.existsSync(srcPath)) {
+      check(`档位主体源文件存在 ${tier.id}`, false, srcPath)
+      continue
+    }
+    const src: string = fs.readFileSync(srcPath, 'utf8')
+    if (body.split('\n').filter((l) => /^# /.test(l)).length === 0) {
+      tierGate.h1++
+    }
+    const markers: number = (body.match(/交互模式适配/g) ?? []).length
+    if (markers >= 3) {
+      tierGate.markers++
+    }
+    if (!/TODO|待补充|【待适配】/.test(body)) {
+      tierGate.placeholders++
+    }
+    if (body.length > src.length * 1.02) {
+      tierGate.growth++
+    }
+    const first3 = src.split('\n').filter((l) => l.trim() !== '').slice(0, 3)
+    if (first3.filter((l) => body.includes(l.trim())).length >= 2) {
+      tierGate.anchors++
+    }
+  }
+  check('迁移质量门 · 八档主体 H1 全部归零', tierGate.h1 === 8, `${tierGate.h1}/8`)
+  check('迁移质量门 · 每档至少 3 处「交互模式适配」标注', tierGate.markers === 8, `${tierGate.markers}/8`)
+  check('迁移质量门 · 没有 TODO/待补充 占位', tierGate.placeholders === 8, `${tierGate.placeholders}/8`)
+  check('迁移质量门 · 主体只加不删（净增 > 2%）', tierGate.growth === 8, `${tierGate.growth}/8`)
+  check('迁移质量门 · 原文内容锚点保留（前 3 个非空行至少 2 行逐字出现）',
+    tierGate.anchors === 8, `${tierGate.anchors}/8`)
+
+  // 组装：轻简档必须与旧四段组装逐字节一致（这是"默认档行为不变"的硬证据）
+  const tierSkills: string = WorkSkillService.interactiveIndex()
+  const liteToolIndex: string =
+    PromptBuilder.buildToolNameIndex(AgentLoopService.interactiveToolDefs(false, 'lite'))
+  const liteOld: string = PromptBuilder.assembleInteractiveSystemPrompt(
+    GuncatUiPrompt.promptSection(), tierSkills, liteToolIndex, GuncatUiPrompt.INTERACTIVE_DUTY)
+  const liteNew: string =
+    InteractiveTierPrompt.assemble('lite', '', tierSkills, liteToolIndex)
+  check('轻简档组装结果 = 旧四段组装（逐字节相同）', liteOld === liteNew,
+    `${liteOld.length} vs ${liteNew.length}`)
+  check('轻简档第一段仍是「最高优先级 · 快」宪法',
+    liteNew.startsWith('# 最高优先级 · 快（本模式第一纪律）'))
+  check('AgentLoopService 的轻简提示词与组装函数同源',
+    AgentLoopService.buildInteractiveSystemPrompt('lite') === liteNew)
+  const liteSegs = InteractiveTierPrompt.segments('lite', '', tierSkills, liteToolIndex)
+  const expertSegs = InteractiveTierPrompt.segments('expert', InteractiveTierPrompts.body('expert'),
+    tierSkills, PromptBuilder.buildToolNameIndex(AgentLoopService.interactiveToolDefs(false, 'expert')))
+  check('轻简档 15 段 / 其余八档 16 段（多一段档位主体）',
+    liteSegs.length === 15 && expertSegs.length === 16,
+    `lite ${liteSegs.length} / expert ${expertSegs.length}`)
+  check('段拼接 = assemble 结果（导出结构与运行时分叉会被抓到）',
+    expertSegs.filter((s) => s.text !== '').map((s) => s.text).join('\n\n') ===
+      InteractiveTierPrompt.assemble('expert', InteractiveTierPrompts.body('expert'),
+        tierSkills, PromptBuilder.buildToolNameIndex(AgentLoopService.interactiveToolDefs(false, 'expert'))))
+
+  const expertPrompt: string = AgentLoopService.buildInteractiveSystemPrompt('expert')
+  check('专家档提示词以档位声明开头（唯一的一级标题）',
+    expertPrompt.startsWith('# 专家 · 能力调度档位（交互模式 · 移植自 Guncat 3.0-Pro）'))
+  check('专家档提示词包含档位主体正文',
+    expertPrompt.includes(InteractiveTierPrompts.body('expert').slice(0, 200)))
+  // 顺序断言用「每层一段独有文本」当锚点，避免依赖标题措辞
+  const orderMarkers: string[] = [
+    '# 专家 · 能力调度档位',                 // ① 档位声明
+    '## 语法规则',                           // ③ 界面语言契约
+    '## 组件清单',                           // ④ 组件清单
+    '## 交互模式适配 · 本档位运行环境',       // ⑩ 档位主体
+    '# 工作区（素材区 + 产出区）',            // ⑪ 环境底座 · 工作区
+    '# 可用工具（本档位工具面',               // ⑫ 环境底座 · 工具面
+    '现在开始：先按本档位纪律',               // ⑮ 起手式
+    '# 交互模式职责（交付形态'                // ⑯ 职责收尾
+  ]
+  const orderAt: number[] = orderMarkers.map((h) => expertPrompt.indexOf(h))
+  check('组装顺序：档位声明 → 界面契约 → 档位主体 → 环境底座 → 职责收尾',
+    orderAt.every((n, i) => n >= 0 && (i === 0 || n > orderAt[i - 1])),
+    orderAt.join(','))
+  check('档位口径丰富度：12~20+ 不设上限',
+    expertPrompt.includes('12~20+ 个组件是常态, 不设上限'))
+  check('轻简档丰富度仍是「典型 8~14、够用为准」',
+    liteNew.includes('典型 8~14 个组件是常态') && !liteNew.includes('12~20+ 个组件是常态'))
+
+  // 缺主体时的降级：清空注册表后构建一个还没缓存过的档位 → 必须回退轻简档，绝不交付空壳档位
+  InteractiveTierPrompts.clear()
+  const fallbackPrompt: string = AgentLoopService.buildInteractiveSystemPrompt('sift')
+  check('档位主体缺失时回退轻简档（不交付空壳提示词）',
+    fallbackPrompt === liteNew && !fallbackPrompt.includes('Guncat Srch-Sift'))
+  await AgentLoader.loadInteractiveTierPrompts(ctx)
+
+  // 工具面：基础 27 个 + 档位只追加
+  const baseWhitelist: string[] =
+    ToolRegistry.interactiveWhitelist(InteractiveTiers.LITE_ID)
+  check('交互模式基础工具面仍是 27 个', baseWhitelist.length === 27, String(baseWhitelist.length))
+  const tierToolCounts: Record<string, number> = {}
+  let additive = true
+  for (const tier of InteractiveTiers.ALL) {
+    const list: string[] = ToolRegistry.interactiveWhitelist(tier.id)
+    tierToolCounts[tier.id] = list.length
+    const prefixSame = baseWhitelist.every((n, i) => list[i] === n)
+    const extrasOk = tier.extraTools.every((n) => list.indexOf(n) !== -1) &&
+      list.length === baseWhitelist.length + tier.extraTools.filter(
+        (n) => baseWhitelist.indexOf(n) === -1).length
+    if (!prefixSame || !extrasOk) {
+      additive = false
+    }
+  }
+  check('档位工具面 = 基础白名单 + 追加（只增不删、顺序稳定）', additive)
+  check('轻简 / 论文转换仍是 27 个工具',
+    tierToolCounts['lite'] === 27 && tierToolCounts['paper'] === 27)
+  check('效率 / 经典 / 信息筛滤 28 个（+record_search）',
+    tierToolCounts['efficiency'] === 28 && tierToolCounts['classic'] === 28 &&
+      tierToolCounts['sift'] === 28)
+  check('专家 / 法律 / 深度研究 / LLM评估 29 个（+record_search +todo_write）',
+    tierToolCounts['expert'] === 29 && tierToolCounts['legal'] === 29 &&
+      tierToolCounts['research'] === 29 && tierToolCounts['eval'] === 29)
+
+  const allToolDefs: Record<string, Object>[] = WorkFileService.toolDefs(false)
+  const allToolNames: string[] =
+    allToolDefs.map((d) => String((d as Record<string, unknown>)['name'] ?? ''))
+  check('追加工具在真实工具表里存在（record_search / todo_write 不是空气）',
+    allToolNames.includes('record_search') && allToolNames.includes('todo_write'))
+  const liteDefs: Record<string, Object>[] =
+    AgentLoopService.toolDefsForMode('interactive', false, 'lite') as Record<string, Object>[]
+  const expertDefs: Record<string, Object>[] =
+    AgentLoopService.toolDefsForMode('interactive', false, 'expert') as Record<string, Object>[]
+  const defNames = (defs: Record<string, Object>[]): string[] =>
+    defs.map((d) => String((d as Record<string, unknown>)['name'] ?? ''))
+  const liteNames = defNames(liteDefs)
+  const expertNames = defNames(expertDefs)
+  check('轻简档下发的工具定义里没有 todo_write / record_search',
+    !liteNames.includes('todo_write') && !liteNames.includes('record_search'),
+    liteNames.join(','))
+  check('专家档下发的工具定义含 record_search + todo_write',
+    expertNames.includes('record_search') && expertNames.includes('todo_write'),
+    `${expertNames.length} 个`)
+  check('专家档工具定义 = 轻简档 + 两个追加工具',
+    expertNames.length === liteNames.length + 2 &&
+      liteNames.every((n) => expertNames.includes(n)),
+    `${liteNames.length} → ${expertNames.length}`)
+  check('工作模式工具面不受档位影响（返回 null = 全量）',
+    AgentLoopService.toolDefsForMode('work', false, 'expert') === null)
+  const alwaysDropped: string[] = [
+    'goal_create', 'goal_get', 'goal_update', 'schedule_create', 'schedule_list',
+    'schedule_delete', 'subagent', 'session_search', 'ask_user_question', 'edit',
+    'str_replace_editor', 'delete_file', 'move_file'
+  ]
+  check('长程 / 维护类工具在任何档位都不下发',
+    InteractiveTiers.ALL.every((t) => {
+      const dropped: string[] = ToolRegistry.interactiveDropped(allToolDefs, t.id)
+      return alwaysDropped.every((n) => dropped.indexOf(n) !== -1)
+    }))
+
+  // 组件清单：分组名与 definitions() 的 g1~g9 逐字一致（修掉 '列表' vs '列表与追问' 的整组丢失）
+  const compSection: string = GuncatUiLibrary.promptSection()
+  check('组件清单包含「列表与追问」分组（此前整组从提示词里消失）',
+    compSection.includes('### 列表与追问'))
+  check('ListBlock / ListItem 已进入组件清单',
+    compSection.includes('`ListBlock(') && compSection.includes('`ListItem('))
+  check('RadarChart 已登记且进入清单（多维对比不再指向不存在的组件）',
+    compSection.includes('`RadarChart('))
+  check('每个分组都出现在组件清单里（分组名与 definitions 一致）',
+    GuncatUiLibrary.GROUP_ORDER.every((g) => compSection.includes('### ' + g)),
+    GuncatUiLibrary.GROUP_ORDER.join('/'))
+  check('promptHidden 组件不出现在提示词清单里',
+    !compSection.includes('`FollowUpBlock(') && !compSection.includes('`FollowUpItem('))
 
   // ===== 结果 =====
   console.log(`\n${'─'.repeat(58)}`)

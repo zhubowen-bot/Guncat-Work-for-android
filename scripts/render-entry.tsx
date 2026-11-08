@@ -612,6 +612,7 @@ export function settingsCopy(
 }
 
 export { normalizeApiConfig, normalizeMultimodal, providerCopy, searchEngineHint }
+export { interactiveTierFromPrefs } from '@renderer/store'
 export { modelChoices } from '@renderer/modelChoices'
 
 /**

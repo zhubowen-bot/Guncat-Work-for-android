@@ -1423,14 +1423,27 @@ check(
     settingsHtml.includes('settings-option-list')
 )
 check(
-  '设置项拆成独立导航（模型 / 高级参数 / 搜索 / 多模态 / 自动朗读 / 语音）',
+  '设置项拆成独立导航（模型 / 高级参数 / 能力调度 / 搜索 / 多模态 / 自动朗读 / 语音）',
   settingsText.includes('模型配置') &&
     settingsText.includes('高级参数') &&
     settingsText.includes('本地联网搜索') &&
     settingsText.includes('多模态解析') &&
     settingsText.includes('自动朗读') &&
     settingsText.includes('语音输入') &&
+    settingsText.includes('能力调度') &&
     settingsHtml.includes('settings-nav__item')
+)
+check(
+  '能力调度入口显示当前档位摘要（默认轻简）',
+  settingsText.includes('轻简 · 通用调度策略·轻量快速')
+)
+check(
+  '能力调度档位偏好规范化：空/脏值回退轻简，合法值透传',
+  mod.interactiveTierFromPrefs(undefined) === 'lite' &&
+    mod.interactiveTierFromPrefs({}) === 'lite' &&
+    mod.interactiveTierFromPrefs({ guncat_interactive_tier: 'nope' }) === 'lite' &&
+    mod.interactiveTierFromPrefs({ guncat_interactive_tier: 'expert' }) === 'expert' &&
+    mod.interactiveTierFromPrefs({ guncat_interactive_tier: 'llm' }) === 'lite'
 )
 const mobileSettingsHtml = mod.renderSettingsMobile()
 const mobileSettingsText = decode(mobileSettingsHtml)
@@ -1441,6 +1454,8 @@ check(
     mobileSettingsHtml.includes('settings-nav__group-title') &&
     !mobileSettingsHtml.includes('settings-pane') &&
     mobileSettingsText.includes('模型配置') &&
+    mobileSettingsText.includes('能力调度') &&
+    mobileSettingsText.includes('轻简 · 通用调度策略·轻量快速') &&
     mobileSettingsText.includes('语音输入') &&
     mobileSettingsText.includes('修改后自动保存，配置仅存储在本机') &&
     !mobileSettingsHtml.includes('settings-page__save')

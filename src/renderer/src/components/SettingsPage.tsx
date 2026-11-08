@@ -10,6 +10,7 @@ import type {
 // 面板保存时若把这两个字段存成空串，会把默认的智谱地址与 glm-4.6v-flash 冲掉，
 // 「先行解析附件」随即失效 —— 所以规整时要能拿到这里的默认值（见 normalizeMultimodal）。
 import { Constants } from '@core/common/Constants'
+import { InteractiveTiers } from '@core/common/InteractiveTiers'
 import { useStore } from '../store'
 import { useSpeech } from '../speech/speechStore'
 import {
@@ -27,6 +28,7 @@ import {
   IconRefresh,
   IconSettings,
   IconSpeaker,
+  IconStar,
   IconTrash
 } from '../icons'
 import { Picker } from './Picker'
@@ -297,6 +299,7 @@ export function normalizeSearch(search: SearchDraft): SearchDraft {
 type SettingsSectionId =
   | 'model'
   | 'advanced'
+  | 'tier'
   | 'search'
   | 'multimodal'
   | 'autoRead'
@@ -316,6 +319,7 @@ interface SettingsNavItem {
 const SECTION_LEAD: Record<SettingsSectionId, string> = {
   model: '配置方案、接入方式与可用模型，修改会自动保存。',
   advanced: '采样、输出长度与额外请求参数。留 0 表示交给服务端默认值。',
+  tier: '交互模式的能力档位：决定用哪一套智能体提示词与工具面，点选后下一轮对话生效。',
   search: '本机直连搜索引擎或搜索 API，作为服务端联网搜索不可用时的兜底。',
   multimodal: '用独立的多模态模型先行解析附件，再把文本交给主模型。',
   autoRead: '每轮回答生成完成后自动朗读；音色与语速在朗读控制条中调整。',
@@ -418,6 +422,10 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
   const settings = useStore((s) => s.settings)
   const reloadSettings = useStore((s) => s.reloadSettings)
   const pushNotice = useStore((s) => s.pushNotice)
+  // 交互模式「能力调度」档位：列表选中态直接跟 store 走，点击只调 action，
+  // 不在组件里另存一份 —— 切档要同时改思考强度，两处各存一份必然对不上。
+  const interactiveTier = useStore((s) => s.interactiveTier)
+  const setInteractiveTier = useStore((s) => s.setInteractiveTier)
   // 自动朗读的状态与开关都在 speechStore 里（持久化到 reader_enabled），
   // 这里只是把它接到设置页上，避免两处各存一份偏好。
   const autoRead = useSpeech((s) => s.autoRead)
@@ -760,6 +768,10 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
         if (draft.extraParams.trim() !== '') parts.push('额外参数')
         return parts.length === 0 ? '使用模型默认参数' : parts.join(' · ')
       }
+      case 'tier': {
+        const tier = InteractiveTiers.byId(interactiveTier)
+        return `${tier.name} · ${tier.tagline}`
+      }
       case 'search': {
         const engineLabel =
           engines.find((engine) => engine.id === search.engine)?.label ?? search.engine
@@ -785,6 +797,7 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
   const navItems: SettingsNavItem[] = [
     { id: 'model', label: '模型配置', group: 'model', icon: <IconBrain size={22} /> },
     { id: 'advanced', label: '高级参数', group: 'model', icon: <IconSettings size={22} /> },
+    { id: 'tier', label: '能力调度', group: 'capability', icon: <IconStar size={22} /> },
     { id: 'search', label: '本地联网搜索', group: 'capability', icon: <IconGlobe size={22} /> },
     { id: 'multimodal', label: '多模态解析', group: 'capability', icon: <IconImage size={22} /> },
     { id: 'autoRead', label: '自动朗读', group: 'voice', icon: <IconSpeaker size={22} /> },
@@ -1152,6 +1165,56 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
                     </div>
                   </div>
                 </SettingsCard>
+              </>
+            ) : null}
+
+            {/*
+              交互模式 · 能力调度：九档一律从 InteractiveTiers.ALL 生成（页面上不手写重复数组，
+              增删档位只改 core 一处）。选中态跟 store.interactiveTier 走，点击交给 action
+              统一处理「持久化偏好 + 同步推荐思考强度」，主进程下一轮 runWork 才读这个偏好，
+              所以切档是下一轮生效，不需要重开会话。
+            */}
+            {activeSection === 'tier' ? (
+              <>
+                <SettingsCard
+                  title="档位 · 交互模式"
+                  description="九档由轻到重排列，主体提示词移植自聊天引擎的成熟智能体；点选即切换，偏好自动保存。"
+                >
+                  <div
+                    className="settings-option-list settings-option-list--tier"
+                    role="radiogroup"
+                    aria-label="交互模式能力档位"
+                  >
+                    {InteractiveTiers.ALL.map((tier) => {
+                      const active = tier.id === interactiveTier
+                      return (
+                        <button
+                          key={tier.id}
+                          type="button"
+                          className="settings-option settings-option--tier"
+                          data-active={active}
+                          role="radio"
+                          aria-checked={active}
+                          onClick={() => void setInteractiveTier(tier.id)}
+                        >
+                          <span className="settings-option__mark">
+                            {active ? <IconCheck size={14} /> : null}
+                          </span>
+                          {/* 通用单选行的小字是单行省略；档位说明是 2~3 句长文本，
+                              这里用 --tier 修饰类 + settings-tier__desc 让它完整换行展示 */}
+                          <span className="settings-option__text settings-option__text--tier">
+                            <strong>{tier.name}</strong>
+                            <small>{tier.tagline}</small>
+                            <span className="settings-tier__desc">{tier.description}</span>
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </SettingsCard>
+                <SettingsNotice>
+                  档位只影响交互模式，工作模式与聊天模式不受影响。档位越靠后，提示词越长、思考越深，首答会慢一些，但内容更完整、专业流程更严格。
+                </SettingsNotice>
               </>
             ) : null}
 

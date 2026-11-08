@@ -4003,6 +4003,43 @@ select {
   white-space: nowrap;
 }
 
+/*
+ * 交互模式「能力调度」档位行。
+ * 通用单选行按「一行标题 + 一行小字」设计（小字 nowrap + ellipsis），而档位的
+ * description 是 2~3 句完整说明 —— 直接复用会把说明截成半句，所以这里给它换行样式。
+ */
+.settings-option-list--tier {
+  /* 每行高度不一，间距比通用单选行松一点，避免长描述挤在一起 */
+  gap: 6px;
+}
+
+.settings-option--tier {
+  /* mark 跟着首行档位名走，不能因为描述换行而在整段文字里垂直居中 */
+  align-items: flex-start;
+}
+
+.settings-option--tier .settings-option__mark {
+  /* 24px 圆对齐 14px/1.4 的首行文字中心（圆比行高多 4.4px，向上收 2px） */
+  margin-top: -2px;
+}
+
+/* 档位名与 tagline 在窄屏上也允许换行，宁可折行也不省略 */
+.settings-option__text--tier strong,
+.settings-option__text--tier small {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.settings-tier__desc {
+  margin-top: 1px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-faint);
+  /* 长中文/长英文串都断开，避免窄屏把行撑出卡片 */
+  overflow-wrap: anywhere;
+}
+
 .settings-option__badge {
   flex: none;
   padding: 2px 8px;

@@ -98,9 +98,13 @@ function anyOf(name: string, required: boolean): UiParam {
 }
 
 export class GuncatUiLibrary {
+  // 分组顺序。**必须与 definitions() 里的 g1~g9 常量逐字一致**：promptSection() 按 group 精确匹配
+  // 分组标题，名字对不上那一组会整组从提示词里消失（2026-11 bug: 这里写的是 '列表'，而 g7 是
+  // '列表与追问' —— ListBlock / ListItem 因此一直没进过任何档位的组件清单）。test-core/smoke 有
+  // 断言钉住"每个分组都出现在清单里"。
   static readonly GROUP_ORDER: string[] = [
     '根与内容', '布局', '表格与数据', '图表', '指标与文本',
-    '卡片块', '列表', '表单', '按钮与图标'
+    '卡片块', '列表与追问', '表单', '按钮与图标'
   ];
 
   private static table: Record<string, UiComp> = {};

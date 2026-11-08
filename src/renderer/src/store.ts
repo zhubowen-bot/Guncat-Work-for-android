@@ -4,6 +4,7 @@
 // 会话摘要列表、当前会话的完整消息、运行态标志与工作区清单。
 // 所有变更都来自 (a) 用户操作的 invoke 返回，或 (b) 主进程推来的事件。
 import { create } from 'zustand'
+import { InteractiveTiers } from '@core/common/InteractiveTiers'
 import { useSpeech } from './speech/speechStore'
 import {
   INTERACTIVE_AGENT_ID,
@@ -52,6 +53,8 @@ export interface PendingAskState {
 // 偏好键（与主进程 Constants 里的键名一致）
 const PREF_EFFORT_WORK = 'guncat_reasoning_effort'
 const PREF_EFFORT_INTERACTIVE = 'guncat_interactive_effort'
+// 交互模式「能力调度」档位 id（与主进程 Constants.LS_KEY_INTERACTIVE_TIER 是同一个键）
+const PREF_INTERACTIVE_TIER = 'guncat_interactive_tier'
 const PREF_THINKING = 'guncat_thinking_enabled'
 const PREF_WEB_SEARCH = 'guncat_web_search_enabled'
 
@@ -80,6 +83,17 @@ export function interactiveEffortFromPrefs(prefs: Record<string, string> | undef
     return 'low'
   }
   return raw === 'off' || raw === 'low' ? raw : 'high'
+}
+
+/**
+ * 交互模式「能力调度」档位 id。
+ *
+ * 只认 InteractiveTiers 里登记过的 id：偏好为空 / 旧版本值 / 脏值时回退默认档（'lite'），
+ * 与主进程每轮 runWork 前的 normalize 是同一套口径 —— 设置页显示的档位必须就是下一轮
+ * 真正生效的那个，否则用户会以为「点了没反应」。
+ */
+export function interactiveTierFromPrefs(prefs: Record<string, string> | undefined): string {
+  return InteractiveTiers.normalize(prefs?.[PREF_INTERACTIVE_TIER] ?? '')
 }
 
 /**
@@ -165,6 +179,12 @@ interface State {
   reasoningEffort: string
   /** 交互模式的推理强度：'high' | 'low' | 'off'（缺省 **'low'**，首答速度优先） */
   interactiveEffort: string
+  /**
+   * 交互模式「能力调度」档位 id（见 core/common/InteractiveTiers）。
+   * 缺省 'lite' 与主进程 normalize 的回退一致；主进程只在每轮 runWork 开始时读取，
+   * 所以界面切档后是**下一轮**生效。
+   */
+  interactiveTier: string
   webSearchEnabled: boolean
   settings: AppSettingsDto | null
   workspace: WorkspaceEntryDto[]
@@ -232,6 +252,8 @@ interface State {
   setThinking(value: boolean): void
   setReasoningEffort(value: string): void
   setInteractiveEffort(value: string): void
+  /** 切换交互模式「能力调度」档位，并按该档推荐值同步思考强度 */
+  setInteractiveTier(id: string): Promise<void>
   /** 按当前智能体重置深度思考默认值（效率/轻简模式关、专家模式开） */
   applyAgentThinkingDefault(): Promise<void>
   setWebSearch(value: boolean): void
@@ -464,6 +486,7 @@ export const useStore = create<State>((set, get) => {
     thinkingEnabled: false,
     reasoningEffort: 'high',
     interactiveEffort: 'low',
+    interactiveTier: InteractiveTiers.DEFAULT_ID,
     // 原版默认**开启**服务端联网搜索（LS_KEY_WEB_SEARCH_ENABLED 的缺省值是 true）
     webSearchEnabled: true,
     settings: null,
@@ -529,10 +552,11 @@ export const useStore = create<State>((set, get) => {
         mode: resolveConversationMode(startAgentId, 'chat'),
         summaries,
         settings,
-        // 深度思考与两个档位都从偏好里恢复（缺省值与原版一致：关 / high / low）
+        // 深度思考、两个强度档位与「能力调度」档位都从偏好里恢复（缺省值与原版一致：关 / high / low / lite）
         thinkingEnabled: settings.prefs?.[PREF_THINKING] === 'true',
         reasoningEffort: workEffortFromPrefs(settings.prefs),
         interactiveEffort: interactiveEffortFromPrefs(settings.prefs),
+        interactiveTier: interactiveTierFromPrefs(settings.prefs),
         webSearchEnabled: settings.prefs?.[PREF_WEB_SEARCH] !== 'false',
         ready: true
       })
@@ -729,6 +753,48 @@ export const useStore = create<State>((set, get) => {
     setInteractiveEffort(value) {
       set({ interactiveEffort: value })
       void window.guncat.settings.saveString(PREF_EFFORT_INTERACTIVE, value)
+    },
+
+    /**
+     * 切换交互模式「能力调度」档位。
+     *
+     * 一次点击要落三样东西：
+     *   1. state.interactiveTier —— 设置页单选态与导航摘要立刻更新；
+     *   2. 该档推荐的思考强度 —— 同步 interactiveEffort 并落盘。专家/法律/研究等档位
+     *      的提示词更重，思考强度还停在轻简档的 low 就出不来效果（档位元数据里声明了
+     *      defaultEffort，这里只认 isValidEffort 校验过的值）；
+     *   3. settings.prefs 投影 —— 设置页摘要直接读这个对象，只写 IPC 不更新投影的话，
+     *      在 reloadSettings 之前会闪回旧档位。
+     * 主进程只在每轮 runWork 开始时读该偏好，所以切档天然「下一轮生效」，不必重开会话。
+     */
+    async setInteractiveTier(id) {
+      const next = InteractiveTiers.normalize(id)
+      // 已经被规范化成同一档（含连点/重复点）就不写盘，避免无意义的偏好写入
+      if (next === get().interactiveTier) {
+        return
+      }
+      const defaultEffort = InteractiveTiers.byId(next).defaultEffort
+      const syncEffort = InteractiveTiers.isValidEffort(defaultEffort)
+      set((state) => ({
+        interactiveTier: next,
+        ...(syncEffort ? { interactiveEffort: defaultEffort } : {}),
+        settings:
+          state.settings === null
+            ? null
+            : {
+                ...state.settings,
+                prefs: { ...state.settings.prefs, [PREF_INTERACTIVE_TIER]: next }
+              }
+      }))
+      try {
+        if (syncEffort) {
+          await window.guncat.settings.saveString(PREF_EFFORT_INTERACTIVE, defaultEffort)
+        }
+        await window.guncat.settings.saveString(PREF_INTERACTIVE_TIER, next)
+      } catch (e) {
+        // 界面已经切过去了，但偏好没落盘：明确告诉用户，否则重开应用会「自己变回去」
+        get().pushNotice('warn', `保存能力调度档位失败：${String(e)}`)
+      }
     },
 
     setWebSearch(value) {

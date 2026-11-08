@@ -143,6 +143,7 @@ never mirrored. Oversized files are reported explicitly instead of silently skip
 | Streaming chat, reasoning, web search | ✅ |
 | Work-mode agent loop, 45 tools, skills | ✅ (command tools use the built-in Linux terminal) |
 | Interactive UI rendering | ✅ |
+| Interactive-mode capability scheduling (9 prompt tiers) | ✅ Lite / Efficiency / Expert / Classic / Paper / Legal / Research / Sift / LLM Eval; interactive mode only, applied from the next task |
 | Office generation (docx/xlsx/pptx/svg) | ✅ saved to `Downloads/Guncat Work` |
 | Image viewing / thumbnails / SVG rasterization | ✅ |
 | Chat attachments + workspace upload | ✅ system file picker |
