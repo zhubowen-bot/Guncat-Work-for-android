@@ -1212,9 +1212,6 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
                     })}
                   </div>
                 </SettingsCard>
-                <SettingsNotice>
-                  档位只影响交互模式，工作模式与聊天模式不受影响。档位越靠后，提示词越长、思考越深，首答会慢一些，但内容更完整、专业流程更严格。
-                </SettingsNotice>
               </>
             ) : null}
 

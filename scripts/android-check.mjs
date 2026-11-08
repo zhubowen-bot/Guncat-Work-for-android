@@ -532,6 +532,22 @@ try {
       (await page.locator('.settings-pane').count()) === 0
   )
   await page.screenshot({ path: path.join(SHOTS, 'settings.png') })
+
+  // 能力调度详情页：九档单选可用，且**不带**页尾那段「档位只影响交互模式…」说明
+  // （用户明确要求删掉的那一段；这里钉住，避免以后又被补回来）。
+  await page.locator('.settings-nav__item', { hasText: '能力调度' }).click()
+  await page.waitForTimeout(400)
+  const tierRowCount = await page.locator('.settings-option--tier').count()
+  const tierPaneText = await page.locator('.settings-pane').innerText()
+  check('能力调度详情页九档单选可用', tierRowCount === 9, `${tierRowCount} 档`)
+  check(
+    '能力调度页不再出现「档位只影响交互模式…」页尾说明段',
+    !tierPaneText.includes('档位只影响交互模式') && !tierPaneText.includes('思考越深，首答会慢一些')
+  )
+  await page.screenshot({ path: path.join(SHOTS, 'tier.png') })
+  await page.click('.settings-page__back')
+  await page.waitForTimeout(300)
+
   await page.click('.settings-page__back')
   await page.waitForTimeout(300)
 
