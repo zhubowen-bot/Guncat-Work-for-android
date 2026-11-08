@@ -115,6 +115,8 @@ npm run smoke:render   # React SSR 渲染断言
 哪一档，回答主体都是一份 `guncat-ui lang` 界面程序、程序之外不写文字；档位改变的是
 专业内容与流程的厚度。
 
+![能力调度九档](images/android-capability-tiers.png)
+
 - **入口**：设置 →「能力」→「能力调度」，九档单选，默认「轻简」；选择持久化在
   `guncat_interactive_tier`。
 - **九档**（按能力由轻到重）：轻简 / 效率 / 专家 / 经典 / 论文转换 / 法律检索 /

@@ -1751,6 +1751,7 @@ await inv('settings:saveString', 'guncat_web_search_enabled', 'false')
 await inv('settings:saveString', 'guncat_thinking_enabled', 'true')
 await inv('settings:saveString', 'guncat_reasoning_effort', 'max')
 await inv('settings:saveString', 'guncat_interactive_effort', 'off')
+await inv('settings:saveString', 'guncat_interactive_tier', 'expert')
 await inv('settings:saveString', 'guncat_current_agent', 'interactive')
 await inv('settings:saveString', 'guncat_current_conv', 'conv-x')
 const prefsDto = (await inv('settings:load')).prefs ?? {}
@@ -1759,12 +1760,14 @@ check(
   prefsDto['guncat_web_search_enabled'] === 'false' &&
     prefsDto['guncat_thinking_enabled'] === 'true' &&
     prefsDto['guncat_reasoning_effort'] === 'max' &&
-    prefsDto['guncat_interactive_effort'] === 'off',
+    prefsDto['guncat_interactive_effort'] === 'off' &&
+    prefsDto['guncat_interactive_tier'] === 'expert',
   JSON.stringify({
     web: prefsDto['guncat_web_search_enabled'],
     think: prefsDto['guncat_thinking_enabled'],
     work: prefsDto['guncat_reasoning_effort'],
-    act: prefsDto['guncat_interactive_effort']
+    act: prefsDto['guncat_interactive_effort'],
+    tier: prefsDto['guncat_interactive_tier']
   })
 )
 check(

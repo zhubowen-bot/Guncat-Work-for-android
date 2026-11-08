@@ -570,6 +570,9 @@ export class SessionManager {
     // 推理强度（按形态分两个键，与原版一致）。渲染层的档位选择器读写它们。
     Constants.LS_KEY_REASONING_EFFORT,
     Constants.LS_KEY_INTERACTIVE_EFFORT,
+    // 交互模式「能力调度」档位：设置页切档后落盘，重启/重开设置页要能读回，
+    // 否则界面显示轻简、主进程实际还在按用户上次选的档位跑（行为与显示分叉）。
+    Constants.LS_KEY_INTERACTIVE_TIER,
     // 表格提取记住的模型选择（原版 TableOcrPage 的 LS_KEY_TABLE_OCR_PROVIDER）
     Constants.LS_KEY_TABLE_OCR_PROVIDER,
     // 深度思考 / 联网搜索开关：渲染层的开关直接落盘，重启后要能读回来。
