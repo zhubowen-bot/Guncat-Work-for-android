@@ -7,6 +7,7 @@ import { ToolCallRow } from '@renderer/components/Disclosure'
 import { GuncatUiParts } from '@core/common/GuncatUiParts'
 import { CommandGuard } from '@core/service/CommandGuard'
 import { Constants } from '@core/common/Constants'
+import { PersonalInstruction } from '@core/model/PersonalInstruction'
 import { docxFileName } from '@renderer/fileName'
 import {
   WORK_AGENT_ID,
@@ -39,6 +40,7 @@ import {
   IconDownload,
   IconInteractive,
   IconMic,
+  IconPersonalInstruction,
   IconSend,
   IconSettings,
   IconStopCircle,
@@ -81,6 +83,13 @@ import { useStore } from '@renderer/store'
 import { LightboxView } from '@renderer/components/ImageLightbox'
 import { AskUserCard, askConfirmLabel, askToggle } from '@renderer/components/AskUserCard'
 import { TableOcrPanel } from '@renderer/components/TableOcrDialog'
+import {
+  PersonalInstructionsPanel,
+  agentScopeOrder,
+  instructionScopeSummary,
+  parseInstructionList
+} from '@renderer/components/PersonalInstructionsPanel'
+import { PersonalInstructionEditPage } from '@renderer/components/PersonalInstructionEditPage'
 import { WorkArtifactsCard } from '@renderer/components/WorkArtifactsCard'
 import { AssistantBody, marqueeText } from '@renderer/components/MessageView'
 import { EmptyState } from '@renderer/components/EmptyState'
@@ -585,6 +594,55 @@ export function renderSettingsMobile(): string {
 }
 
 /**
+ * 设置 → 能力 → 个性化指令的首帧列表。SSR 下 settings 为 null（偏好还没读回），
+ * 因此渲染的是空态卡片 —— 正好钉住「空态有说明 + 新建入口」。
+ */
+export function renderPersonalInstructions(): string {
+  return renderToStaticMarkup(createElement(PersonalInstructionsPanel))
+}
+
+/**
+ * 个性化指令的非空列表（夹具数据）：SSR 拿不到持久化列表，所以通过组件 props 注入，
+ * 用来钉住每行的三件事 —— 显示名 / 生效范围摘要 / 正文摘要，以及「名称留空用正文首行」。
+ */
+export function renderPersonalInstructionsList(): string {
+  const named = PersonalInstruction.create(
+    '英文回答',
+    'Prefer English unless the user writes in Chinese.',
+    ['interactive', 'work']
+  )
+  named.id = 'pi-ssr-1'
+  named.updatedAt = 2000
+  const unnamed = PersonalInstruction.create(
+    '',
+    '所有代码都先给出最小可运行版本，再补充优化建议。\n第二行只在正文摘要里出现。',
+    ['work', 'chat-a']
+  )
+  unnamed.id = 'pi-ssr-2'
+  unnamed.updatedAt = 1000
+  return renderToStaticMarkup(
+    createElement(PersonalInstructionsPanel, {
+      items: [named, unnamed],
+      agents: [{ id: 'chat-a', name: '写作引擎' }]
+    })
+  )
+}
+
+/**
+ * 个性化指令编辑页（新建态）。整页都是纯渲染：标题、「名称（可选）」、正文、
+ * 「Markdown 渲染」切换、生效范围多选与底部「添加」按钮，SSR 不碰 store/IPC。
+ */
+export function renderInstructionEditor(): string {
+  return renderToStaticMarkup(createElement(PersonalInstructionEditPage, { open: true }))
+}
+
+/**
+ * 生效范围摘要的纯函数（与编辑页 / 列表共用）：
+ * 固定顺序是 交互模式 → 工作模式 → 各聊天引擎，保存与展示都必须按它规范化。
+ */
+export { agentScopeOrder, instructionScopeSummary, parseInstructionList }
+
+/**
  * 设置面板里随接入方式 / 引擎变化的文案。
  * 逐字对齐原版 getBaseUrlPlaceholder / getModelPlaceholder / getHint /
  * getSearchEngineHint —— 这些字串是用户判断「该填什么」的唯一线索。
@@ -613,6 +671,8 @@ export function settingsCopy(
 
 export { normalizeApiConfig, normalizeMultimodal, providerCopy, searchEngineHint }
 export { interactiveTierFromPrefs } from '@renderer/store'
+/** store 本体只给 SSR 断言用：编辑页开合/互斥是纯状态机，不需要 IPC 就能验证。 */
+export { useStore } from '@renderer/store'
 export { modelChoices } from '@renderer/modelChoices'
 
 /**
@@ -856,7 +916,8 @@ function renderIcons(): string {
       createElement(IconTrash, {}),
       createElement(IconSettings, {}),
       createElement(IconClose, {}),
-      createElement(IconBrain, {})
+      createElement(IconBrain, {}),
+      createElement(IconPersonalInstruction, {})
     )
   )
 }

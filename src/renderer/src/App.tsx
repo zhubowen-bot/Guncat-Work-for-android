@@ -8,6 +8,7 @@ import { WorkspacePanel } from './components/WorkspacePanel'
 import { Picker } from './components/Picker'
 import { SettingsPage } from './components/SettingsPage'
 import { UsagePage } from './components/UsagePage'
+import { PersonalInstructionEditPage } from './components/PersonalInstructionEditPage'
 import { SpeechBar } from './components/SpeechBar'
 import { agentById, isVirtualAgentId } from './conversations'
 import { AgentGlyph } from './components/AgentGlyph'
@@ -84,6 +85,8 @@ export default function App() {
   const settings = useStore((s) => s.settings)
   const settingsOpen = useStore((s) => s.settingsOpen)
   const usageOpen = useStore((s) => s.usageOpen)
+  // 个性化指令编辑页：渲染优先级最高（编辑一条指令时设置页仍保持打开，返回即回到列表）
+  const instructionEditorOpen = useStore((s) => s.instructionEditorOpen)
   const reloadSettings = useStore((s) => s.reloadSettings)
   const profiles = settings?.apiProfiles ?? []
   const currentProfile = profiles.find((p) => p.id === settings?.currentApiProfileId)
@@ -290,7 +293,13 @@ export default function App() {
         void intakeFiles(paths)
       }}
     >
-      {usageOpen ? <UsagePage /> : settingsOpen ? <SettingsPage /> : (
+      {instructionEditorOpen ? (
+        <PersonalInstructionEditPage />
+      ) : usageOpen ? (
+        <UsagePage />
+      ) : settingsOpen ? (
+        <SettingsPage />
+      ) : (
         <>
           {dragging ? (
             <div className="dropzone">

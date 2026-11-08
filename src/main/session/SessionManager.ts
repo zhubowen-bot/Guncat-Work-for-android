@@ -41,6 +41,9 @@ import { ToolCallRecord } from '@core/model/ToolCallRecord'
 import { StreamCallbacks, AbortSignal } from '@core/common/Types'
 import { Constants } from '@core/common/Constants'
 import { InteractiveTiers } from '@core/common/InteractiveTiers'
+import { PersonalInstructionPrompt } from '@core/common/PersonalInstructionPrompt'
+import type { PersonalInstruction } from '@core/model/PersonalInstruction'
+import { PersonalInstructionStore } from '@core/service/PersonalInstructionStore'
 import { LoopDecisions } from '@core/common/LoopDecisions'
 import { ContextBudget } from '@core/common/ContextBudget'
 import type { BudgetAnchor } from '@core/common/ContextBudget'
@@ -140,6 +143,8 @@ interface WorkCompactionEnv {
   abort: AbortSignal
   /** 本轮交互模式「能力调度」档位(工作模式不看它; 压缩请求要与主循环同前缀, 必须一起带上) */
   tierId: string
+  /** 本轮生效的个性化指令段(已按形态过滤); 压缩后重建系统提示词必须原样带上, 否则前缀对不上 */
+  personalSection: string
 }
 
 /**
@@ -573,6 +578,9 @@ export class SessionManager {
     // 交互模式「能力调度」档位：设置页切档后落盘，重启/重开设置页要能读回，
     // 否则界面显示轻简、主进程实际还在按用户上次选的档位跑（行为与显示分叉）。
     Constants.LS_KEY_INTERACTIVE_TIER,
+    // 个性化指令（整体 JSON）。设置页增删改后落盘；渲染层重开设置页要能读回列表，
+    // 主进程每轮请求前也从这个键读取（见 runWork / runChatTurn）。
+    Constants.LS_KEY_PERSONAL_INSTRUCTIONS,
     // 表格提取记住的模型选择（原版 TableOcrPage 的 LS_KEY_TABLE_OCR_PROVIDER）
     Constants.LS_KEY_TABLE_OCR_PROVIDER,
     // 深度思考 / 联网搜索开关：渲染层的开关直接落盘，重启后要能读回来。
@@ -1168,6 +1176,11 @@ export class SessionManager {
     let currentPrompt: string = prompt
     let round: number = 0
 
+    // 个性化指令：按会话所属聊天引擎 id 过滤后拼进系统提示词末尾。
+    // 只克隆一份「请求用智能体」，不原地改 this.agents 里的共享对象 ——
+    // 否则偏好会被写进会话状态，切引擎 / 后续轮次都会串味。
+    const requestAgent: Agent | null = await this.agentWithPersonalInstructions(agent)
+
     let failure: string = ''
     try {
       // 多轮循环：只有「本轮产生了新的工具调用」才会进入下一轮
@@ -1175,7 +1188,7 @@ export class SessionManager {
         round++
         const result = await ChatService.streamChat(
           config,
-          agent ?? null,
+          requestAgent,
           currentHistory,
           currentPrompt,
           thinkingEnabled,
@@ -1477,8 +1490,22 @@ export class SessionManager {
     // 未知/旧值回退轻简档。工作模式与聊天模式不看它。
     const tierId: string = await this.interactiveTierId()
 
+    // 个性化指令：每次任务开始时从偏好读一次，按本轮形态（工作 / 交互）过滤后拼在系统提示词末尾。
+    // 只追加、不改写原有提示词前缀 —— 用户不改指令时相邻轮次仍能命中模型侧 KV 缓存。
+    // 拼装规则与三种入口共用 PersonalInstructionPrompt，详见该文件头注释。
+    const personalItems: PersonalInstruction[] = await PersonalInstructionStore.load(this.ctx())
+    const personalScope: string =
+      request.mode === Constants.MODE_INTERACTIVE
+        ? Constants.INTERACTIVE_AGENT_ID
+        : Constants.WORK_AGENT_ID
+    const personalSection: string = PersonalInstructionPrompt.section(personalScope, personalItems)
+    const systemPrompt: string = PersonalInstructionPrompt.appendSection(
+      AgentLoopService.buildWorkSystemPromptFor(request.mode, tierId),
+      personalSection
+    )
+
     const messages: LoopMessage[] = [
-      LoopMessage.system(AgentLoopService.buildWorkSystemPromptFor(request.mode, tierId)),
+      LoopMessage.system(systemPrompt),
       ...AgentLoopService.historyMessages(prior),
       LoopMessage.user(this.expandMentions(conv.id, taskText))
     ]
@@ -1507,7 +1534,14 @@ export class SessionManager {
     this.beginRunStats(conv.id)
     UsageService.beginRun(config.sessionId)
     // 压缩环境要在 handle.abort 换成新实例之后再建，否则压缩请求会挂到上一次运行的中断信号上
-    const compactionEnv: WorkCompactionEnv = { config, request, reasoningEffort, abort: handle.abort, tierId }
+    const compactionEnv: WorkCompactionEnv = {
+      config,
+      request,
+      reasoningEffort,
+      abort: handle.abort,
+      tierId,
+      personalSection
+    }
 
     let assistantMsg: Message | null = null
     let streamed: string = ''
@@ -1943,7 +1977,12 @@ export class SessionManager {
           messages,
           oldEnd,
           ContextBudget.truncateSummary(summary.trim()),
-          AgentLoopService.buildWorkSystemPromptFor(mode, env.tierId),
+          // 重建出来的系统提示词必须与主循环逐字节一致（含个性化指令段），
+          // 否则压缩后的前缀与压缩请求的前缀对不上，缓存全作废。
+          PersonalInstructionPrompt.appendSection(
+            AgentLoopService.buildWorkSystemPromptFor(mode, env.tierId),
+            env.personalSection
+          ),
           LOOP_HEAD_FACTORY
         )
         // 就地替换（而不是把 messages 重新赋值）：messages 被 callbacks 与外层闭包共享，
@@ -2983,6 +3022,27 @@ export class SessionManager {
       return asked
     }
     return request.thinkingEnabled ? 'high' : 'none'
+  }
+
+  /**
+   * 聊天模式的请求智能体：复制一份并把当前引擎生效的个性化指令拼进 systemPrompt。
+   *
+   * 为什么克隆而不是传一个 override 参数：三种协议的请求体构建器（buildChatCompletionsBody /
+   * buildResponsesBody / buildAnthropicBody）都以 `agent.systemPrompt` 为系统提示词来源，
+   * 在 SessionManager 这一层换掉请求对象，协议层一行不用改，也不会把偏好写进共享的 Agent。
+   */
+  private async agentWithPersonalInstructions(agent: Agent | undefined): Promise<Agent | null> {
+    if (agent === undefined) {
+      return null
+    }
+    const items: PersonalInstruction[] = await PersonalInstructionStore.load(this.ctx())
+    const section: string = PersonalInstructionPrompt.section(agent.id, items)
+    if (section === '') {
+      return agent
+    }
+    const copy: Agent = Object.assign(new Agent(), agent)
+    copy.systemPrompt = PersonalInstructionPrompt.appendSection(agent.systemPrompt, section)
+    return copy
   }
 
   /**

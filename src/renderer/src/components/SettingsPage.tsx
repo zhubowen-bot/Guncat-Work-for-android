@@ -11,6 +11,7 @@ import type {
 // 「先行解析附件」随即失效 —— 所以规整时要能拿到这里的默认值（见 normalizeMultimodal）。
 import { Constants } from '@core/common/Constants'
 import { InteractiveTiers } from '@core/common/InteractiveTiers'
+import { PersonalInstruction } from '@core/model/PersonalInstruction'
 import { useStore } from '../store'
 import { useSpeech } from '../speech/speechStore'
 import {
@@ -24,6 +25,7 @@ import {
   IconImage,
   IconInfo,
   IconMic,
+  IconPersonalInstruction,
   IconPlus,
   IconRefresh,
   IconSettings,
@@ -32,6 +34,7 @@ import {
   IconTrash
 } from '../icons'
 import { Picker } from './Picker'
+import { PersonalInstructionsPanel } from './PersonalInstructionsPanel'
 import {
   reinstallBundled,
   setShellBackend,
@@ -299,6 +302,7 @@ export function normalizeSearch(search: SearchDraft): SearchDraft {
 type SettingsSectionId =
   | 'model'
   | 'advanced'
+  | 'instruction'
   | 'tier'
   | 'search'
   | 'multimodal'
@@ -319,6 +323,7 @@ interface SettingsNavItem {
 const SECTION_LEAD: Record<SettingsSectionId, string> = {
   model: '配置方案、接入方式与可用模型，修改会自动保存。',
   advanced: '采样、输出长度与额外请求参数。留 0 表示交给服务端默认值。',
+  instruction: '长期偏好：按生效范围自动附加到系统提示词末尾，只保存在本机，从下一次请求开始生效。',
   tier: '交互模式的能力档位：决定用哪一套智能体提示词与工具面，点选后下一轮对话生效。',
   search: '本机直连搜索引擎或搜索 API，作为服务端联网搜索不可用时的兜底。',
   multimodal: '用独立的多模态模型先行解析附件，再把文本交给主模型。',
@@ -772,6 +777,14 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
         const tier = InteractiveTiers.byId(interactiveTier)
         return `${tier.name} · ${tier.tagline}`
       }
+      case 'instruction': {
+        // 入口摘要跟持久化列表走：新建 / 编辑 / 删除后 reloadSettings 会带着新 settings
+        // 重新渲染设置页，条数自然更新（鸿蒙版用 onPageShow 手动刷新，React 里由 store 驱动）。
+        const items = PersonalInstruction.parseList(
+          settings?.prefs?.[Constants.LS_KEY_PERSONAL_INSTRUCTIONS] ?? ''
+        )
+        return items.length === 0 ? '尚未添加' : `共 ${items.length} 条 · 自动拼进生效提示词`
+      }
       case 'search': {
         const engineLabel =
           engines.find((engine) => engine.id === search.engine)?.label ?? search.engine
@@ -797,6 +810,13 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
   const navItems: SettingsNavItem[] = [
     { id: 'model', label: '模型配置', group: 'model', icon: <IconBrain size={22} /> },
     { id: 'advanced', label: '高级参数', group: 'model', icon: <IconSettings size={22} /> },
+    // 能力分组里个性化指令放第一行（与鸿蒙版 SettingsPage 的「能力 → 个性化指令」位置一致）
+    {
+      id: 'instruction',
+      label: '个性化指令',
+      group: 'capability',
+      icon: <IconPersonalInstruction size={22} />
+    },
     { id: 'tier', label: '能力调度', group: 'capability', icon: <IconStar size={22} /> },
     { id: 'search', label: '本地联网搜索', group: 'capability', icon: <IconGlobe size={22} /> },
     { id: 'multimodal', label: '多模态解析', group: 'capability', icon: <IconImage size={22} /> },
@@ -1167,6 +1187,13 @@ export function SettingsPage({ open: openOverride, compact: compactOverride }: S
                 </SettingsCard>
               </>
             ) : null}
+
+            {/*
+              个性化指令：这里只渲染列表 / 空态，列表项点击由 panel 调
+              store.openInstructionEditor(id)；新建与编辑都在独立的全屏编辑页里完成，
+              编辑页关闭后（settingsOpen 保持 true）自然回到这段详情。
+            */}
+            {activeSection === 'instruction' ? <PersonalInstructionsPanel /> : null}
 
             {/*
               交互模式 · 能力调度：九档一律从 InteractiveTiers.ALL 生成（页面上不手写重复数组，

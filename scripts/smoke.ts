@@ -39,6 +39,11 @@ import { InteractiveTiers } from '../src/core/common/InteractiveTiers'
 import { InteractiveTierPrompts } from '../src/core/common/InteractiveTierPrompts'
 import { InteractiveTierPrompt } from '../src/core/common/InteractiveTierPrompt'
 import { GuncatUiLang } from '../src/core/common/GuncatUiLang'
+import { Constants } from '../src/core/common/Constants'
+import { PersonalInstruction } from '../src/core/model/PersonalInstruction'
+import { PersonalInstructionPrompt } from '../src/core/common/PersonalInstructionPrompt'
+import { PersonalInstructionStore } from '../src/core/service/PersonalInstructionStore'
+import { Agent } from '../src/core/model/Agent'
 import {
   addUsageRecordToLedger,
   aggregateUsageRange,
@@ -1860,6 +1865,380 @@ async function main(): Promise<void> {
     GuncatUiLibrary.GROUP_ORDER.join('/'))
   check('promptHidden 组件不出现在提示词清单里',
     !compSection.includes('`FollowUpBlock(') && !compSection.includes('`FollowUpItem('))
+
+  // ===== 24. 个性化指令（模型 / 提示词 / 持久化 / 三协议注入） =====
+  //
+  // 这组断言守四件事：
+  //   1) 数据模型：create 立即 trim/clamp（名称 40 / 正文 8000，按字符不按字节）、
+  //      脏存档逐条容错、displayName/summary/indexOfId/sortScopesByOrder 的稳定口径；
+  //   2) 提示词拼装：按生效范围过滤、personal-instruction 包裹与属性转义、正文原样保留、
+  //      16000 总预算的截断口径、appendSection 的「前缀逐字节不变」；
+  //   3) 持久化：serialize→parseList 与 save→load 两条往返路径互逆，空列表落盘为 '[]'；
+  //   4) 三协议注入：克隆 Agent 后 completions / anthropic / responses 请求体的系统提示
+  //      以原提示逐字节为前缀、以个性化段结尾；无生效条目时请求体 JSON 与未注入前完全相同。
+  section('24. 个性化指令')
+
+  // ---- 24.1 数据模型 ----
+  check('个性化指令 · 模型 · 约束常量与鸿蒙版一致（名称 40 / 正文 8000 / 总预算 16000）',
+    PersonalInstruction.MAX_NAME_CHARS === 40 &&
+      PersonalInstruction.MAX_CONTENT_CHARS === 8000 &&
+      PersonalInstructionPrompt.MAX_TOTAL_CHARS === 16000)
+
+  const piTrimmed = PersonalInstruction.create(
+    '  冒烟名称  ', '  正文内容  ', ['work', ' work ', '', 'interactive', 'work'])
+  check('个性化指令 · 模型 · create 去首尾空白、范围去重去空且保留勾选顺序',
+    piTrimmed.name === '冒烟名称' && piTrimmed.content === '正文内容' &&
+      piTrimmed.scopes.join(',') === 'work,interactive', piTrimmed.scopes.join(','))
+  check('个性化指令 · 模型 · create 生成 pi- 前缀 id 且 updatedAt>0',
+    piTrimmed.id.startsWith('pi-') && piTrimmed.id.length > 3 && piTrimmed.updatedAt > 0,
+    piTrimmed.id)
+
+  const piLongName = PersonalInstruction.create('名'.repeat(50), '正文', ['work'])
+  check('个性化指令 · 模型 · 名称按字符截断到 40（中文不被截坏）',
+    piLongName.name.length === 40 && piLongName.name === '名'.repeat(40),
+    `${piLongName.name.length} 字`)
+  const piChinese8000 = '中'.repeat(8000)
+  check('个性化指令 · 模型 · 正文 8000 个中文字符原样保留（按字符不按字节）',
+    PersonalInstruction.create('', piChinese8000, ['work']).content === piChinese8000)
+  check('个性化指令 · 模型 · 正文 8001 个中文字符截断为 8000',
+    PersonalInstruction.create('', '中'.repeat(8001), ['work']).content === '中'.repeat(8000))
+  check('个性化指令 · 模型 · clampText 去空白并按字符截断',
+    PersonalInstruction.clampText('  前后  ', 40) === '前后' &&
+      PersonalInstruction.clampText('中'.repeat(41), 40) === '中'.repeat(40))
+  check('个性化指令 · 模型 · normalizeScopes 去重去空保序',
+    PersonalInstruction.normalizeScopes(['b', 'a', ' b ', '', 'a']).join(',') === 'b,a')
+
+  const piDirtyJson: string = JSON.stringify([
+    { id: 'a', name: ' 名字 ', content: '# 用英文回答\n\n正文', scopes: ['interactive', 'work', 'interactive', ' work '], updatedAt: 12345 },
+    { id: '  ', content: '缺 id', scopes: ['work'], updatedAt: 1 },
+    { id: 'b', content: '   ', scopes: ['work'], updatedAt: 2 },
+    { id: 'c', content: '非字符串范围', scopes: 'work', updatedAt: 3 },
+    { id: 'd', content: '缺时间', scopes: ['work'] },
+    { id: 5, content: 'id 不是字符串', scopes: [] },
+    null,
+    42,
+    ['数组条目'],
+    { id: 'e', name: 123, content: '名称不是字符串', scopes: ['guncat-3.0-flash'], updatedAt: 9 },
+    { id: 'f', content: '时间非法', scopes: ['work'], updatedAt: -5 }
+  ])
+  const piParsed = PersonalInstruction.parseList(piDirtyJson)
+  check('个性化指令 · 模型 · parseList 丢弃缺 id / 空正文 / 非对象条目，保留可救条目',
+    piParsed.length === 5 && piParsed.map((it) => it.id).join(',') === 'a,c,d,e,f',
+    `${piParsed.length} 条: ${piParsed.map((it) => it.id).join(',')}`)
+  check('个性化指令 · 模型 · parseList 名称去空白、范围去重保序、updatedAt 原值保留',
+    piParsed[0].name === '名字' && piParsed[0].scopes.join(',') === 'interactive,work' &&
+      piParsed[0].updatedAt === 12345,
+    `${piParsed[0].name}|${piParsed[0].scopes.join(',')}|${piParsed[0].updatedAt}`)
+  check('个性化指令 · 模型 · 非数组 scopes 按空范围处理', piParsed[1].scopes.length === 0)
+  check('个性化指令 · 模型 · 缺 updatedAt / 非法 updatedAt 回填为当前时间（>0）',
+    piParsed[2].updatedAt > 0 && piParsed[4].updatedAt > 0,
+    `${piParsed[2].updatedAt}/${piParsed[4].updatedAt}`)
+  check('个性化指令 · 模型 · 非字符串 name 按空名称处理', piParsed[3].name === '')
+  check('个性化指令 · 模型 · parseList 对空串 / 坏 JSON / 非数组 JSON 返回空列表',
+    PersonalInstruction.parseList('').length === 0 &&
+      PersonalInstruction.parseList('   ').length === 0 &&
+      PersonalInstruction.parseList('{not json').length === 0 &&
+      PersonalInstruction.parseList('{"items":[]}').length === 0 &&
+      PersonalInstruction.parseList('null').length === 0)
+  check('个性化指令 · 模型 · fromJson 缺 id / 空正文返回 null',
+    PersonalInstruction.fromJson({ content: '有正文' }) === null &&
+      PersonalInstruction.fromJson({ id: 'x' }) === null &&
+      PersonalInstruction.fromJson({ id: 'x', content: '   ' }) === null)
+
+  const piFromLong = PersonalInstruction.fromJson({ id: 'x', content: '中'.repeat(8001) })
+  check('个性化指令 · 模型 · fromJson 对超长正文同样截断到 8000',
+    piFromLong !== null && piFromLong.content === '中'.repeat(8000))
+  const piRoundTrip = PersonalInstruction.fromJson(piParsed[0].toJson())
+  check('个性化指令 · 模型 · toJson → fromJson 往返保留 id/名称/正文/范围/时间',
+    piRoundTrip !== null && piRoundTrip.id === piParsed[0].id &&
+      piRoundTrip.name === piParsed[0].name && piRoundTrip.content === piParsed[0].content &&
+      piRoundTrip.scopes.join(',') === piParsed[0].scopes.join(',') &&
+      piRoundTrip.updatedAt === piParsed[0].updatedAt)
+
+  const piNameItem = PersonalInstruction.create('  列表名  ', '正文', ['work'])
+  const piHeadingItem = PersonalInstruction.create('', '# 用英文回答\n\n正文内容', ['work'])
+  const piListHeadItem = PersonalInstruction.create('', '- 列表首行\n第二行', ['work'])
+  const piPlainHeadItem = PersonalInstruction.create('', '\n\n  普通首行  \n第二行', ['work'])
+  const piEmptyItem = new PersonalInstruction()
+  piEmptyItem.content = '\n\n   \n'
+  const piLongLineItem = PersonalInstruction.create('', 'a'.repeat(30), ['work'])
+  check('个性化指令 · 模型 · displayName 有名称时去空白返回名称',
+    piNameItem.displayName() === '列表名')
+  check('个性化指令 · 模型 · displayName 无名称取正文首行并去 Markdown 记号',
+    piHeadingItem.displayName() === '用英文回答' &&
+      piListHeadItem.displayName() === '列表首行' &&
+      piPlainHeadItem.displayName() === '普通首行',
+    `${piHeadingItem.displayName()}|${piListHeadItem.displayName()}|${piPlainHeadItem.displayName()}`)
+  check('个性化指令 · 模型 · displayName 首行过长截断 24 字',
+    piLongLineItem.displayName() === 'a'.repeat(24), `${piLongLineItem.displayName().length} 字`)
+  check('个性化指令 · 模型 · displayName 空内容回退「未命名指令」',
+    piEmptyItem.displayName() === '未命名指令', piEmptyItem.displayName())
+
+  const piSummaryItem = PersonalInstruction.create('', '第一行\n第二行   有空格\t制表', ['work'])
+  check('个性化指令 · 模型 · summary 把换行/连续空白压成一个空格',
+    piSummaryItem.summary() === '第一行 第二行 有空格 制表', JSON.stringify(piSummaryItem.summary()))
+  const piSummaryLong = PersonalInstruction.create('', 'a'.repeat(100), ['work'])
+  check('个性化指令 · 模型 · summary 超长截断 80 字',
+    piSummaryLong.summary() === 'a'.repeat(80), `${piSummaryLong.summary().length} 字`)
+
+  const piItemInteractive = PersonalInstruction.create('', '永远用中文回答。', ['interactive'])
+  const piItemWork = PersonalInstruction.create(
+    '工作偏好', '每次交付都附自检清单。', ['work', 'guncat-smoke-engine'])
+  const piItemEngine = PersonalInstruction.create('称呼', '称呼我为「指挥官」。', ['guncat-smoke-engine'])
+  const piItems: PersonalInstruction[] = [piItemInteractive, piItemWork, piItemEngine]
+  check('个性化指令 · 模型 · indexOfId 命中下标 / 未知 id 与空列表返回 -1',
+    PersonalInstruction.indexOfId(piItems, piItemWork.id) === 1 &&
+      PersonalInstruction.indexOfId(piItems, 'pi-not-exist') === -1 &&
+      PersonalInstruction.indexOfId([], piItemWork.id) === -1)
+  check('个性化指令 · 模型 · sortScopesByOrder 按 交互→工作→引擎 排序，未知 scope 保留在末尾',
+    PersonalInstruction.sortScopesByOrder(
+      ['guncat-old-removed', 'guncat-3.0-flash', 'work', 'interactive'],
+      ['interactive', 'work', 'guncat-3.0-flash']
+    ).join(',') === 'interactive,work,guncat-3.0-flash,guncat-old-removed')
+  check('个性化指令 · 模型 · hasScope 命中/未命中',
+    piItemWork.hasScope('work') && !piItemWork.hasScope('interactive'))
+
+  // ---- 24.2 提示词拼装 ----
+  const piBlankItem = new PersonalInstruction()
+  piBlankItem.content = '   '
+  piBlankItem.scopes = ['work']
+  check('个性化指令 · 提示词 · matches 对空 scope / 空正文 / 未勾选范围返回 false',
+    !PersonalInstructionPrompt.matches(piItemWork, '') &&
+      !PersonalInstructionPrompt.matches(piBlankItem, 'work') &&
+      !PersonalInstructionPrompt.matches(piItemWork, 'interactive') &&
+      PersonalInstructionPrompt.matches(piItemWork, 'work'))
+  const piWorkEffective = PersonalInstructionPrompt.effective('work', piItems)
+  const piEngineEffective = PersonalInstructionPrompt.effective('guncat-smoke-engine', piItems)
+  check('个性化指令 · 提示词 · effective 只保留生效条目并保持存储顺序',
+    piWorkEffective.length === 1 && piWorkEffective[0].id === piItemWork.id &&
+      piEngineEffective.length === 2 &&
+      piEngineEffective[0].id === piItemWork.id && piEngineEffective[1].id === piItemEngine.id,
+    `work ${piWorkEffective.length} / engine ${piEngineEffective.length}`)
+  check('个性化指令 · 提示词 · effective 对空 scope / 未知 scope 返回空数组',
+    PersonalInstructionPrompt.effective('', piItems).length === 0 &&
+      PersonalInstructionPrompt.effective('unknown-engine', piItems).length === 0)
+
+  const piMdItem = PersonalInstruction.create('', '# 标题\n\n- 条目一\n- **加粗**', ['work'])
+  check('个性化指令 · 提示词 · wrap 无名称时开头是裸标签',
+    PersonalInstructionPrompt.wrap(piItemInteractive)
+      .startsWith('<' + PersonalInstructionPrompt.TAG + '>\n'))
+  check('个性化指令 · 提示词 · wrap 有名称时开头带 name 属性',
+    PersonalInstructionPrompt.wrap(piItemWork)
+      .startsWith('<personal-instruction name="工作偏好">\n'))
+  check('个性化指令 · 提示词 · wrap 正文原样保留（Markdown 与换行逐字节不变）',
+    PersonalInstructionPrompt.wrap(piMdItem) ===
+      '<personal-instruction>\n' + piMdItem.content + '\n</personal-instruction>')
+  check('个性化指令 · 提示词 · escapeAttribute 转义 & < > " 且中文原样',
+    PersonalInstructionPrompt.escapeAttribute('A"<&>中文') === 'A&quot;&lt;&amp;&gt;中文',
+    PersonalInstructionPrompt.escapeAttribute('A"<&>中文'))
+  const piQuotedNameItem = PersonalInstruction.create('A"<&>', '正文', ['work'])
+  check('个性化指令 · 提示词 · 名称属性里的特殊字符被转义',
+    PersonalInstructionPrompt.wrap(piQuotedNameItem)
+      .startsWith('<personal-instruction name="A&quot;&lt;&amp;&gt;">\n'))
+
+  check('个性化指令 · 提示词 · 无生效条目时 section 返回空串',
+    PersonalInstructionPrompt.section('', piItems) === '' &&
+      PersonalInstructionPrompt.section('unknown-engine', piItems) === '' &&
+      PersonalInstructionPrompt.section('work', []) === '')
+  const piWorkSection = PersonalInstructionPrompt.section('work', piItems)
+  const piEngineSection = PersonalInstructionPrompt.section('guncat-smoke-engine', piItems)
+  check('个性化指令 · 提示词 · section 以段标题开头且段说明紧随其后',
+    piWorkSection.startsWith(
+      PersonalInstructionPrompt.SECTION_TITLE + '\n' + PersonalInstructionPrompt.SECTION_INTRO),
+    piWorkSection.slice(0, 24))
+  check('个性化指令 · 提示词 · section 在标题/说明与每个块之间留一个空行',
+    piEngineSection ===
+      PersonalInstructionPrompt.SECTION_TITLE + '\n' +
+      PersonalInstructionPrompt.SECTION_INTRO + '\n\n' +
+      PersonalInstructionPrompt.wrap(piItemWork) + '\n\n' +
+      PersonalInstructionPrompt.wrap(piItemEngine) &&
+      (piEngineSection.match(/\n\n/g) ?? []).length === 2,
+    `${(piEngineSection.match(/\n\n/g) ?? []).length} 处空行分隔`)
+  check('个性化指令 · 提示词 · section 只拼当前 scope 的条目',
+    piEngineSection.includes('自检清单') && piEngineSection.includes('指挥官') &&
+      !piEngineSection.includes('永远用中文'))
+
+  const piBigA = PersonalInstruction.create('', 'x'.repeat(8000), ['work'])
+  const piBigB = PersonalInstruction.create('', 'x'.repeat(8000), ['work'])
+  const piBigC = PersonalInstruction.create('', 'THIRD-ITEM-SENTINEL', ['work'])
+  const piCapped = PersonalInstructionPrompt.section('work', [piBigA, piBigB, piBigC])
+  // 段 = 标题 + '\n' + 说明 + ('\n\n' + 块)×N + ['\n\n' + 备注]，据此从测量值反推块总长
+  const piCappedBlocks: number = piCapped.length -
+    (PersonalInstructionPrompt.SECTION_TITLE.length + 1 +
+      PersonalInstructionPrompt.SECTION_INTRO.length) -
+    6 - PersonalInstructionPrompt.TRUNCATED_NOTE.length
+  check('个性化指令 · 提示词 · 超 16000 预算时截断并追加 TRUNCATED_NOTE',
+    piCapped.includes(PersonalInstructionPrompt.TRUNCATED_NOTE) &&
+      piCapped.endsWith('\n' + PersonalInstructionPrompt.TRUNCATED_NOTE))
+  check('个性化指令 · 提示词 · 截断后两条块合计正好用满 16000 预算',
+    piCappedBlocks === PersonalInstructionPrompt.MAX_TOTAL_CHARS, String(piCappedBlocks))
+  check('个性化指令 · 提示词 · 第一条完整、第二条截断、第三条不再出现',
+    piCapped.includes(PersonalInstructionPrompt.wrap(piBigA)) &&
+      !piCapped.includes('THIRD-ITEM-SENTINEL') &&
+      (piCapped.match(/<personal-instruction>/g) ?? []).length === 2)
+  const piSecondRoom: number =
+    PersonalInstructionPrompt.MAX_TOTAL_CHARS - PersonalInstructionPrompt.wrap(piBigA).length
+  check('个性化指令 · 提示词 · 第二条在剩余额度处按字符截断（不做标签补齐）',
+    (piCapped.match(/x/g) ?? []).length ===
+      8000 + (piSecondRoom - '<personal-instruction>\n'.length),
+    `${(piCapped.match(/x/g) ?? []).length} 个 x`)
+
+  const piBasePrompt = 'BASE_PROMPT\n第二行原样保留'
+  check('个性化指令 · 提示词 · appendSection 空段返回原串（=== 相等）',
+    PersonalInstructionPrompt.appendSection(piBasePrompt, '') === piBasePrompt)
+  check('个性化指令 · 提示词 · appendSection 空前缀直接返回段',
+    PersonalInstructionPrompt.appendSection('', 'SECTION') === 'SECTION' &&
+      PersonalInstructionPrompt.appendSection('   \n ', 'SECTION') === 'SECTION')
+  const piAppended = PersonalInstructionPrompt.appendSection(piBasePrompt, 'SECTION')
+  check('个性化指令 · 提示词 · appendSection 非空前缀严格为「原串 + \\n\\n + 段」',
+    piAppended === piBasePrompt + '\n\n' + 'SECTION', JSON.stringify(piAppended))
+  check('个性化指令 · 提示词 · appendSection 前缀逐字节不变',
+    piAppended.slice(0, piBasePrompt.length) === piBasePrompt &&
+      piAppended.indexOf(piBasePrompt) === 0)
+  check('个性化指令 · 提示词 · append = appendSection(section)，无生效条目时原样返回',
+    PersonalInstructionPrompt.append(piBasePrompt, 'work', piItems) ===
+      PersonalInstructionPrompt.appendSection(
+        piBasePrompt, PersonalInstructionPrompt.section('work', piItems)) &&
+      PersonalInstructionPrompt.append(piBasePrompt, 'unknown-engine', piItems) === piBasePrompt &&
+      PersonalInstructionPrompt.append('', 'work', piItems) ===
+        PersonalInstructionPrompt.section('work', piItems))
+  check('个性化指令 · 提示词 · fixedScopeLabel 两个模式有固定中文名',
+    PersonalInstructionPrompt.fixedScopeLabel(Constants.INTERACTIVE_AGENT_ID) === '交互模式' &&
+      PersonalInstructionPrompt.fixedScopeLabel(Constants.WORK_AGENT_ID) === '工作模式' &&
+      PersonalInstructionPrompt.fixedScopeLabel('guncat-smoke-engine') === '')
+
+  // ---- 24.3 持久化（复用 smoke 已建好的 ctx） ----
+  const piStoreA = PersonalInstruction.create(
+    '格式', '# 交付格式\n1. 先给结论\n2. 再给依据', ['interactive', 'guncat-smoke-engine'])
+  const piStoreB = PersonalInstruction.create('', '回答尽量短。', ['work'])
+  await PersonalInstructionStore.save(ctx, [piStoreA, piStoreB])
+  const piLoaded = await PersonalInstructionStore.load(ctx)
+  check('个性化指令 · 持久化 · save → load 条目数与顺序一致',
+    piLoaded.length === 2 && piLoaded[0].id === piStoreA.id && piLoaded[1].id === piStoreB.id,
+    `${piLoaded.length} 条`)
+  check('个性化指令 · 持久化 · save → load 字段逐项一致（含 scopes 顺序）',
+    piLoaded[0].name === '格式' && piLoaded[0].content === piStoreA.content &&
+      piLoaded[0].scopes.join(',') === 'interactive,guncat-smoke-engine' &&
+      piLoaded[0].updatedAt === piStoreA.updatedAt &&
+      piLoaded[1].name === '' && piLoaded[1].content === '回答尽量短。')
+  check('个性化指令 · 持久化 · 键名 = Constants.LS_KEY_PERSONAL_INSTRUCTIONS',
+    Constants.LS_KEY_PERSONAL_INSTRUCTIONS === 'guncat_personal_instructions')
+  const piSerialized = PersonalInstructionStore.serialize(piLoaded)
+  const piReparsed = PersonalInstruction.parseList(piSerialized)
+  check('个性化指令 · 持久化 · serialize → parseList 互逆（字段与范围顺序不变）',
+    piReparsed.length === 2 && piReparsed[0].id === piStoreA.id &&
+      piReparsed[0].name === piStoreA.name && piReparsed[0].content === piStoreA.content &&
+      piReparsed[0].scopes.join(',') === piStoreA.scopes.join(',') &&
+      piReparsed[0].updatedAt === piStoreA.updatedAt,
+    `${piSerialized.length} 字节`)
+  check('个性化指令 · 持久化 · 空列表 serialize 为 "[]" 且可解析回空数组',
+    PersonalInstructionStore.serialize([]) === '[]' &&
+      PersonalInstruction.parseList('[]').length === 0)
+  await PersonalInstructionStore.save(ctx, [])
+  const piClearedRaw = await StorageManager.loadString(
+    ctx, Constants.LS_KEY_PERSONAL_INSTRUCTIONS, '__missing__')
+  check('个性化指令 · 持久化 · 空列表落盘为 "[]"（读回不是空串）',
+    piClearedRaw === '[]', JSON.stringify(piClearedRaw))
+  check('个性化指令 · 持久化 · 清空后 load 回空列表（不污染其它断言）',
+    (await PersonalInstructionStore.load(ctx)).length === 0)
+
+  // ---- 24.4 三协议注入 ----
+  // 拼法与 SessionManager.agentWithPersonalInstructions 完全一致：
+  // 复制一份 Agent（Object.assign），只改副本的 systemPrompt，原智能体对象不动。
+  const piCfg: ApiConfig = new ApiConfig()
+  piCfg.provider = 'openai-completions'
+  piCfg.baseUrl = 'https://api.deepseek.com'
+  piCfg.model = 'deepseek-flash'
+
+  const piEngineAgent: Agent = Agent.of(
+    'guncat-smoke-engine', '冒烟引擎', '回归测试用智能体', 'chat', 'prompts/smoke.md',
+    '你是冒烟测试引擎。\n回答保持简洁。')
+  const piInjectedSection: string =
+    PersonalInstructionPrompt.section('guncat-smoke-engine', piItems)
+  const piInjectedAgent: Agent = Object.assign(new Agent(), piEngineAgent)
+  piInjectedAgent.systemPrompt = PersonalInstructionPrompt.appendSection(
+    piEngineAgent.systemPrompt, piInjectedSection)
+  const piExpectedPrompt: string = piEngineAgent.systemPrompt + '\n\n' + piInjectedSection
+
+  check('个性化指令 · 注入 · 克隆不污染原智能体（原 systemPrompt 逐字节不变）',
+    piInjectedAgent !== piEngineAgent &&
+      piEngineAgent.systemPrompt === '你是冒烟测试引擎。\n回答保持简洁。' &&
+      piInjectedAgent.systemPrompt !== piEngineAgent.systemPrompt)
+  check('个性化指令 · 注入 · 段只含该引擎生效的条目',
+    piInjectedSection.includes('自检清单') && piInjectedSection.includes('指挥官') &&
+      !piInjectedSection.includes('永远用中文'))
+
+  const piChatBody = buildChatCompletionsBody(piCfg, piInjectedAgent, [], '你好', false, false)
+  const piChatMessages = piChatBody['messages'] as Record<string, Object>[]
+  const piChatSystem = piChatMessages[0]['content'] as string
+  check('个性化指令 · 注入 · completions 第 0 条仍是 system 消息',
+    piChatMessages[0]['role'] === 'system', String(piChatMessages[0]['role']))
+  check('个性化指令 · 注入 · completions 系统提示 = 原提示逐字节 + 空行 + 段',
+    piChatSystem === piExpectedPrompt && piChatSystem.endsWith(piInjectedSection))
+  check('个性化指令 · 注入 · completions 系统提示前缀逐字节不变',
+    piChatSystem.slice(0, piEngineAgent.systemPrompt.length) === piEngineAgent.systemPrompt)
+
+  const piAnthropicBody = buildAnthropicBody(piCfg, piInjectedAgent, [], '', false, false)
+  const piAnthropicSystem = piAnthropicBody['system'] as string
+  check('个性化指令 · 注入 · anthropic body.system = 原提示逐字节 + 段',
+    piAnthropicSystem === piExpectedPrompt && piAnthropicSystem.endsWith(piInjectedSection))
+  check('个性化指令 · 注入 · anthropic 系统提示前缀逐字节不变',
+    piAnthropicSystem.slice(0, piEngineAgent.systemPrompt.length) ===
+      piEngineAgent.systemPrompt)
+
+  // ChatService 的 responses 构建器（buildResponsesBody）没有导出，按任务约定不改生产代码导出。
+  // 这里改用 AgentLoopService 已注册的同协议构建器（与现有 smoke 访问私有静态方法的写法一致）
+  // 验证「LoopMessage.system 的正文 → body.instructions」这一字段映射；聊天模式那份构建器
+  // 的来源另用源码静态核对兜底（见下一条）。
+  const piLoopBodies = AgentLoopService as unknown as {
+    buildResponsesBody: (config: ApiConfig, messages: LoopMessage[],
+      tools: Record<string, Object>[], thinkingEnabled: boolean, reasoningEffort: string,
+      webSearchEnabled: boolean, jsonMode?: boolean) => Record<string, Object>
+  }
+  const piResponsesBody = piLoopBodies.buildResponsesBody(
+    piCfg,
+    [LoopMessage.system(piInjectedAgent.systemPrompt), LoopMessage.user('你好')],
+    [], false, 'low', false)
+  const piResponsesInstructions = piResponsesBody['instructions'] as string
+  check('个性化指令 · 注入 · responses body.instructions = 原提示逐字节 + 段',
+    piResponsesInstructions === piExpectedPrompt &&
+      piResponsesInstructions.endsWith(piInjectedSection))
+  check('个性化指令 · 注入 · responses 系统提示前缀逐字节不变',
+    piResponsesInstructions.slice(0, piEngineAgent.systemPrompt.length) ===
+      piEngineAgent.systemPrompt)
+  check('个性化指令 · 注入 · responses 不再把 system 重复塞进 input',
+    (piResponsesBody['input'] as Record<string, Object>[])
+      .every((m) => m['role'] !== 'system'))
+
+  const piChatServiceSource: string =
+    fs.readFileSync(path.resolve('src/core/service/ChatService.ts'), 'utf8')
+  check('个性化指令 · 注入 · ChatService responses 构建器仍从 agent.systemPrompt 取 instructions（源码静态核对）',
+    piChatServiceSource.includes('function buildResponsesBody(') &&
+      piChatServiceSource.includes("body['instructions'] = agent.systemPrompt"))
+
+  // 反面：scope 不匹配 = 一条都不生效 → 系统提示与请求体必须与未注入前逐字节一致
+  const piUnmatchedSection: string =
+    PersonalInstructionPrompt.section('pi-no-such-engine', piItems)
+  check('个性化指令 · 注入 · 无生效条目时段为空串', piUnmatchedSection === '')
+  const piUnchangedPrompt: string =
+    PersonalInstructionPrompt.appendSection(piEngineAgent.systemPrompt, piUnmatchedSection)
+  check('个性化指令 · 注入 · 无生效条目时 appendSection 返回原串（=== 相等）',
+    piUnchangedPrompt === piEngineAgent.systemPrompt)
+  const piUnchangedAgent: Agent = Object.assign(new Agent(), piEngineAgent)
+  piUnchangedAgent.systemPrompt = piUnchangedPrompt
+  check('个性化指令 · 注入 · 无生效条目时 completions 请求体逐字节一致（JSON.stringify 比较）',
+    JSON.stringify(buildChatCompletionsBody(piCfg, piEngineAgent, [], '你好', false, false)) ===
+      JSON.stringify(buildChatCompletionsBody(piCfg, piUnchangedAgent, [], '你好', false, false)))
+  check('个性化指令 · 注入 · 无生效条目时 anthropic 请求体逐字节一致（JSON.stringify 比较）',
+    JSON.stringify(buildAnthropicBody(piCfg, piEngineAgent, [], '', false, false)) ===
+      JSON.stringify(buildAnthropicBody(piCfg, piUnchangedAgent, [], '', false, false)))
+  check('个性化指令 · 注入 · 无生效条目时 responses 请求体逐字节一致（JSON.stringify 比较）',
+    JSON.stringify(piLoopBodies.buildResponsesBody(
+      piCfg, [LoopMessage.system(piEngineAgent.systemPrompt), LoopMessage.user('你好')],
+      [], false, 'low', false)) ===
+      JSON.stringify(piLoopBodies.buildResponsesBody(
+        piCfg, [LoopMessage.system(piUnchangedPrompt), LoopMessage.user('你好')],
+        [], false, 'low', false)))
 
   // ===== 结果 =====
   console.log(`\n${'─'.repeat(58)}`)

@@ -204,6 +204,13 @@ interface State {
   /** 「用量与成本」独立页面是否打开（入口在设置页与侧栏底部） */
   usageOpen: boolean
   /**
+   * 「个性化指令」编辑页是否打开（设置 → 能力 → 个性化指令的独立全屏二级页）。
+   * App 的渲染优先级最高：编辑一条指令不该把设置页关掉，否则保存后回不到列表。
+   */
+  instructionEditorOpen: boolean
+  /** 正在编辑的个性化指令 id；空串表示新建（与鸿蒙版 PersonalInstructionEditSession 同口径） */
+  instructionEditingId: string
+  /**
    * 右侧工作区面板是否展开。
    * 原版侧栏底部就有「工作区」入口，且只看 `isWide && detailsOpen`、**不判模式** ——
    * 聊天模式下来路（拖拽 / 命令行 / 第二实例）落进该会话工作区的文件同样能在这里看到。
@@ -260,6 +267,13 @@ interface State {
   openSettings(open: boolean): void
   /** 打开/关闭独立的「用量与成本」页面 */
   openUsage(open: boolean): void
+  /**
+   * 打开「个性化指令」编辑页。id 为空串 = 新建；不关闭设置页 ——
+   * 编辑页由 App 以更高优先级渲染，关闭后自然回到设置页的个性化指令列表。
+   */
+  openInstructionEditor(id: string): void
+  /** 关闭「个性化指令」编辑页并清空编辑 id（设置页保持打开） */
+  closeInstructionEditor(): void
   toggleWorkspace(open?: boolean): void
   /** 手机端左侧会话抽屉（桌面端侧栏常驻，这个状态不产生视觉影响） */
   sidebarOpen: boolean
@@ -496,6 +510,8 @@ export const useStore = create<State>((set, get) => {
     notice: null,
     settingsOpen: false,
     usageOpen: false,
+    instructionEditorOpen: false,
+    instructionEditingId: '',
     workspaceOpen:
       typeof window === 'undefined' || !window.matchMedia('(max-width: 860px)').matches,
     sidebarOpen: false,
@@ -803,13 +819,33 @@ export const useStore = create<State>((set, get) => {
     },
 
     openSettings(open) {
-      // 打开设置时收起用量页，避免两个整页同时处于打开状态
-      set({ settingsOpen: open, usageOpen: open ? false : get().usageOpen })
+      // 打开设置时收起用量页，避免两个整页同时处于打开状态。
+      // 退出设置时顺带收掉个性化指令编辑页 —— 留着它下次进设置会先看到一张残留的编辑页。
+      set(
+        open
+          ? { settingsOpen: true, usageOpen: false }
+          : { settingsOpen: false, instructionEditorOpen: false, instructionEditingId: '' }
+      )
     },
 
     openUsage(open) {
       // 手机端从侧栏进入时先把抽屉收掉，避免页面下方还压着一层遮罩
       set({ usageOpen: open, sidebarOpen: open ? false : get().sidebarOpen })
+    },
+
+    openInstructionEditor(id) {
+      // 编辑页由 App 以最高优先级渲染；这里**不动 settingsOpen**：
+      // 保存/返回后直接落回设置页的「能力 → 个性化指令」列表。
+      set({
+        instructionEditorOpen: true,
+        instructionEditingId: id.trim(),
+        usageOpen: false,
+        sidebarOpen: false
+      })
+    },
+
+    closeInstructionEditor() {
+      set({ instructionEditorOpen: false, instructionEditingId: '' })
     },
 
     openSidebar() {

@@ -1099,3 +1099,190 @@ body.platform-android code {
     opacity: 0.72;
   }
 }
+
+/* ===== 个性化指令（手机端） =====
+   列表在设置二级详情里（沿用 settings-pane 的留白）；编辑页是独立全屏页，
+   底部主操作让出安全区，头部返回/删除按钮 ≥44px，正文输入与预览不横向溢出。 */
+@media (max-width: 860px) {
+  .instruction-panel {
+    gap: 12px;
+  }
+
+  .instruction-toolbar {
+    margin: 0 2px;
+  }
+
+  .instruction-toolbar__count {
+    font-size: 12px;
+    white-space: normal;
+  }
+
+  .instruction-toolbar__add {
+    height: 44px;
+    padding: 0 16px;
+    border-radius: 14px;
+    font-size: 14px;
+  }
+
+  .instruction-item {
+    min-height: 76px;
+    padding: 14px 16px;
+  }
+
+  .instruction-item__text strong {
+    font-size: 15.5px;
+  }
+
+  .instruction-item__scopes,
+  .instruction-item__summary {
+    font-size: 12px;
+  }
+
+  .instruction-empty {
+    padding: 32px 20px 28px;
+    border-radius: 20px;
+  }
+
+  .instruction-empty h3 {
+    font-size: 17px;
+  }
+
+  .instruction-empty p {
+    font-size: 12.5px;
+  }
+
+  .instruction-empty__btn {
+    height: 46px;
+    padding: 0 20px;
+    font-size: 14px;
+  }
+
+  /* --- 编辑页 --- */
+  .instruction-editor {
+    height: var(--app-height, 100%);
+  }
+
+  .instruction-editor__head {
+    padding: calc(env(safe-area-inset-top) + 8px) 12px 8px 8px;
+  }
+
+  .instruction-editor__head-inner {
+    gap: 8px;
+    min-height: 52px;
+  }
+
+  .instruction-editor__back {
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    color: var(--text);
+  }
+
+  .instruction-editor__back svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  .instruction-editor__delete {
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+  }
+
+  .instruction-editor__delete svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .instruction-editor__heading strong {
+    font-size: 21px;
+    letter-spacing: -0.02em;
+  }
+
+  .instruction-editor__heading span {
+    display: none;
+  }
+
+  .instruction-editor__body {
+    padding: 4px 14px 18px;
+  }
+
+  .instruction-editor__inner .settings-card {
+    margin-bottom: 18px;
+  }
+
+  .settings-card__head--row {
+    gap: 8px;
+  }
+
+  .instruction-preview-toggle {
+    height: 44px;
+    padding: 0 14px;
+    border-radius: 22px;
+    font-size: 12.5px;
+  }
+
+  .settings-card__body .field textarea.instruction-textarea {
+    min-height: 200px;
+    font-size: 16px;
+  }
+
+  .instruction-counter {
+    font-size: 11.5px;
+  }
+
+  .instruction-preview {
+    max-height: none;
+    padding: 12px;
+  }
+
+  /* 窄屏里宽表格改成块级横向滚动，不把整页撑出横向滚动条 */
+  .instruction-preview table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .instruction-scopes__group {
+    font-size: 11.5px;
+  }
+
+  .instruction-scopes__summary {
+    font-size: 12px;
+  }
+
+  /* 触控目标：多选行整行可点（settings-option 在窄屏已 ≥56px） */
+  .settings-option-list .instruction-scope {
+    min-height: 60px;
+  }
+
+  .instruction-editor__foot {
+    display: flex;
+    padding: 8px 14px calc(10px + env(safe-area-inset-bottom));
+  }
+
+  .instruction-editor__submit {
+    height: 50px;
+    font-size: 16px;
+  }
+
+  /* 页内确认弹窗：窄屏左右留白，按钮各占一半、高度够点 */
+  .instruction-confirm {
+    z-index: 110;
+    padding: 24px 18px;
+  }
+
+  .instruction-confirm__dialog {
+    max-width: 100%;
+  }
+
+  .instruction-confirm .dialog__foot {
+    flex-wrap: wrap;
+  }
+
+  .instruction-confirm .dialog__foot .btn {
+    flex: 1;
+    min-height: 46px;
+  }
+}

@@ -10,6 +10,7 @@
   └─ 主进程 SessionManager.runWork(mode='interactive')
        ├─ AgentLoopService.buildWorkSystemPromptFor('interactive')
        │    （行为纪律：默认零工具、一轮直出；工具面物理裁剪 45 → 27）
+       │    （末尾再追加当前交互模式生效的个性化指令段，见 docs/PERSONAL-INSTRUCTIONS.md）
        └─ 模型流式输出 guncat-ui lang 程序
             └─ 逐 token 推给渲染进程（message:patched 事件）
                  └─ 渲染进程 MessageView

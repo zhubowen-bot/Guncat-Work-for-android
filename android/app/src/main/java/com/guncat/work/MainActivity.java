@@ -507,6 +507,9 @@ public class MainActivity extends Activity {
                         + "var m=document.querySelector('.mobile-sheet-layer');if(m){m.click();return '1';}"
                         + "var p=document.querySelector('.preview-overlay .icon-btn');if(p){p.click();return '1';}"
                         + "var o=document.querySelector('.overlay');if(o){var c=o.querySelector('.icon-btn');if(c){c.click();return '1';}}"
+                        // 个性化指令编辑页：硬件返回键先回到设置列表（有未保存修改时由页面自己弹确认），
+                        // 而不是直接触发「再按一次退出」——编辑页是全屏二级页，返回语义应与页面内返回键一致。
+                        + "var e=document.querySelector('.instruction-editor__back');if(e){e.click();return '1';}"
                         + "var w=document.querySelector('.workspace .mobile-only');if(w){w.click();return '1';}"
                         + "return '0';})()",
                 new ValueCallback<String>() {

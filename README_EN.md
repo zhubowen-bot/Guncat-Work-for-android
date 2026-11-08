@@ -144,6 +144,7 @@ never mirrored. Oversized files are reported explicitly instead of silently skip
 | Work-mode agent loop, 45 tools, skills | ✅ (command tools use the built-in Linux terminal) |
 | Interactive UI rendering | ✅ |
 | Interactive-mode capability scheduling (9 prompt tiers) | ✅ Lite / Efficiency / Expert / Classic / Paper / Legal / Research / Sift / LLM Eval; interactive mode only, applied from the next task |
+| Personalized instructions (long-lived preferences auto-appended to system prompts) | ✅ Settings → Capability → Personalized instructions; scopes: interactive mode / work mode / each chat engine; Markdown preview toggle; wrapped in `personal-instruction` tags at the end of the system prompt (prefix unchanged) |
 | Office generation (docx/xlsx/pptx/svg) | ✅ saved to `Downloads/Guncat Work` |
 | Image viewing / thumbnails / SVG rasterization | ✅ |
 | Chat attachments + workspace upload | ✅ system file picker |
@@ -199,6 +200,7 @@ redirections; the JS fallback used by the browser preview and its 127 hint for m
 
 - [Android porting notes](docs/ANDROID.md)
 - [Desktop ↔ HarmonyOS porting archive](docs/PORTING.md)
+- [Personalized instructions](docs/PERSONAL-INSTRUCTIONS.md)
 - [Changelog](CHANGELOG.md)
 
 ## License

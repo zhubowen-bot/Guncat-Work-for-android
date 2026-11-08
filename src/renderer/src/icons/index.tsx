@@ -282,6 +282,22 @@ export function IconFile(props: IconProps) {
   )
 }
 
+/**
+ * 个性化指令（文稿 + 铅笔，对应原版 sys.symbol.doc_plaintext_and_pencil）。
+ * 页面折角留在右上角，铅笔从页面右下方探出 —— 两段轮廓分开画，24px 下仍能认出是「可编辑的文稿」。
+ */
+export function IconPersonalInstruction(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M14.1 3.6H6.7a2 2 0 0 0-2 2v12.8a2 2 0 0 0 2 2h4" />
+      <path d="M14.1 3.6l4.2 4.2v3" />
+      <path d="M14.1 3.6v4.2h4.2" />
+      <path d="M11.1 18.8l-3.4.6.6-3.4 6.5-6.5a2 2 0 0 1 2.8 2.8l-6.5 6.5Z" />
+      <path d="m13.6 9.5 2.9 2.9" />
+    </Svg>
+  )
+}
+
 // ===== 工作区文件行按扩展名分类的图标（原版 WorkspaceFileIcons.iconFor） =====
 
 /** 图片（原版 sys.symbol.picture） */

@@ -4211,6 +4211,453 @@ select {
   color: var(--text-muted);
 }
 
+/* ===== 个性化指令（设置 → 能力 → 个性化指令） =====
+   两条链路共用同一套视觉语言：
+     · 列表 / 空态在设置页二级详情里，白色卡片 + 设置行；
+     · 编辑页是独立全屏页（结构对标 UsagePage），底部主操作贴底。
+   颜色、圆角、留白全部走既有变量，不新增主题色。 */
+
+/* --- 设置页内的列表 / 空态 --- */
+.instruction-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.instruction-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  margin: 0 4px;
+}
+
+.instruction-toolbar__count {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.instruction-toolbar__add {
+  flex: none;
+  height: 34px;
+  padding: 0 13px;
+  border-radius: 10px;
+}
+
+.instruction-list {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--bg-elevated);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.025);
+}
+
+.instruction-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  padding: 14px 16px;
+  color: var(--text);
+  text-align: left;
+  transition: background 0.12s;
+}
+
+.instruction-item + .instruction-item {
+  border-top: 1px solid var(--divider);
+}
+
+.hoverable .instruction-item:hover {
+  background: var(--bg-sunken);
+}
+
+.instruction-item__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.instruction-item__text strong {
+  font-size: 14.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.instruction-item__scopes,
+.instruction-item__summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.instruction-item__scopes {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.instruction-item__summary {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-faint);
+}
+
+.instruction-item__go {
+  flex: none;
+  display: inline-flex;
+  color: var(--text-quaternary);
+}
+
+.instruction-panel__note {
+  margin: 0 4px;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-faint);
+}
+
+/* 空态：一张居中卡片说明用途，再给新建入口 */
+.instruction-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 36px 24px 32px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--bg-elevated);
+  text-align: center;
+}
+
+.instruction-empty__icon {
+  display: inline-flex;
+  color: var(--accent);
+  opacity: 0.4;
+}
+
+.instruction-empty h3 {
+  margin: 14px 0 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.instruction-empty p {
+  margin: 8px 0 0;
+  max-width: 460px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-muted);
+}
+
+.instruction-empty__btn {
+  height: 40px;
+  margin-top: 18px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.hoverable .instruction-empty__btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+/* --- 编辑页（全屏二级页，与 UsagePage 对齐） --- */
+.instruction-editor {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  background: var(--bg-sunken);
+  overflow: hidden;
+}
+
+.instruction-editor__head {
+  flex: none;
+  padding: 12px 30px;
+  background: var(--bg-sunken);
+}
+
+.instruction-editor__head-inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(760px, 100%);
+  min-height: 44px;
+  margin: 0 auto;
+}
+
+.instruction-editor__back {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  color: var(--text-muted);
+}
+
+.hoverable .instruction-editor__back:hover {
+  background: var(--item-hover);
+  color: var(--text);
+}
+
+.instruction-editor__heading {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.instruction-editor__heading strong {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.015em;
+}
+
+.instruction-editor__heading span {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.instruction-editor__delete {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  color: var(--text-faint);
+}
+
+.hoverable .instruction-editor__delete:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
+}
+
+.instruction-editor__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 30px 24px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.instruction-editor__inner {
+  width: min(760px, 100%);
+  margin: 0 auto;
+}
+
+.instruction-editor__inner .settings-card {
+  margin-bottom: 20px;
+}
+
+/* 卡片头一行放标题与预览开关 */
+.settings-card__head--row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.settings-card__head--row h3 {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Markdown 预览开关：胶囊按钮，打开态用品牌色 */
+.instruction-preview-toggle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 11px;
+  border-radius: 15px;
+  background: var(--bg-sunken);
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1;
+  transition: background 0.12s, color 0.12s;
+}
+
+.instruction-preview-toggle[data-on='true'] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.hoverable .instruction-preview-toggle:hover {
+  color: var(--text);
+}
+
+.hoverable .instruction-preview-toggle[data-on='true']:hover {
+  color: var(--accent);
+}
+
+/* 正文输入：比设置页默认 textarea 更高，长指令不用一直滚 */
+.settings-card__body .field textarea.instruction-textarea {
+  min-height: 220px;
+  resize: vertical;
+}
+
+.instruction-content__foot {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 7px;
+}
+
+.instruction-content__foot .field__hint {
+  flex: 1;
+  min-width: 0;
+  margin-top: 0;
+}
+
+.instruction-counter {
+  flex: none;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 预览：复用消息正文配色（.msg__body），只补容器留白与可滚动高度 */
+.instruction-preview {
+  min-height: 120px;
+  max-height: 340px;
+  overflow-y: auto;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--bg-sunken);
+}
+
+/* 预览里的宽内容不能把设置卡片撑破：表格与图片都收进容器宽度 */
+.instruction-preview table {
+  max-width: 100%;
+}
+
+.instruction-preview img {
+  max-width: 100%;
+  height: auto;
+}
+
+.instruction-preview__empty {
+  margin: 0;
+  padding: 16px 14px;
+  border-radius: 12px;
+  background: var(--bg-sunken);
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
+/* 生效范围多选 */
+.instruction-scopes {
+  display: flex;
+  flex-direction: column;
+}
+
+.instruction-scopes__group {
+  padding: 2px 10px 6px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+}
+
+.instruction-scopes__group + .settings-option-list {
+  margin-bottom: 10px;
+}
+
+.instruction-scopes__empty {
+  margin: 0 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+.instruction-scopes__summary {
+  margin: 12px 2px 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--divider);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-faint);
+}
+
+.instruction-scopes__summary[data-warn='true'] {
+  color: var(--warn);
+}
+
+/* 页内错误提示（正文为空 / 未选生效范围 / 保存失败） */
+.instruction-editor__error {
+  margin: 0 0 10px;
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--danger) 26%, var(--border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--danger) 7%, var(--bg-elevated));
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+/* 底部主操作：贴底，按钮占满内容宽度 */
+.instruction-editor__foot {
+  flex: none;
+  padding: 10px 30px 14px;
+  background: var(--bg-sunken);
+}
+
+.instruction-editor__submit {
+  display: flex;
+  width: min(760px, 100%);
+  height: 46px;
+  margin: 0 auto;
+  border-radius: 999px;
+  font-size: 15px;
+}
+
+/* 页内确认弹窗：复用 .dialog 结构，遮罩自己画（preview-overlay 在窄屏会被改成全屏） */
+.instruction-confirm {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: rgba(0, 0, 0, 0.38);
+}
+
+.instruction-confirm__dialog {
+  max-width: 380px;
+}
+
+.instruction-confirm__text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text-muted);
+}
+
 /* ===== 提问卡片（ask_user_question） =====
    对齐原版 views/AskUserCard.ets：1.5px 品牌色描边 + 14 圆角 + 14 内边距 + 阴影。
    它是**唯一一个会让模型停下来等**的卡片，所以描边要显眼到一眼能看见，

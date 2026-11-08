@@ -1617,6 +1617,159 @@ check(
     apiNorm.models[1] === 'deepseek-v4-pro'
 )
 
+// --- 个性化指令（设置 → 能力 → 个性化指令 + 独立编辑页） ---
+// 对齐鸿蒙版 f1da275c：设置内是列表（空态 / 条目），新建与编辑在独立全屏编辑页。
+// SSR 下 settings 为 null（偏好还没读回），所以列表首帧必然是空态 —— 这里钉住空态口径，
+// 入口摘要与编辑页则分别验证「进得去」与「首帧该有的字段都在」。
+const instructionPanelHtml = mod.renderPersonalInstructions()
+const instructionPanelText = decode(instructionPanelHtml)
+check(
+  '个性化指令空态：说明用途并提供新建入口',
+  instructionPanelHtml.includes('instruction-empty') &&
+    instructionPanelHtml.includes('instruction-empty__btn') &&
+    instructionPanelText.includes('还没有个性化指令') &&
+    instructionPanelText.includes('新建个性化指令'),
+  instructionPanelText.slice(0, 60)
+)
+check(
+  '空态文案讲清三件事：长期偏好、会拼进系统提示词、只存本机',
+  instructionPanelText.includes('系统提示词') &&
+    instructionPanelText.includes('只保存在本机') &&
+    instructionPanelText.includes('下一次请求')
+)
+
+const instructionListHtml = mod.renderPersonalInstructionsList()
+const instructionListText = decode(instructionListHtml)
+check(
+  '非空列表：每条显示名称 / 生效范围摘要 / 正文摘要，右侧有进入箭头',
+  instructionListHtml.includes('instruction-list') &&
+    instructionListHtml.includes('instruction-item__scopes') &&
+    instructionListHtml.includes('instruction-item__summary') &&
+    instructionListHtml.includes('instruction-item__go') &&
+    instructionListText.includes('英文回答') &&
+    instructionListText.includes('交互模式、工作模式') &&
+    instructionListText.includes('工作模式、写作引擎') &&
+    instructionListText.includes('Prefer English unless the user writes in Chinese.'),
+  instructionListText.slice(0, 100)
+)
+check(
+  '名称留空的条目用正文首行当列表标题（不是「未命名指令」）',
+  instructionListText.includes('所有代码都先给出最小可运行版本，再补充优化建议') &&
+    !instructionListText.includes('未命名指令')
+)
+check(
+  '指令解析容错：坏 JSON / 非数组返回空列表，数组里的坏条目被丢弃而不是整页报错',
+  mod.parseInstructionList('not-json').length === 0 &&
+    mod.parseInstructionList('{"a":1}').length === 0 &&
+    mod.parseInstructionList(
+      JSON.stringify([
+        { id: 'pi-a', content: '保留我', scopes: ['work'] },
+        { nope: 1 },
+        5
+      ])
+    ).length === 1
+)
+check(
+  '设置导航新增「个性化指令」入口，摘要「尚未添加」在桌面与手机首帧都出现',
+  settingsText.includes('个性化指令') &&
+    settingsText.includes('尚未添加') &&
+    mobileSettingsText.includes('个性化指令') &&
+    mobileSettingsText.includes('尚未添加') &&
+    mobileSettingsHtml.includes('settings-nav__item'),
+  '手机首帧仍是一级列表'
+)
+check(
+  '生效范围顺序固定：交互模式 → 工作模式 → 各聊天引擎',
+  mod.agentScopeOrder([{ id: 'chat-a', name: '文字引擎' }]).join('|') ===
+    'interactive|work|chat-a' &&
+    mod.instructionScopeSummary(['chat-a', 'work', 'interactive'], [
+      { id: 'chat-a', name: '文字引擎' }
+    ]) === '交互模式、工作模式、文字引擎',
+  mod.instructionScopeSummary(['chat-a', 'work', 'interactive'], [
+    { id: 'chat-a', name: '文字引擎' }
+  ])
+)
+check(
+  '生效范围摘要跳过未知范围（引擎已从列表移除时不展示裸 id）',
+  mod.instructionScopeSummary(['interactive', 'gone'], []) === '交互模式'
+)
+
+const instructionEditorHtml = mod.renderInstructionEditor()
+const instructionEditorText = decode(instructionEditorHtml)
+check(
+  '个性化指令编辑页首帧：标题 / 名称 / 正文 / Markdown 切换 / 生效范围 / 添加',
+  instructionEditorHtml.includes('instruction-editor') &&
+    instructionEditorHtml.includes('instruction-editor__submit') &&
+    instructionEditorHtml.includes('settings-card__body') &&
+    instructionEditorHtml.includes('settings-option-list') &&
+    instructionEditorHtml.includes('instruction-preview-toggle') &&
+    instructionEditorText.includes('新建个性化指令') &&
+    instructionEditorText.includes('名称（可选）') &&
+    instructionEditorText.includes('指令正文') &&
+    instructionEditorText.includes('Markdown 渲染') &&
+    instructionEditorText.includes('生效范围') &&
+    instructionEditorText.includes('交互模式') &&
+    instructionEditorText.includes('工作模式') &&
+    instructionEditorText.includes('添加'),
+  instructionEditorText.slice(0, 80)
+)
+check(
+  '编辑页默认原文编辑：textarea 在场、Markdown 预览不在场，字数从 0 / 8000 起算',
+  instructionEditorHtml.includes('<textarea') &&
+    !instructionEditorHtml.includes('msg__body instruction-preview') &&
+    instructionEditorText.includes('0 / 8000')
+)
+check(
+  '新建态默认勾选交互模式 + 工作模式（两个勾选圆），且没有删除入口',
+  (instructionEditorHtml.match(/data-active="true"/g) ?? []).length === 2 &&
+    !instructionEditorHtml.includes('instruction-editor__delete') &&
+    !instructionEditorText.includes('编辑个性化指令')
+)
+
+// 编辑页由 store 驱动（App 里优先级最高）：开合与「返回设置」的互斥关系是纯状态机，
+// 不需要 IPC，直接用 store 断言。关键点：打开编辑页**不能**关掉 settingsOpen。
+const instructionStore = mod.useStore
+storeCheck: {
+  const init = instructionStore.getState()
+  if (init.instructionEditorOpen !== false || init.instructionEditingId !== '') {
+    check('个性化指令编辑页默认关闭', false, '初始状态不是关闭/空 id')
+    break storeCheck
+  }
+  check('个性化指令编辑页默认关闭', true)
+
+  instructionStore.getState().openSettings(true)
+  instructionStore.getState().openInstructionEditor(' chat-a ')
+  const opened = instructionStore.getState()
+  check(
+    '打开编辑页：trim 编辑 id、并保持设置页打开（返回能落回列表）',
+    opened.instructionEditorOpen === true &&
+      opened.instructionEditingId === 'chat-a' &&
+      opened.settingsOpen === true,
+    `open=${opened.instructionEditorOpen} id=${opened.instructionEditingId} settings=${opened.settingsOpen}`
+  )
+
+  instructionStore.getState().closeInstructionEditor()
+  const closed = instructionStore.getState()
+  check(
+    '关闭编辑页：清空编辑 id 且设置页仍然开着',
+    closed.instructionEditorOpen === false &&
+      closed.instructionEditingId === '' &&
+      closed.settingsOpen === true
+  )
+
+  instructionStore.getState().openInstructionEditor('')
+  check('空 id = 新建', instructionStore.getState().instructionEditingId === '')
+
+  instructionStore.getState().openSettings(false)
+  const left = instructionStore.getState()
+  check(
+    '退出设置页时一并收掉编辑页（下次进设置不会残留一张编辑页）',
+    left.instructionEditorOpen === false &&
+      left.instructionEditingId === '' &&
+      left.settingsOpen === false
+  )
+}
+
 // --- 提问卡片（ask_user_question）：工具会真的挂起，这张卡是「工具能不能用」的一半 ---
 //
 // 事故形状：这个工具曾被整个删掉 —— 因为原版的 AskUserCard.ets 没移植，工具挂起后

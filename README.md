@@ -174,6 +174,7 @@ targetSdk ≥ 29 的应用执行私有目录里的文件（Termux 官方也一�
 | 工作模式 Agent Loop、45 个工具、技能库             | ✅（命令类工具走内置 Linux 终端）                                                                                                                   |
 | 交互模式界面渲染                               | ✅                                                                                                                                      |
 | 交互模式「能力调度」九档提示词                        | ✅ 轻简 / 效率 / 专家 / 经典 / 论文转换 / 法律检索 / 深度研究 / 信息筛滤 / LLM评估；只影响交互模式，切档下一任务生效                                                                         |
+| 个性化指令（长期偏好，按生效范围自动拼进系统提示词）           | ✅ 设置 →「能力」→「个性化指令」；多选交互模式 / 工作模式 / 各聊天引擎，Markdown 预览开关，正文以 `personal-instruction` 标签追加在提示词末尾（前缀不变）                                                                  |
 | Office 生成（docx/xlsx/pptx/svg）          | ✅ 保存到系统「下载/Guncat Work」                                                                                                                |
 | 图片查看 / 缩略图 / SVG 栅格化                   | ✅                                                                                                                                      |
 | 聊天附件 + 工作区上传                           | ✅ 系统文件选择器                                                                                                                              |
@@ -253,6 +254,7 @@ npm run typecheck:mobile
 - [Android 移植说明与平台差异](docs/ANDROID.md)
 - [桌面版 ↔ 鸿蒙版移植档案](docs/PORTING.md)
 - [交互模式实现](docs/INTERACTIVE-MODE.md)
+- [个性化指令实现](docs/PERSONAL-INSTRUCTIONS.md)
 - [更新日志](CHANGELOG.md)
 
 ## 贡献
