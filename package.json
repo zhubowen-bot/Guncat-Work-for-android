@@ -1,6 +1,6 @@
 {
   "name": "guncat-work",
-  "version": "7.2.0",
+  "version": "7.3.0",
   "description": "Guncat Work —— Electron 桌面版 + Android 版（WebView + React + TypeScript）的 Agent Harness 客户端",
   "main": "./out/main/index.js",
   "author": "zhubowen-bot",
